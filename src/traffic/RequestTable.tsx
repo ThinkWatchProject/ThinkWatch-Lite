@@ -15,7 +15,7 @@ import { flushSync } from "react-dom";
 import { textOf, useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
-import { latency, money, ms, statusTone, tokens, when } from "@/format";
+import { latency, money, ms, statusTone, tokens, traffic, when } from "@/format";
 import { failureKind, notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
@@ -1306,6 +1306,10 @@ function Mark({
  * **输入合计含缓存读写。**core 的「输入」只是新输入，和缓存读取、缓存写入三者不
  * 重叠；只写新输入的话，一轮带着五万 token 上下文的 Claude Code 请求在这里是「1.2k」
  * —— 而这一列要回答的正是「上下文有多大」。三样各是多少写在悬停里。
+ *
+ * **流量也在悬停里，不另占一列**（和生成速度在延迟那一格的悬停里同一个理由）：这一条
+ * 上传、下载各多少。token 是模型读写的量，流量是线上传的量，放在一起看得出上下文大小
+ * 和带宽是不是一回事。
  */
 function TokensCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
@@ -1322,11 +1326,15 @@ function TokensCell({ r }: { r: RequestRow }) {
             t.promptTip(n(prompt)),
             t.promptParts(n(r.inputTokens), n(r.cacheReadTokens), n(r.cacheWriteTokens)),
             t.outputTip(n(r.outputTokens)),
+            // 本地应答的、没发给上游的没有流量
+            ...(r.sentBytes != null ? [t.uploadTip(traffic(r.sentBytes))] : []),
+            ...(r.receivedBytes != null ? [t.downloadTip(traffic(r.receivedBytes))] : []),
           ]}
         />
       }
     >
-      <span>{text}</span>
+      {/* 虚线只在指着时出现：延迟那一列已经整列带着虚线，两列挨着都带就太花了 */}
+      <span className="decoration-dotted underline-offset-2 hover:underline">{text}</span>
     </Tip>
   );
 }

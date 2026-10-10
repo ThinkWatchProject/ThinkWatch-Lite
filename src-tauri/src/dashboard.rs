@@ -36,8 +36,8 @@ pub async fn dashboard(
         .unwrap_or(0);
     let since = since_ms.min(now);
     let bucket = bucket_ms.max(60_000);
-    // **十一样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
-    // 十一问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
+    // **十四样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
+    // 十四问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
     // 钥匙只读一次（`pin`）
     let c = state.control.pin().map_err(text)?;
     // 延迟、生成速度和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，
@@ -64,10 +64,23 @@ pub async fn dashboard(
     // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
     // ——「$4.05」是多还是少，只有和上一个七天比过才知道
     let before = window(Some(since - (now - since)), Some(since));
+    // **整段时间的首 token 分位**：问一个宽过整个时间窗的格子，整段落在第 0 格。分位数不能
+    // 从每一格（或每个模型）的分位合出来 —— 中位数不能这么合 —— 只能让 core 拿整段的样本
+    // 求。终点和汇总一样不给（到 core 的「现在」），两边数的是同一批请求
+    let whole = |from_ms, to_ms| tw_api::BucketQuery {
+        from_ms: Some(from_ms),
+        to_ms,
+        bucket_ms: Some(WHOLE_MS),
+    };
+    let (whole_now, whole_before) = (
+        whole(since, None),
+        whole(since - (now - since), Some(since)),
+    );
     let (
         summary,
         latency,
         latency_by_provider,
+        latency_by_client,
         token_rate,
         token_rate_by_provider,
         storage,
@@ -76,10 +89,13 @@ pub async fn dashboard(
         buckets_by_provider,
         buckets_by_client,
         prev,
+        ttft,
+        prev_ttft,
     ) = tokio::join!(
         c.call::<ep::Summary>(&[], &win),
         c.call::<ep::Latency>(&[], &win),
         c.call::<ep::LatencyByProvider>(&[], &win),
+        c.call::<ep::LatencyByClient>(&[], &win),
         c.call::<ep::TokenRate>(&[], &win),
         c.call::<ep::TokenRateByProvider>(&[], &win),
         c.call::<ep::Storage>(&[], &()),
@@ -88,11 +104,14 @@ pub async fn dashboard(
         c.call::<ep::CostBucketsBy>(&[], &by_provider),
         c.call::<ep::CostBucketsBy>(&[], &by_client),
         c.call::<ep::Summary>(&[], &before),
+        c.call::<ep::CostBuckets>(&[], &whole_now),
+        c.call::<ep::CostBuckets>(&[], &whole_before),
     );
     Ok(Dashboard {
         summary: summary.map_err(text)?,
         latency: latency.ok(),
         latency_by_provider: latency_by_provider.ok(),
+        latency_by_client: latency_by_client.ok(),
         token_rate: token_rate.ok(),
         token_rate_by_provider: token_rate_by_provider.ok(),
         storage: storage.ok(),
@@ -105,6 +124,8 @@ pub async fn dashboard(
         buckets_by_client: buckets_by_client.ok(),
         // 拿不到就不显示那句对比，不影响这一页别的部分
         prev: prev.ok(),
+        ttft: ttft.ok().map(|b| Percentiles::of(&b)),
+        prev_ttft: prev_ttft.ok().map(|b| Percentiles::of(&b)),
         since_ms: since,
     })
 }
@@ -119,6 +140,8 @@ pub struct Dashboard {
     latency: Option<Vec<tw_api::LatencyView>>,
     /// 按上游分。**和按模型分是两个问题**
     latency_by_provider: Option<Vec<tw_api::LatencyView>>,
+    /// 按密钥分（`model` 是密钥名）。明细表的「密钥」一页
+    latency_by_client: Option<Vec<tw_api::LatencyView>>,
     /// 生成速度的中位数，按模型分。同一个时间窗
     token_rate: Option<Vec<tw_api::TokenRateView>>,
     /// 按上游分
@@ -136,9 +159,39 @@ pub struct Dashboard {
     buckets_by_client: Option<Vec<tw_api::CostBucketGroup>>,
     /// 上一个等长区间的汇总。拿不到就是没有对比，不是零
     prev: Option<tw_api::Summary>,
+    /// 整段时间的首 token 分位（不分模型）。拿不到是 `None`；没有样本是 `samples` 为 0
+    ttft: Option<Percentiles>,
+    /// 上一个等长区间的，首 token 那张卡片的环比用
+    prev_ttft: Option<Percentiles>,
     /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，而界面送来的
     /// 起点在未来时（时钟被往回拨过）这里截到了现在
     since_ms: i64,
+}
+
+/// 宽过任何时间窗的一格（一百年）：按它分格，整段时间都落在第 0 格
+pub(crate) const WHOLE_MS: i64 = 100 * 365 * 86_400_000;
+
+/// 一段时间里第一个 token 到的时刻的分位，毫秒。
+///
+/// **没有样本和取不到是两回事**：没有样本是 `samples` 为 0、两个分位为 `None`（这段时间
+/// 没有流式请求）；取不到是外面那一层 `Option` 为 `None`。
+#[derive(serde::Serialize)]
+pub struct Percentiles {
+    p50_ms: Option<i64>,
+    p95_ms: Option<i64>,
+    samples: i64,
+}
+
+impl Percentiles {
+    /// 从「整段一格」的那份里取。没有请求时那一格不在（core 不产出空桶）
+    fn of(b: &[tw_api::CostBucket]) -> Self {
+        let first = b.first();
+        Self {
+            p50_ms: first.and_then(|x| x.ttft_p50_ms),
+            p95_ms: first.and_then(|x| x.ttft_p95_ms),
+            samples: first.map_or(0, |x| x.ttft_samples),
+        }
+    }
 }
 
 /// 一段时间窗。两端各自可缺：只给起点就是「从那时起到现在」。

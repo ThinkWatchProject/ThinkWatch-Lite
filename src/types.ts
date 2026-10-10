@@ -430,6 +430,8 @@ export interface Dashboard {
   latency: LatencyView[] | null;
   /** 按上游分。**和按模型分是两个问题** */
   latency_by_provider: LatencyView[] | null;
+  /** 按密钥分（`model` 是密钥名）：明细表的「密钥」一页 */
+  latency_by_client: LatencyView[] | null;
   /** 生成速度的中位数，按模型分。同一个时间窗 */
   token_rate: TokenRateView[] | null;
   /** 按上游分 */
@@ -440,10 +442,7 @@ export interface Dashboard {
    * 空桶由 `densify` 在界面补（只有界面知道要画多少格）。
    */
   buckets: CostBucket[] | null;
-  /**
-   * 同样的格子，再按模型分。Token 那张小图的每一格是各模型的合计，明细表的「模型」
-   * 一页是各模型跨格的合计。
-   */
+  /** 同样的格子，再按模型分：明细表的「模型」一页是各模型跨格的合计 */
   buckets_by_model: CostBucketGroup[] | null;
   /** 同样的格子按上游分：明细表的「上游」一页，失败集中在哪个上游也从这里看 */
   buckets_by_provider: CostBucketGroup[] | null;
@@ -451,8 +450,23 @@ export interface Dashboard {
   buckets_by_client: CostBucketGroup[] | null;
   /** 上一个等长区间的汇总。**没有就是没有对比，不是零** */
   prev: Summary | null;
+  /**
+   * 整段时间的首 token 分位，不分模型（core 拿整段的样本求的：各模型、各格的分位合不出
+   * 整体的）。取不到是 `null`；没有样本是 `samples` 为 0
+   */
+  ttft: Percentiles | null;
+  /** 上一个等长区间的，首 token 卡片的环比用 */
+  prev_ttft: Percentiles | null;
   /** 上面几样的时间窗起点，补空桶要用 */
   since_ms: number;
+}
+
+/** 一段时间里第一个 token 到的时刻的分位，毫秒（Rust 侧 `dashboard::Percentiles`） */
+export interface Percentiles {
+  /** 没有样本时是 `null` */
+  p50_ms: number | null;
+  p95_ms: number | null;
+  samples: number;
 }
 
 /**

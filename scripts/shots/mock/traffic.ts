@@ -638,6 +638,14 @@ function latency(rows: HistoryRow[], key: (h: HistoryRow) => string): LatencyVie
     });
 }
 
+/** 一批请求的首 token 分位（dashboard.rs 的 `Percentiles`）。分位同 `latency`，没有样本是 null */
+export function ttftOf(rows: HistoryRow[]): { p50_ms: number | null; p95_ms: number | null; samples: number } {
+  const xs = rows.filter((h) => !h.local && h.ttft_ms != null).map((h) => h.ttft_ms!);
+  xs.sort((a, b) => a - b);
+  const pct = (p: number) => xs[Math.min(xs.length - 1, Math.max(0, Math.ceil((p * xs.length) / 100) - 1))] ?? null;
+  return { p50_ms: pct(50), p95_ms: pct(95), samples: xs.length };
+}
+
 /** 生成速度，照 tw-gateway 的 `ending::rate`：生成不到半秒的没有 */
 function rate(output: number, genMs: number): number | null {
   return output > 0 && genMs >= 500 ? Math.floor((output * 1000) / genMs) : null;
@@ -728,6 +736,13 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     g.received_bytes += h.received_bytes ?? 0;
     byModel.set(k, g);
   }
+  // 每一格的首 token 分位（tw-store 的 `cost_buckets`）：样本是那一格里有第一个 token 的请求
+  for (const b of buckets.values()) {
+    const x = ttftOf(rows.filter((h) => h.at_ms >= b.at_ms && h.at_ms < b.at_ms + bucketMs));
+    b.ttft_p50_ms = x.p50_ms;
+    b.ttft_p95_ms = x.p95_ms;
+    b.ttft_samples = x.samples;
+  }
   const span = NOW - sinceMs;
   // 延迟和汇总是同一个时间窗（dashboard.rs）
   const window = rowsBetween(sinceMs);
@@ -736,6 +751,7 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     prev: summary(sinceMs - span, sinceMs),
     latency: latency(window, (h) => h.model),
     latency_by_provider: latency(window, (h) => h.provider),
+    latency_by_client: latency(window, (h) => h.client),
     token_rate: tokenRate(window, (h) => h.model),
     token_rate_by_provider: tokenRate(window, (h) => h.provider),
     storage: { recording: true, rows: HISTORY.length, blob_bytes: 412 * 1024 ** 2, forwarding_affected: false },
@@ -744,6 +760,9 @@ export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
     // 明细表的另两页：按上游、按密钥（dashboard.rs 同一个格宽问的 `/summary/buckets/by`）
     buckets_by_provider: costBucketsBy(sinceMs, bucketMs, (h) => h.provider),
     buckets_by_client: costBucketsBy(sinceMs, bucketMs, (h) => h.client),
+    // 整段时间的首 token 分位：dashboard.rs 问的是宽过整段的一格
+    ttft: ttftOf(window),
+    prev_ttft: ttftOf(rowsBetween(sinceMs - span, sinceMs)),
     since_ms: sinceMs,
   };
 }

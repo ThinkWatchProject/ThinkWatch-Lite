@@ -3,7 +3,6 @@ import type { CostBucket, CostBucketGroup, Dashboard, ProviderView, Summary } fr
 import {
   attention,
   breakdown,
-  busiest,
   cacheOf,
   delta,
   historySeries,
@@ -72,6 +71,28 @@ function group(at_ms: number, name: string, tokens: number, over: Partial<CostBu
   };
 }
 
+/** 一格什么都没有：core 回的一格里不会是这样（它不产出空桶），拿来在上面改几项 */
+function densifiedZero(at_ms: number): CostBucket {
+  return {
+    at_ms,
+    requests: 0,
+    failed: 0,
+    cost_micros_exact: 0,
+    cost_micros_estimated: 0,
+    unpriced_requests: 0,
+    no_usage_requests: 0,
+    sent_bytes: 0,
+    received_bytes: 0,
+    input_tokens: 0,
+    output_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    ttft_p50_ms: null,
+    ttft_p95_ms: null,
+    ttft_samples: 0,
+  };
+}
+
 /** 各格按模型加起来，和 core 的 `/summary/buckets` 对得上 */
 function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashboard> = {}): Dashboard {
   const buckets = new Map<number, CostBucket>();
@@ -112,6 +133,7 @@ function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashb
     summary: summary(),
     latency: [],
     latency_by_provider: [],
+    latency_by_client: [],
     token_rate: [],
     token_rate_by_provider: [],
     storage: null,
@@ -120,6 +142,8 @@ function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashb
     buckets_by_provider: [],
     buckets_by_client: [],
     prev: null,
+    ttft: { p50_ms: null, p95_ms: null, samples: 0 },
+    prev_ttft: null,
     since_ms: since,
     ...over,
   };
@@ -196,7 +220,7 @@ describe("历史档的小图", () => {
   const since = new Date(2026, 8, 24, 0, 0).getTime();
   const now = since + 3 * HOUR + 10 * 60_000;
 
-  it("空桶补成 0，每一格的 token 是各模型的合计", () => {
+  it("空桶补成 0，每一格的 token 是这一格四类 token 的合计", () => {
     const d = dashboard(since, [group(since + HOUR, "a", 100), group(since + HOUR, "b", 50, { output_tokens: 7 }), group(since + 3 * HOUR, "a", 9)]);
     const s = historySeries(d, now, HOUR);
     expect(s.grid.at).toEqual([0, 1, 2, 3].map((i) => since + i * HOUR));
@@ -206,12 +230,37 @@ describe("历史档的小图", () => {
 
   /** 取不到不是没有：画成一条贴底的线就是编了一段「没有用」 */
   it("哪一样取不到，那一样就是 null；格子照样排出来", () => {
-    const d = dashboard(since, [group(since, "a", 1)], { buckets: null, buckets_by_model: null });
+    const d = dashboard(since, [group(since, "a", 1)], { buckets: null });
     const s = historySeries(d, now, HOUR);
     expect(s.grid.at).toHaveLength(4);
     expect(s.tokens).toBeNull();
     expect(s.cost).toBeNull();
     expect(s.requests).toBeNull();
+    expect(s.p50).toBeNull();
+    expect(s.sent).toBeNull();
+  });
+
+  it("流量是每一格的上传、下载；空桶是 0", () => {
+    const d = dashboard(since, [
+      group(since, "a", 1, { sent_bytes: 7_000, received_bytes: 900 }),
+      group(since, "b", 1, { sent_bytes: 3_000, received_bytes: 100 }),
+      group(since + 2 * HOUR, "a", 1, { sent_bytes: 50, received_bytes: 5 }),
+    ]);
+    const s = historySeries(d, now, HOUR);
+    expect(s.sent).toEqual([10_000, 0, 50, 0]);
+    expect(s.received).toEqual([1_000, 0, 5, 0]);
+  });
+
+  /** 没有流式请求的那一小时没有首 token：是「没有」，不是 0 毫秒，图上用虚线跨过去 */
+  it("首 token 的分位：有样本的格子是 core 给的数，别的是 null", () => {
+    const d = dashboard(since, []);
+    d.buckets = [
+      { ...densifiedZero(since), requests: 3, ttft_p50_ms: 900, ttft_p95_ms: 2_100, ttft_samples: 3 },
+      { ...densifiedZero(since + 2 * HOUR), requests: 1 },
+    ];
+    const s = historySeries(d, now, HOUR);
+    expect(s.p50).toEqual([900, null, null, null]);
+    expect(s.p95).toEqual([2_100, null, null, null]);
   });
 
   it("费用是实测加估算", () => {
@@ -425,14 +474,3 @@ describe("需要处理的事", () => {
   });
 });
 
-describe("首 token 卡片现在写哪个模型", () => {
-  it("样本最多的那个", () => {
-    expect(
-      busiest([
-        { model: "a", p50: 900, p95: 2000, samples: 10 },
-        { model: "b", p50: 400, p95: 800, samples: 120 },
-      ])?.model,
-    ).toBe("b");
-    expect(busiest([])).toBeNull();
-  });
-});

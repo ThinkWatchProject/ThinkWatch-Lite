@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
-import { ms, size, tokens as tokenPair } from "@/format";
+import { ms, size, tokens as tokenPair, traffic } from "@/format";
 import { AnimatedNumber } from "@/ui/motion";
 import { Tip } from "@/ui/tip";
 import { KeyLabel } from "@/KeyLabel";
@@ -12,6 +12,7 @@ import { ActionBadge, byCodepoints, EventDetail, ruleName, whereOf } from "@/sec
 import { pluginName } from "@/plugins/defaults";
 import { pluginLabelsText } from "@/plugins/labels.i18n";
 import { cpuMs } from "@/plugins/model";
+import { egressLabel } from "@/upstreams/labels";
 import { OutcomeOf, PluginText } from "@/plugins/parts";
 import type { AttemptView, PluginRunView, RequestDetail } from "@/types";
 import { Elapsed } from "../cells";
@@ -20,7 +21,7 @@ import { requestDrawerText } from "./RequestDrawer.i18n";
 
 /**
  * 时间线：首 token、总耗时、生成速度、token、费用五个数，一条「等首 token / 生成」的
- * 比例条，下面是这一条的身份和经过（上游、密钥、路径、转换、防护、状态、字节）。
+ * 比例条，下面是这一条的身份和经过（上游、密钥、路径、转换、防护、状态、出口和流量）。
  *
  * **TTFT 放在最显眼的位置。**对 AI 来说它才是体感的一切 —— 一眼看出慢在排队、读输入
  * 还是慢在生成。比例条回答的是同一件事：灰的那段是在等，蓝的那段是在生成。首字节
@@ -201,7 +202,23 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
             )
           }
         />
-        <Row label={t.bytes} value={r.received_bytes?.toLocaleString() ?? "—"} />
+        {/* 网关和上游之间的流量和出口。本地应答的没有上游，一跳都没发出去的（被规则拒绝、
+            上游都满着）也没有；在跑的流量要等结局才有总数，出口在路由走完时就知道了 */}
+        {!r.local && (running || r.sent_bytes != null) && (
+          <>
+            <Row
+              label={t.egress}
+              value={
+                running && (r.routing?.attempts.length ?? 0) === 0 ? t.inProgress : egressLabel(r.egress ?? "direct")
+              }
+            />
+            <Row label={t.upload} value={r.sent_bytes != null ? <span className="tw-num">{traffic(r.sent_bytes)}</span> : t.inProgress} />
+            <Row
+              label={t.download}
+              value={r.received_bytes != null ? <span className="tw-num">{traffic(r.received_bytes)}</span> : t.inProgress}
+            />
+          </>
+        )}
       </Rows>
     </div>
   );

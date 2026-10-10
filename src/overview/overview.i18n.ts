@@ -98,8 +98,6 @@ export const overviewText = messages(
     reqTip: (n: number, failed: number) => `${n} 次${failed ? ` · 失败 ${failed}` : ""}`,
 
     // 首 token
-    /** core 给出整体分位之前：写明是哪个模型的 */
-    latencyOf: (model: string, p95: string) => `${model} · P95 ${p95}`,
     p95: (shown: string) => `P95 ${shown}`,
     latTip: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
     noSamples: "无样本",
@@ -108,7 +106,6 @@ export const overviewText = messages(
     upload: (shown: string) => `上传 ${shown}`,
     download: (shown: string) => `下载 ${shown}`,
     trafficTip: (up: string, down: string) => `↑ ${up} · ↓ ${down}`,
-    trafficNone: "暂无流量记录",
 
     // 明细表
     tableLabel: "明细",
@@ -221,7 +218,6 @@ export const overviewText = messages(
     showFailed: "View failed requests in Traffic",
     reqTip: (n: number, failed: number) => `${n === 1 ? "1 request" : `${n} requests`}${failed ? ` · ${failed} failed` : ""}`,
 
-    latencyOf: (model: string, p95: string) => `${model} · P95 ${p95}`,
     p95: (shown: string) => `P95 ${shown}`,
     latTip: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
     noSamples: "No samples",
@@ -229,7 +225,6 @@ export const overviewText = messages(
     upload: (shown: string) => `Up ${shown}`,
     download: (shown: string) => `Down ${shown}`,
     trafficTip: (up: string, down: string) => `↑ ${up} · ↓ ${down}`,
-    trafficNone: "No traffic recorded yet",
 
     tableLabel: "Breakdown",
     tabModels: "Models",

@@ -41,10 +41,12 @@ export function Breakdown({ d, range }: { d: Dashboard; range: Range }) {
   const rows = groups ? breakdown(groups) : [];
   const shown = all ? rows : rows.slice(0, ROWS);
   const latency = new Map<string, LatencyView>(
-    (dim === "model" ? d.latency : dim === "provider" ? d.latency_by_provider : null)?.map((l) => [l.model, l]) ?? [],
+    (dim === "model" ? d.latency : dim === "provider" ? d.latency_by_provider : d.latency_by_client)?.map((l) => [
+      l.model,
+      l,
+    ]) ?? [],
   );
-  // TODO(C1)：按密钥的首 token 要 core 的 `LatencyByClient`（dashboard 命令里加一问）；按密钥的
-  // 生成速度 core 还没有端点（不在 C1 里）。在那之前密钥那一页这两列写「—」
+  // 按密钥的生成速度 core 没有端点：密钥那一页这一列写「—」
   const speed = new Map<string, TokenRateView>(
     (dim === "model" ? d.token_rate : dim === "provider" ? d.token_rate_by_provider : null)?.map((r) => [r.model, r]) ?? [],
   );

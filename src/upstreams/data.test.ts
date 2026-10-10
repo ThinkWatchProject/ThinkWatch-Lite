@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { CostBucketGroup, OAuthView, ProviderView } from "@/types";
 import type { UpstreamStats } from "./api";
-import { HOUR, SLOTS, dayStart, quotaAccounts, slotsByUpstream, statsPartial } from "./data";
+import { HOUR, SLOTS, dayStart, egressOf, egressSince, quotaAccounts, slotsByUpstream, statsPartial } from "./data";
 
 function bucket(name: string, at: number, requests: number, failed = 0): CostBucketGroup {
   return {
@@ -68,7 +68,7 @@ describe("slotsByUpstream", () => {
 });
 
 describe("statsPartial", () => {
-  const full: UpstreamStats = { costs: [], latency: [], token_rate: [], quotas: [], buckets: [] };
+  const full: UpstreamStats = { costs: [], latency: [], token_rate: [], quotas: [], buckets: [], egress: [[], [], []] };
 
   it("says nothing before the stats arrive, or when every part was read", () => {
     expect(statsPartial(undefined)).toBe(false);
@@ -108,5 +108,35 @@ describe("quotaAccounts", () => {
       account("ok", {}, { needs_login: false }),
     ];
     expect(quotaAccounts(list)).toEqual(["ok"]);
+  });
+});
+
+describe("egressSince", () => {
+  /** 和概览同名区间的起点一样：两页上的「7 天」是同一段时间 */
+  it("starts 24 hours, 7 days and 30 days back, on the overview's bucket edges", () => {
+    const now = new Date(2026, 8, 25, 16, 42, 7).getTime();
+    expect(egressSince(now)).toEqual([
+      new Date(2026, 8, 24, 16).getTime(),
+      new Date(2026, 8, 18, 12).getTime(),
+      new Date(2026, 7, 26).getTime(),
+    ]);
+  });
+});
+
+describe("egressOf", () => {
+  const g = (name: string, sent: number, received: number): CostBucketGroup => ({
+    ...bucket(name, 0, 1),
+    sent_bytes: sent,
+    received_bytes: received,
+  });
+
+  it("sums what went through that proxy", () => {
+    expect(egressOf([g("clash", 1_000, 200), g("", 50, 5), g("clash", 10, 1)], "clash")).toEqual({ sent: 1_010, received: 201 });
+  });
+
+  /** 没有经过它的流量是两个 0；读取失败是 null —— 一个写「—」，一个写「取不到」 */
+  it("tells nothing through it apart from could not read", () => {
+    expect(egressOf([g("", 50, 5)], "office")).toEqual({ sent: 0, received: 0 });
+    expect(egressOf(null, "office")).toBeNull();
   });
 });

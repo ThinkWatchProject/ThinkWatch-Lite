@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { call } from "@/control";
 import { useText } from "@/i18n";
-import { ms } from "@/format";
+import { ms, traffic } from "@/format";
 import { useResource } from "@/lib/resource";
 import { Button } from "@/ui/button";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
@@ -161,7 +161,8 @@ export function Replay({ id, originalProvider }: { id: number; originalProvider:
               <Cmp label={t.status} a={result.original.status} b={result.status} format={String} />
               <Cmp label={t.ttfb} a={result.original.ttfb_ms} b={result.ttfb_ms} format={ms} />
               <Cmp label={t.duration} a={result.original.duration_ms} b={result.duration_ms} format={ms} />
-              <Cmp label={t.bytes} a={result.original.received_bytes} b={result.bytes} />
+              {/* 从上游收到的响应体（解压之前）。原来那次是每一跳加起来，重放只有一跳 */}
+              <Cmp label={t.download} a={result.original.received_bytes} b={result.bytes} format={traffic} />
             </TableBody>
           </Table>
           <BodyText
@@ -175,7 +176,7 @@ export function Replay({ id, originalProvider }: { id: number; originalProvider:
   );
 }
 
-/** 对比表的一行。耗时按 `ms` 写，和流量表、时间线一样；字节、状态码照原数 */
+/** 对比表的一行。耗时按 `ms` 写、字节按 `traffic` 写，和流量表、时间线一样；状态码照原数 */
 function Cmp({
   label,
   a,

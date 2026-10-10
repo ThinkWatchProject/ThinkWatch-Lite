@@ -474,6 +474,8 @@ export default function UpstreamsPage({
               proxies={proxies}
               providers={ov.providers}
               checks={checks}
+              // 读取失败（没有数据可画）时三份都算取不到，不一直转着
+              egress={stats.data?.egress ?? (stats.error !== undefined ? [null, null, null] : undefined)}
               onEdit={(name) => setDialog({ kind: "proxy", mode: { kind: "edit", name } })}
               onTest={(name) => void testProxy(name)}
               onRemove={(name) => setDialog({ kind: "delete-proxy", name })}

@@ -1,5 +1,5 @@
 import { densify, monthDay } from "@/format";
-import { usd, type CostBucketGroup, type Dashboard, type LatencyView, type ProviderView, type Summary } from "@/types";
+import { usd, type CostBucketGroup, type Dashboard, type ProviderView, type Summary } from "@/types";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, type LiveEnd, type LiveSample } from "./useLive";
 import type { overviewText } from "./overview.i18n";
 
@@ -84,8 +84,8 @@ export function slotTitle(g: Grid, i: number, now: number, nowLabel: string): st
 export interface Series {
   grid: Grid;
   /**
-   * 每一格四类 token 的合计。实时档是速率（token/秒）。按模型分的那份取不到时是
-   * `null`：**取不到不是零**，画成一条贴底的线就是编了一段「没有用」
+   * 每一格四类 token 的合计。实时档是速率（token/秒）。取不到时是 `null`：**取不到不是
+   * 零**，画成一条贴底的线就是编了一段「没有用」
    */
   tokens: number[] | null;
   /** 每一格的费用，微分。实时档是每小时的速率。取不到是 `null` */
@@ -93,6 +93,22 @@ export interface Series {
   /** 每一格的请求数和其中失败的。取不到是 `null` */
   requests: number[] | null;
   failed: number[] | null;
+}
+
+/**
+ * 历史档多出的几样：首 token、流量两张卡片的线。**只有历史档有** —— 实时档的十分钟里撑不起
+ * 有意义的分位，这两张卡片在实时档也按 24 小时画。
+ */
+export interface HistorySeries extends Series {
+  /**
+   * 每一格第一个 token 到的时刻的 P50 / P95，毫秒。**没有样本的格子是 `null`**（那一小时
+   * 没有流式请求）：不是 0 毫秒，图上那一段用虚线跨过去。取不到是 `null`
+   */
+  p50: (number | null)[] | null;
+  p95: (number | null)[] | null;
+  /** 每一格发给上游、从上游收到的字节。取不到是 `null` */
+  sent: number[] | null;
+  received: number[] | null;
 }
 
 /** 一格里四类 token 的合计 */
@@ -108,26 +124,24 @@ function tokensOf(b: {
 /**
  * 历史档：后端给的桶，补过空桶（`densify`）。**空桶是实打实的 0**：一天里没用的那几个
  * 小时，线贴着底走，柱子空着 —— 跳过的话，两边的数据会把空档挤没，看起来就是一直在用。
+ * 首 token 例外：空桶**没有样本**，是 `null`，不是 0 毫秒。
  *
- * 每一格的 token 是这一格各模型的合计（`buckets_by_model`），费用和请求数是整格的
- * （`buckets`）。
+ * 每一样都是整格的（`buckets`）。取不到桶时每一样都是 `null`。
  */
-export function historySeries(d: Dashboard, now: number, bucketMs: number): Series {
+export function historySeries(d: Dashboard, now: number, bucketMs: number): HistorySeries {
   const cells = densify(d.buckets ?? [], d.since_ms, now, bucketMs);
   const grid: Grid = { at: cells.map((c) => c.at_ms), step: bucketMs, kind: "bucket" };
-  let tokens: number[] | null = null;
-  if (d.buckets_by_model !== null) {
-    const by = new Map<number, number>();
-    for (const g of d.buckets_by_model) by.set(g.at_ms, (by.get(g.at_ms) ?? 0) + tokensOf(g));
-    tokens = grid.at.map((at) => by.get(at) ?? 0);
-  }
-  const have = d.buckets !== null;
+  const of = <T>(f: (c: (typeof cells)[number]) => T): T[] | null => (d.buckets !== null ? cells.map(f) : null);
   return {
     grid,
-    tokens,
-    cost: have ? cells.map((c) => c.cost_micros_exact + c.cost_micros_estimated) : null,
-    requests: have ? cells.map((c) => c.requests) : null,
-    failed: have ? cells.map((c) => c.failed) : null,
+    tokens: of(tokensOf),
+    cost: of((c) => c.cost_micros_exact + c.cost_micros_estimated),
+    requests: of((c) => c.requests),
+    failed: of((c) => c.failed),
+    p50: of((c) => c.ttft_p50_ms ?? null),
+    p95: of((c) => c.ttft_p95_ms ?? null),
+    sent: of((c) => c.sent_bytes),
+    received: of((c) => c.received_bytes),
   };
 }
 
@@ -352,19 +366,6 @@ export function breakdown(groups: readonly CostBucketGroup[]): BreakdownRow[] {
   return [...by.values()].sort(
     (a, b) => b.requests - a.requests || b.tokens - a.tokens || a.name.localeCompare(b.name),
   );
-}
-
-/**
- * 首 token 那张卡片现在的数：**样本最多的那个模型**的分位。
- *
- * core 还没有给出整段时间的 P50（TODO(C1)）。各模型的 P50 不能平均成一个整体的
- * P50 —— 中位数不能这么合 —— 所以在那之前，卡片写的是一个模型自己的分位，并且写明
- * 是哪个模型：一个说清了口径的真数，好过一个算不对的「整体」。
- */
-export function busiest(rows: readonly LatencyView[]): LatencyView | null {
-  let best: LatencyView | null = null;
-  for (const r of rows) if (!best || r.samples > best.samples || (r.samples === best.samples && r.model < best.model)) best = r;
-  return best;
 }
 
 // ───────────────────────────────────────────── 需要处理的事

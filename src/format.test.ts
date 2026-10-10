@@ -17,6 +17,7 @@ import {
   span,
   statusTone,
   tokens,
+  traffic,
   when,
   whenMinute,
 } from "./format";
@@ -399,5 +400,22 @@ describe("字节数", () => {
 
   it("进位之后满 1024 KB 的写成 MB", () => {
     expect(size(1024 * 1024 - 1)).toBe("1 MB");
+  });
+});
+
+describe("流量", () => {
+  it("不到 100 的留一位小数，100 以上取整，整数不带 .0", () => {
+    expect(traffic(0)).toBe("0 B");
+    expect(traffic(1023)).toBe("1023 B");
+    expect(traffic(1024)).toBe("1 KB");
+    expect(traffic(12_083)).toBe("11.8 KB");
+    expect(traffic(729_088)).toBe("712 KB");
+    expect(traffic(65_431_142)).toBe("62.4 MB");
+    expect(traffic(3 * 1024 ** 3)).toBe("3 GB");
+  });
+
+  it("进位之后满 1024 的写成下一级", () => {
+    expect(traffic(1024 * 1024 - 1)).toBe("1 MB");
+    expect(traffic(1024 ** 3 - 1)).toBe("1 GB");
   });
 });

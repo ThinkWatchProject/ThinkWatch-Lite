@@ -6,12 +6,11 @@ import { Tip } from "@/ui/tip";
 import type { Range } from "@/ui/range";
 import { rangeText } from "@/ui/range.i18n";
 import { useNav } from "@/nav";
-import { compact, monthDay, msShort } from "@/format";
-import { usd, type Dashboard, type LatencyView } from "@/types";
+import { compact, monthDay, msShort, traffic } from "@/format";
+import { usd, type Dashboard, type Percentiles } from "@/types";
 import { useText } from "@/i18n";
 import { LIVE_REACH_MS, useLiveWindow } from "./useLive";
 import {
-  busiest,
   cacheOf,
   delta,
   historySeries,
@@ -131,6 +130,8 @@ export function CardGrid({
   // ── 缓存：实时档也按 24 小时
   const cache = cacheOf(s);
   const prevCache = p ? cacheOf(p) : null;
+  // ── 首 token、流量：实时档也按 24 小时（`hist`）
+  const ttftNow = d.ttft?.p50_ms ?? null;
 
   const tok = sync("tokens", main.grid);
   const money = sync("cost", main.grid);
@@ -273,20 +274,38 @@ export function CardGrid({
         </Card>
 
         <LatencyCard
-          byModel={d.latency}
-          // TODO(C1)：core 给出整段时间的 P50 / P95（`overall`）和每一格的分位（`CostBucket.ttft_p50_ms` /
-          // `ttft_p95_ms`，没有样本的格子是 null）之后接上：卡片换成整体的 P50、两条线，联动跟着
-          // `sync("latency", hist.grid)` 走，环比比上一个区间的整体 P50
-          overall={null}
-          series={null}
+          ttft={d.ttft}
+          series={hist.p50 && hist.p95 ? { p50: hist.p50, p95: hist.p95, sync: sync("latency", hist.grid) } : null}
+          pill={
+            ttftNow !== null &&
+            d.prev_ttft && (
+              <DeltaPill
+                // 上一个区间没有样本：没有可比的幅度（「—」）
+                d={delta(ttftNow, d.prev_ttft.p50_ms ?? 0)}
+                good="down"
+                period={period}
+                before={d.prev_ttft.p50_ms != null ? msShort(d.prev_ttft.p50_ms) : "—"}
+                now={msShort(ttftNow)}
+              />
+            )
+          }
           scopeTag={dayScope}
         />
 
         <TrafficCard
-          // TODO(C1)：core 给出 `Summary.sent_bytes` / `received_bytes`（和上一个区间的）、每一格的
-          // `CostBucket.sent_bytes` / `received_bytes` 之后接上：大数是上传加下载，两条线（上传蓝、
-          // 下载橙），联动跟着 `sync("traffic", hist.grid)` 走
-          traffic={null}
+          sent={s.sent_bytes}
+          received={s.received_bytes}
+          series={hist.sent && hist.received ? { sent: hist.sent, received: hist.received, sync: sync("traffic", hist.grid) } : null}
+          pill={
+            p && (
+              <DeltaPill
+                d={delta(s.sent_bytes + s.received_bytes, p.sent_bytes + p.received_bytes)}
+                period={period}
+                before={traffic(p.sent_bytes + p.received_bytes)}
+                now={traffic(s.sent_bytes + s.received_bytes)}
+              />
+            )
+          }
           scopeTag={dayScope}
         />
       </div>
@@ -535,47 +554,44 @@ function Unavailable() {
  * 首 token：第一个 token 到的时刻，P50 一条线、P95 一条线（只有流式请求有样本）。用分位
  * 不用平均值：AI 的延迟是长尾的，平均值会被几个极端值拉偏。
  *
- * **core 给出整段时间的分位和每一格的分位之前**（TODO(C1)），卡片写样本最多的那个模型的
- * P50，注解写明是哪个模型，图的位置列出样本最多的三个模型的 P50–P95 区间 —— 都是真数，
- * 只是口径写在了字上。
+ * 大数是**整段时间**的 P50（core 拿整段的样本求的；各格、各模型的分位合不出整体的），
+ * 注解兼作图例、写整段的 P95。没有样本的格子线断开，用虚线跨过去。
  */
 function LatencyCard({
-  byModel,
-  overall,
+  ttft,
   series,
   pill,
   scopeTag,
 }: {
-  byModel: LatencyView[] | null;
-  overall: { p50: number; p95: number } | null;
+  /** 整段时间的分位。取不到是 `null`，没有样本是 `samples` 为 0 */
+  ttft: Percentiles | null;
   series: { p50: (number | null)[]; p95: (number | null)[]; sync: Sync } | null;
   /** 环比（`DeltaPill`，`good="down"`）：比上一个区间的整体 P50 */
   pill?: ReactNode;
   scopeTag?: string;
 }) {
   const t = useText(overviewText);
-  const top = busiest(byModel ?? []);
-  const sub = overall ? (
-    <span className="inline-flex items-center gap-1">
-      <Swatch color="bg-data-1" />
-      P50 ·
-      <Swatch color="bg-data-2" className="ml-1" />
-      {t.p95(msShort(overall.p95))}
-    </span>
-  ) : top ? (
-    t.latencyOf(top.model, msShort(top.p95))
-  ) : byModel === null ? (
-    t.chartUnavailable
-  ) : (
-    t.noSamples
-  );
-  const shown = overall?.p50 ?? top?.p50;
+  const p50 = ttft?.p50_ms ?? null;
+  const p95 = ttft?.p95_ms ?? null;
+  const sub =
+    p50 !== null && p95 !== null ? (
+      <span className="inline-flex items-center gap-1">
+        <Swatch color="bg-data-1" />
+        P50 ·
+        <Swatch color="bg-data-2" className="ml-1" />
+        {t.p95(msShort(p95))}
+      </span>
+    ) : ttft === null ? (
+      t.chartUnavailable
+    ) : (
+      t.noSamples
+    );
   return (
     <Card
       label={t.kpiLatency}
       scopeTag={scopeTag}
       pill={pill}
-      value={shown === undefined ? "—" : msShort(shown)}
+      value={p50 === null ? "—" : msShort(p50)}
       sub={sub}
       hovered={series?.sync.tipOn}
       ends={series?.sync.ends}
@@ -595,78 +611,45 @@ function LatencyCard({
           })}
         />
       ) : (
-        <ModelSpreads rows={byModel ?? []} />
+        <Unavailable />
       )}
     </Card>
   );
 }
 
 /**
- * 首 token 卡片接上整体分位之前，图的位置：样本最多的三个模型，各一行 P50–P95 的区间。
- * 区间条左端那个点是 P50，条伸到 P95；三行按同一把尺子画，能横着比。
- */
-function ModelSpreads({ rows }: { rows: LatencyView[] }) {
-  const top = [...rows].sort((a, b) => b.samples - a.samples || a.model.localeCompare(b.model)).slice(0, 3);
-  const max = Math.max(1, ...top.map((r) => r.p95)) * 1.05;
-  return (
-    <div className="mt-3 flex flex-col justify-center gap-1.5" style={{ height: SPARK_H }}>
-      {top.map((r) => (
-        <div key={r.model} className="flex min-w-0 items-center gap-2 tw-label">
-          <span className="w-0 min-w-0 flex-1 truncate text-muted-foreground" title={r.model}>
-            {r.model}
-          </span>
-          <span aria-hidden className="relative h-1 w-16 shrink-0 rounded-full bg-foreground/[0.07]">
-            <span
-              className="absolute inset-y-0 rounded-full bg-data-1/35"
-              style={{ left: `${(r.p50 / max) * 100}%`, width: `${((r.p95 - r.p50) / max) * 100}%` }}
-            />
-            <span
-              className="absolute top-1/2 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-data-1"
-              style={{ left: `${(r.p50 / max) * 100}%` }}
-            />
-          </span>
-          <span className="w-11 shrink-0 text-right tw-num">{msShort(r.p50)}</span>
-        </div>
-      ))}
-    </div>
-  );
-}
-
-/**
- * 流量：网关和上游之间的请求体与回答体，上传一条线、下载一条线。
- *
- * **core 记下流量之前**（TODO(C1)）这张卡片是空的：大数写「—」，注解说还没有记录。
- * 不拿别的数去凑一个。
+ * 流量：网关和上游之间的请求体与回答体（线上的样子：网关压缩之后、解压之前），上传一条线、
+ * 下载一条线。故障转移试过的每一跳都算；本地应答的没有流量。
  */
 function TrafficCard({
-  traffic,
+  sent,
+  received,
+  series,
   pill,
   scopeTag,
 }: {
-  traffic: { sent: number; received: number; series: { sent: number[]; received: number[]; sync: Sync } | null } | null;
+  sent: number;
+  received: number;
+  series: { sent: number[]; received: number[]; sync: Sync } | null;
   /** 环比（`DeltaPill`）：比上一个区间的上传加下载 */
   pill?: ReactNode;
   scopeTag?: string;
 }) {
   const t = useText(overviewText);
-  const s = traffic?.series;
+  const s = series;
   return (
     <Card
       label={t.kpiTraffic}
       scopeTag={scopeTag}
       pill={pill}
-      value={traffic ? bytes(traffic.sent + traffic.received) : "—"}
+      value={traffic(sent + received)}
       sub={
-        traffic ? (
-          <span className="inline-flex items-center gap-1">
-            <Swatch color="bg-data-1" />
-            {t.upload(bytes(traffic.sent))} ·
-            <Swatch color="bg-data-2" className="ml-1" />
-            {t.download(bytes(traffic.received))}
-          </span>
-        ) : (
-          t.trafficNone
-        )
+        <span className="inline-flex items-center gap-1">
+          <Swatch color="bg-data-1" />
+          {t.upload(traffic(sent))} ·
+          <Swatch color="bg-data-2" className="ml-1" />
+          {t.download(traffic(received))}
+        </span>
       }
       hovered={s?.sync.tipOn}
       ends={s?.sync.ends}
@@ -679,10 +662,10 @@ function TrafficCard({
             { values: s.sent, color: "var(--data-1)", main: true, wash: true },
             { values: s.received, color: "var(--data-2)" },
           ]}
-          tip={tipAt(s.sync, (i) => t.trafficTip(bytes(s.sent[i] ?? 0), bytes(s.received[i] ?? 0)))}
+          tip={tipAt(s.sync, (i) => t.trafficTip(traffic(s.sent[i] ?? 0), traffic(s.received[i] ?? 0)))}
         />
       ) : (
-        <div aria-hidden className="mt-3 border-b border-dashed border-border" style={{ height: SPARK_H }} />
+        <Unavailable />
       )}
     </Card>
   );
@@ -691,12 +674,4 @@ function TrafficCard({
 /** 注解里的色块：两条线的卡片，注解那一行兼作图例 */
 function Swatch({ color, className }: { color: string; className?: string }) {
   return <span aria-hidden className={cn("inline-block size-2 shrink-0 rounded-[2px]", color, className)} />;
-}
-
-/** 字节数写成 KB、MB（按 1024 进位）。大数那一栏要短：一位小数 */
-function bytes(n: number): string {
-  if (n < 1024) return `${n} B`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(n < 10 * 1024 ? 1 : 0)} KB`;
-  if (n < 1024 ** 3) return `${(n / 1024 ** 2).toFixed(1)} MB`;
-  return `${(n / 1024 ** 3).toFixed(2)} GB`;
 }
