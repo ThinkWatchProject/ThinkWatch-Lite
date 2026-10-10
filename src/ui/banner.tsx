@@ -1,7 +1,10 @@
 import type { ReactNode } from "react";
 import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useText } from "@/i18n";
+import { Button } from "./button";
 import { Reveal } from "./motion";
+import { uiText } from "./ui.i18n";
 
 /**
  * 横幅的三种语气：
@@ -50,6 +53,9 @@ const ICON: Record<BannerTone, typeof InfoIcon> = {
  *
  * `show` 传了就带进出场动画（`Reveal`）；不传就是一直在。
  *
+ * `onIgnore`：右边多一个「忽略」。**黄色的（warning）都该给**：状态还在、功能也在，
+ * 看过的人有权不再看它；忽略之后什么时候再出现由调用方定（`@/ignore`）。
+ *
  *   <Banner show={!!rejected} tone="warning" title={t.rejectedTitle}
  *     actions={<Button size="sm" variant="outline">…</Button>}>
  *     {detail}
@@ -60,6 +66,7 @@ export function Banner({
   title,
   children,
   actions,
+  onIgnore,
   icon,
   layout = "strip",
   show,
@@ -72,6 +79,8 @@ export function Banner({
   children?: ReactNode;
   /** 右侧的按钮。`size="sm"`，一般是 `variant="outline"` 或 `ghost` */
   actions?: ReactNode;
+  /** 点「忽略」。见上 */
+  onIgnore?: () => void;
   /** 换掉默认图标；传 `null` 不要图标 */
   icon?: ReactNode | null;
   layout?: "strip" | "inline";
@@ -81,6 +90,7 @@ export function Banner({
   /** 默认 warning / error 是 `alert`，info 是 `status` */
   role?: string;
 }) {
+  const t = useText(uiText);
   const s = TONE[tone];
   const Icon = ICON[tone];
   const body = (
@@ -102,7 +112,16 @@ export function Banner({
         {title && <p className={cn("font-medium", s.title)}>{title}</p>}
         {children && <div className={cn(title && "mt-0.5", title ? s.body : s.title)}>{children}</div>}
       </div>
-      {actions && <div className="-my-0.5 flex shrink-0 items-center gap-1.5">{actions}</div>}
+      {(actions || onIgnore) && (
+        <div className="-my-0.5 flex shrink-0 items-center gap-1.5">
+          {actions}
+          {onIgnore && (
+            <Button variant="ghost" size="sm" onClick={onIgnore}>
+              {t.ignore}
+            </Button>
+          )}
+        </div>
+      )}
     </div>
   );
   return show === undefined ? body : <Reveal show={show}>{body}</Reveal>;

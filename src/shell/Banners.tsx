@@ -8,6 +8,7 @@ import { FixList, repairText } from "@/repair";
 import { stageLabel } from "@/labels";
 import type { Trouble } from "@/launch/trouble";
 import type { CoreEvent, ConfigFix } from "@/types";
+import { useIgnored } from "@/ignore";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Reveal } from "@/ui/motion";
@@ -53,6 +54,19 @@ export function Banners({
   const ct = useText(connText);
   const rt = useText(repairText);
   const common = useText(commonText);
+  /**
+   * 黄色的都能「忽略」。配置被拒的记在这台电脑上，按出错的位置和原因记：改了配置又被拒
+   * 在别处，是新情况，再出现。断线的两条只记这一次运行：下次启动还断着就该再说
+   */
+  const rejectedIg = useIgnored(
+    "shell:rejected",
+    rejected ? `${rejected.stage}:${rejected.line ?? ""}:${coreText(rejected.message)}` : "",
+    (seen, current) => seen === current,
+  );
+  const remoteIg = useIgnored("shell:remote-lost", remoteName ?? "", (seen, current) => seen === current, {
+    session: true,
+  });
+  const lostIg = useIgnored("shell:lost", lost?.what ?? "", (seen, current) => seen === current, { session: true });
   return (
     <>
       {/*
@@ -60,9 +74,10 @@ export function Banners({
         没提示。第一句先说「还在按旧配置转发」：那是最想知道的，会不会断。
       */}
       <Banner
-        show={rejected !== null && !broken}
+        show={rejected !== null && !broken && !rejectedIg.ignored}
         tone="warning"
         title={t.rejectedTitle}
+        onIgnore={rejectedIg.ignore}
         actions={
           repair.fixes.length > 0 && (
             <Button variant="outline" size="sm" pending={repair.repairing} onClick={repair.repair}>
@@ -137,9 +152,10 @@ export function Banners({
         连着远程时是另一条（内容置为只读），见 `remoteLost`。
       */}
       <Banner
-        show={remoteLost && remoteName !== null}
+        show={remoteLost && remoteName !== null && !remoteIg.ignored}
         tone="warning"
         role="status"
+        onIgnore={remoteIg.ignore}
         actions={
           <Button
             variant="outline"
@@ -155,9 +171,10 @@ export function Banners({
       </Banner>
 
       <Banner
-        show={lost !== null}
+        show={lost !== null && !lostIg.ignored}
         tone="warning"
         title={lost && t.staleData(lost.what)}
+        onIgnore={lostIg.ignore}
         actions={
           lost?.retry && (
             <Button variant="outline" size="sm" onClick={() => void invoke("restart_core").catch(onRestartFailed)}>

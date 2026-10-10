@@ -61,9 +61,9 @@ export const guideText = messages(
 
     // 设置
     hintsLabel: "引导提示",
-    hintsHint: "设为「不再显示」的提示将重新出现。",
+    hintsHint: "设为「不再显示」的提示和忽略过的提醒将重新出现。",
     hintsReset: "重新显示",
-    hintsResetDone: "引导提示将重新显示",
+    hintsResetDone: "提示将重新显示",
   },
   {
     hide: "Don’t show again",
@@ -110,7 +110,7 @@ export const guideText = messages(
       "Matches are only recorded. Once the log shows no false positives, switch to Replace, Cut off or Enforce.",
 
     hintsLabel: "Guidance",
-    hintsHint: "Hints set to “Don’t show again” reappear.",
+    hintsHint: "Hints set to “Don’t show again” and ignored warnings reappear.",
     hintsReset: "Show again",
     hintsResetDone: "Hints will show again",
   },

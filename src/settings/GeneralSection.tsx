@@ -7,6 +7,7 @@ import { Button } from "@/ui/button";
 import { notify } from "@/ui/notify";
 import { guideText } from "@/guide/guide.i18n";
 import { resetHints, useAnyDismissed } from "@/guide/hints";
+import { resetIgnored, useAnyIgnored } from "@/ignore";
 import { useResource } from "@/lib/resource";
 import { useTauriEvent } from "@/lib/tauriEvent";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
@@ -264,6 +265,7 @@ function NoticesRow() {
 function GuideRow() {
   const t = useText(guideText);
   const any = useAnyDismissed();
+  const anyIgnored = useAnyIgnored();
   return (
     <SettingsRow
       anchor="guide"
@@ -273,9 +275,10 @@ function GuideRow() {
         <Button
           size="sm"
           variant="outline"
-          disabled={!any}
+          disabled={!any && !anyIgnored}
           onClick={() => {
             resetHints();
+            resetIgnored();
             notify.success(t.hintsResetDone);
           }}
         >
