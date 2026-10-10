@@ -189,7 +189,7 @@ export const requestDrawerText = messages(
     quote: (upstream: ReactNode, bytes: number, tokens: number) => (
       <>将向 {upstream} 发送 {bytes} 字节，约 {tokens} 个输入 token。</>
     ),
-    willRedact: "发送前将按出站脱敏的规则替换凭据，回显内容将自动还原。",
+    willRedact: "发送前将按出站脱敏的规则替换凭据。",
     pricingDate: (date: string) => `价目表日期 ${date}。`,
     confirmSend: "确认发送",
     originalColumn: (upstream: string) => `${upstream}（原请求）`,
@@ -354,8 +354,7 @@ export const requestDrawerText = messages(
         {count(tokens, "input token", "input tokens")}.
       </>
     ),
-    willRedact:
-      "Credentials are replaced by the outbound redaction rules before sending; echoed content is restored automatically.",
+    willRedact: "Credentials are replaced by the outbound redaction rules before sending.",
     pricingDate: (date: string) => `Price sheet data as of ${date}.`,
     confirmSend: "Confirm and send",
     originalColumn: (upstream: string) => `${upstream} (original)`,

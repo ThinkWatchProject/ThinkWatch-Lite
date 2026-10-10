@@ -41,7 +41,6 @@ export const chatgptAccountText = messages(
     loginInvalid: "登录已失效",
     signedIn: "已登录",
     needsLogin: "需要重新登录才能继续使用这个上游。",
-    credentialExpires: (when: string) => `凭据 ${when}过期，到期前自动续期`,
     relogin: "重新登录",
   },
   {
@@ -84,7 +83,6 @@ export const chatgptAccountText = messages(
     loginInvalid: "Sign-in no longer valid",
     signedIn: "Signed in",
     needsLogin: "Signing in again is required to keep using this upstream.",
-    credentialExpires: (when: string) => `Credential expires ${when} and renews automatically before then`,
     relogin: "Sign in again",
   },
 );

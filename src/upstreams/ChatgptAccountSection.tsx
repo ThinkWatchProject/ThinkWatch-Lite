@@ -18,7 +18,7 @@ import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { notify } from "@/ui/notify";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusLabel } from "@/ui/status-dot";
-import { resetAt, resetIn } from "@/format";
+import { resetAt } from "@/format";
 import { useNow } from "@/useNow";
 import type { ChatgptUsage, Overview, ProviderView, ResetCredits, ResetCreditView } from "@/types";
 import { useText } from "@/i18n";
@@ -270,8 +270,6 @@ function LoginBox({ editing, onRelogin }: { editing: ProviderView; onRelogin: ()
   const oauth = editing.oauth;
   const who = [oauth?.account?.email, planLabel(oauth?.account?.plan)].filter(Boolean).join(" · ");
   const broken = oauth?.needs_login === true;
-  const expires = oauth?.expires_at ? Date.parse(oauth.expires_at) : NaN;
-  const left = Number.isNaN(expires) ? null : resetIn((expires - Date.now()) / 1000);
   return (
     <div className="rounded-md border border-border px-3 py-2.5">
       <div className="flex items-start justify-between gap-4">
@@ -286,10 +284,9 @@ function LoginBox({ editing, onRelogin }: { editing: ProviderView; onRelogin: ()
               </StatusLabel>
             )}
           </div>
-          {broken ? (
+          {/* 凭据还在有效期里的事不说：到期前网关自己续，说了只是多一件要惦记的事 */}
+          {broken && (
             <p className="tw-label text-muted-foreground">{oauth?.failure ? coreText(oauth.failure) : t.needsLogin}</p>
-          ) : (
-            left && <p className="tw-label text-muted-foreground">{t.credentialExpires(left)}</p>
           )}
         </div>
         <Button variant="outline" size="sm" className="shrink-0" onClick={onRelogin}>

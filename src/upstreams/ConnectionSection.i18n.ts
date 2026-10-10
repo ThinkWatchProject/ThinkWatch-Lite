@@ -49,7 +49,7 @@ export const connectionSectionText = messages(
     clientId: "Client ID（可选）",
     clientSecret: "Client Secret（可选）",
     accessToken: "Access Token（检测用，可选）",
-    accessTokenDesc: "保存前检测连接需要现有的 Access Token；保存后网关使用 Refresh Token 自动换发。",
+    accessTokenDesc: "仅用于保存前检测连接。",
     failed: "连接失败",
     authenticated: "认证通过",
     responded: (ms: string) => `响应 ${ms}`,
@@ -103,8 +103,7 @@ export const connectionSectionText = messages(
     clientId: "Client ID (optional)",
     clientSecret: "Client secret (optional)",
     accessToken: "Access token (for checking, optional)",
-    accessTokenDesc:
-      "Checking the connection before saving needs a current access token. After saving, the gateway renews it with the refresh token.",
+    accessTokenDesc: "Only used to check the connection before saving.",
     failed: "Connection failed",
     authenticated: "Authenticated",
     responded: (ms: string) => `responded in ${ms}`,
