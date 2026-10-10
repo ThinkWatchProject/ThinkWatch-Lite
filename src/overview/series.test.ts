@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { CostBucket, CostBucketGroup, Dashboard, ProviderView, Summary } from "@/types";
 import {
   attention,
+  attentionCovered,
+  attentionMark,
   breakdown,
   cacheOf,
   delta,
@@ -465,6 +467,39 @@ describe("需要处理的事", () => {
       { kind: "upstreams", down: [{ name: "b", why: "open" }] },
       { kind: "unpriced", n: 3 },
     ]);
+  });
+
+  describe("忽略之后什么时候再出现", () => {
+    const bucket = (at: number, over: Partial<CostBucket>) =>
+      ({ at_ms: at, requests: 1, failed: 0, unpriced_requests: 0, ...over }) as CostBucket;
+
+    it("失败：看最近一次落在哪一格、那格几条；旧的滚出区间不算新情况", () => {
+      const seen = attentionMark({ kind: "failed", n: 5, top: null }, [bucket(1, { failed: 3 }), bucket(2, { failed: 2 })]);
+      expect(seen).toEqual({ at: 2, n: 2 });
+      // 旧的那一格滚走了
+      expect(attentionCovered(seen, attentionMark({ kind: "failed", n: 2, top: null }, [bucket(2, { failed: 2 })]))).toBe(true);
+      // 同一格又多了一条
+      expect(attentionCovered(seen, attentionMark({ kind: "failed", n: 3, top: null }, [bucket(2, { failed: 3 })]))).toBe(false);
+      // 后面的格子又有了
+      expect(attentionCovered(seen, attentionMark({ kind: "failed", n: 3, top: null }, [bucket(2, { failed: 2 }), bucket(3, { failed: 1 })]))).toBe(false);
+    });
+
+    it("取不到格子时按总数：没变多就不出现", () => {
+      const seen = attentionMark({ kind: "failed", n: 5, top: null }, null);
+      expect(seen).toBe(5);
+      expect(attentionCovered(seen, 4)).toBe(true);
+      expect(attentionCovered(seen, 6)).toBe(false);
+      // 一次没取到格子、一次取到了：对不上，宁可再提醒一次
+      expect(attentionCovered(seen, { at: 1, n: 1 })).toBe(false);
+    });
+
+    it("上游：多一家、换了原因才是新情况，少一家不是", () => {
+      const seen = attentionMark({ kind: "upstreams", down: [{ name: "b", why: "open" }, { name: "a", why: "auth" }] }, null);
+      expect(seen).toEqual(["a:auth", "b:open"]);
+      expect(attentionCovered(seen, ["b:open"])).toBe(true);
+      expect(attentionCovered(seen, ["a:auth", "b:open", "c:login"])).toBe(false);
+      expect(attentionCovered(seen, ["b:login"])).toBe(false);
+    });
   });
 
   /** 日常的脱敏是防护在正常工作，不用处理；记录档里看见但没切断的工具调用也不算 */

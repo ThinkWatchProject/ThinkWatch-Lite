@@ -1,5 +1,6 @@
 import { densify, monthDay } from "@/format";
-import { usd, type CostBucketGroup, type Dashboard, type ProviderView, type Summary } from "@/types";
+import { noMore, noNew, type Mark } from "@/ignore";
+import { usd, type CostBucket, type CostBucketGroup, type Dashboard, type ProviderView, type Summary } from "@/types";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, type LiveEnd, type LiveSample } from "./useLive";
 import type { overviewText } from "./overview.i18n";
 
@@ -417,6 +418,58 @@ export function attention(d: Dashboard, providers: readonly ProviderView[] | und
   if (down.length > 0) out.push({ kind: "upstreams", down });
   if (s.unpriced_requests > 0) out.push({ kind: "unpriced", n: s.unpriced_requests });
   return out;
+}
+
+/**
+ * 一条「需要处理的事」此刻说的是什么（`@/ignore` 的印记），和记下的印记盖不盖得住它。
+ *
+ * · 失败、无法计价：**最近一次落在哪个格子、那格有几条**。拿总数做印记的话，旧的滚出
+ *   区间、数变少了也算「变了」，忽略过的又冒出来；拿最近的那一格，旧的滚走不动它，新来
+ *   一条才会往后挪或变多。取不到格子时退回总数。
+ * · 切断的工具调用：格子里没有它，只能拿总数。
+ * · 上游：哪几家、为什么。多一家、换了原因才算新情况；少一家不算。
+ */
+export function attentionMark(item: Attention, buckets: readonly CostBucket[] | null | undefined): Mark {
+  switch (item.kind) {
+    case "failed":
+      return latest(buckets, (b) => b.failed) ?? item.n;
+    case "unpriced":
+      return latest(buckets, (b) => b.unpriced_requests) ?? item.n;
+    case "toolCut":
+      return item.n;
+    case "upstreams":
+      return item.down.map((x) => `${x.name}:${x.why}`).sort();
+  }
+}
+
+export function attentionCovered(seen: Mark, current: Mark): boolean {
+  if (typeof seen === "number" && typeof current === "number") return noMore(seen, current);
+  if (Array.isArray(seen) && Array.isArray(current)) {
+    return noNew(seen.filter(isString), current.filter(isString));
+  }
+  if (isLatest(seen) && isLatest(current)) {
+    return current.at < seen.at || (current.at === seen.at && current.n <= seen.n);
+  }
+  // 两种印记对不上（一次取到格子、一次没有）：当作没盖住，宁可多提醒一次
+  return false;
+}
+
+const isString = (x: unknown): x is string => typeof x === "string";
+const isLatest = (x: Mark): x is { at: number; n: number } =>
+  x !== null && typeof x === "object" && !Array.isArray(x) && typeof x.at === "number" && typeof x.n === "number";
+
+/** 最后一个 `of` 不为零的格子：起点和那一格的数 */
+function latest(
+  buckets: readonly CostBucket[] | null | undefined,
+  of: (b: CostBucket) => number,
+): { at: number; n: number } | null {
+  if (!buckets) return null;
+  let hit: { at: number; n: number } | null = null;
+  for (const b of buckets) {
+    const n = of(b);
+    if (n > 0 && (!hit || b.at_ms > hit.at)) hit = { at: b.at_ms, n };
+  }
+  return hit;
 }
 
 /**

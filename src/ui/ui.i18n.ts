@@ -15,6 +15,7 @@ export const uiText = messages(
     undone: "已撤销",
     show: "显示",
     hide: "隐藏",
+    ignore: "忽略",
   },
   {
     loading: "Loading…",
@@ -24,5 +25,6 @@ export const uiText = messages(
     undone: "Undone",
     show: "Show",
     hide: "Hide",
+    ignore: "Ignore",
   },
 );

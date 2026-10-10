@@ -3,6 +3,7 @@ import { useEffect, useRef } from "react";
 import "@fontsource/geist/latin-600.css";
 import { cn } from "@/lib/utils";
 import { Page, PageHeader } from "@/ui/page";
+import { useIgnored } from "@/ignore";
 import { Banner } from "@/ui/banner";
 import { ErrorState } from "@/ui/states";
 import { RangePicker, useRange } from "@/ui/range";
@@ -96,6 +97,8 @@ function Body({
   const t = useText(overviewText);
   const { data: d, range, id } = shown;
   const recording = d.storage === null || d.storage.recording;
+  // 「请求记录未能启动」能忽略，只记这一次运行：下次启动还没起来就该再说
+  const recordingIg = useIgnored("overview:recording", true, () => true, { session: true });
   const fresh = neverUsed(d);
   return (
     <div
@@ -111,7 +114,13 @@ function Body({
       )}
     >
       {/* 存储状态。**正常时不显示** —— 没问题的时候不该占地方 */}
-      <Banner show={!recording} layout="inline" tone="warning" title={t.recordingUnavailable}>
+      <Banner
+        show={!recording && !recordingIg.ignored}
+        layout="inline"
+        tone="warning"
+        title={t.recordingUnavailable}
+        onIgnore={recordingIg.ignore}
+      >
         {d.storage && !d.storage.forwarding_affected && t.forwardingUnaffected}
       </Banner>
 
