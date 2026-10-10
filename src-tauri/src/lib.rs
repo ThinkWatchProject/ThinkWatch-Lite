@@ -40,6 +40,8 @@ pub mod error;
 pub mod gateway;
 pub mod import_link;
 pub mod keys;
+/// 一个在跑的请求的实时内容，搬给请求详情的「内容」页
+pub mod live;
 pub mod mcp;
 /// 量 webview 占多少的那个诊断工具。**只有 macOS 有**，它靠 `ps`。
 ///
@@ -207,6 +209,8 @@ pub fn run() {
             connection::picker_fit,
             gateway::restart_core,
             dashboard::dashboard,
+            live::live_subscribe,
+            live::live_unsubscribe,
             upstreams::upstream_stats,
             aliases::alias_hints,
             notices::commands::notices_list,
@@ -331,6 +335,7 @@ pub fn run() {
             let supervising = Arc::new(std::sync::atomic::AtomicBool::new(false));
 
             app.manage(Updates::default());
+            app.manage(live::LiveSubs::default());
             // 被更新换下来之后又被重新打开的：说一声换到了哪一版，窗口照更新之前的样子
             // （见下面的静默启动）
             let relaunch = updater::relaunched(
