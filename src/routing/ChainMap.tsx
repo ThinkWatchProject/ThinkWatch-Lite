@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useId,
   useLayoutEffect,
   useMemo,
   useRef,
@@ -34,7 +33,7 @@ import {
 } from "./chain";
 import { chainMapText } from "./ChainMap.i18n";
 import { activityOf, type Flight } from "./flights";
-import { FLOW_FADE_MS, FLOW_LAYERS, FLOW_MS, flowCycles, flowDelay, flowStrength } from "./flow";
+import { FLOW_FADE_MS, FLOW_LAYERS, FLOW_MS, flowColor, flowCycles, flowDelay, flowShift, flowStrength } from "./flow";
 import { strategyText, usersOf } from "./model";
 import { KeyIcon, TargetIcon, upstreamState } from "./parts";
 import { partsText } from "./parts.i18n";
@@ -77,7 +76,7 @@ export function useChainFocus() {
  * 去向的请求数画，越忙越粗（见 `trafficOf`）。别的线分不出数，照常画。
  *
  * 单色：线和节点都是前景色的深浅；颜色只留给状态（停用、熔断、拒绝），和在途请求的
- * 光点（品牌色的青 → 品红）。
+ * 光点 —— **每个请求一种颜色，从密钥到上游整条路同色**，几个请求同时在途也分得出各走各的。
  */
 export function ChainMap({
   ov,
@@ -128,8 +127,6 @@ export function ChainMap({
   const layout = useMemo(() => (width > 0 ? layoutChain(chain, width) : null), [chain, width]);
   const lit = useMemo(() => litBy(chain, focus ? focusId(focus) : null), [chain, focus]);
   const calm = prefersReducedMotion();
-  // 光点的渐变：一张图一份。`useId` 里的冒号之类在 `url(#…)` 里不认，只留字母数字
-  const flowId = `chain-flow-${useId().replace(/[^a-zA-Z0-9_-]/g, "")}`;
 
   const count = (layer: number) => chain.nodes.filter((n) => n.layer === layer && n.kind !== "via" && n.kind !== "deny").length;
   const caption: Record<number, string> = { 0: t.keys, 1: t.routes, 2: t.groups, 3: t.upstreams };
@@ -167,23 +164,6 @@ export function ChainMap({
               aria-hidden
             >
               {/*
-                光点的颜色：从密钥那一列的右边铺到上游那一列的左边，按画布坐标（不按每条线
-                自己的外框 —— 平着走的线外框没有高度，渐变就画不出来）
-              */}
-              <defs>
-                <linearGradient
-                  id={flowId}
-                  gradientUnits="userSpaceOnUse"
-                  x1={layout.cols[0]!.x + layout.cols[0]!.w}
-                  y1={0}
-                  x2={layout.cols[layout.cols.length - 1]!.x}
-                  y2={0}
-                >
-                  <stop offset={0} style={{ stopColor: "var(--brand-from)" }} />
-                  <stop offset={1} style={{ stopColor: "var(--brand-to)" }} />
-                </linearGradient>
-              </defs>
-              {/*
                 平头：线的两头都藏在节点底下，圆头只会在穿过策略组那一列的接缝处叠出一个深点
                 （线是半透明的，粗了更显眼）。光点自己是圆头
               */}
@@ -220,10 +200,9 @@ export function ChainMap({
                     key={e.edge.id}
                     e={e}
                     w={strokeOf(e.edge.id)}
-                    n={activity?.edges.get(e.edge.id) ?? 0}
+                    ids={activity?.edges.get(e.edge.id) ?? NO_IDS}
                     dim={lit !== null && !lit.edges.has(e.edge.id)}
                     calm={calm}
-                    paint={`url(#${flowId})`}
                   />
                 ))}
               </g>
@@ -332,34 +311,37 @@ function LitEdge({ e, w, on, calm }: { e: PlacedEdge; w: number; on: boolean; ca
   );
 }
 
+const NO_IDS: readonly number[] = [];
+
 /**
- * 在途请求流过的那段：品牌色的光点顺着请求走的方向往前流（怎么排见 `flow.ts`），同一段
- * 线上的请求越多越亮一点。悬停别处时和底下那几层一起淡下去。
+ * 在途请求流过的那段：每个请求自己颜色的光点顺着它走的方向往前流（怎么排见 `flow.ts`），
+ * 同一段线上的请求越多越亮一点。悬停别处时和底下那几层一起淡下去。
  *
  * **不在途时什么都不画**：这段线熄了，光点先淡出（`FLOW_FADE_MS`）再卸掉，动画随之停下。
  * 外面那层 `<g>` 一直在，淡入淡出靠它的不透明度过渡 —— 刚挂上的元素没有「之前的值」，
  * 过渡不会起。
  *
- * 系统里关掉了动效：不流，整段描一道同色的渐变，熄了直接拿掉。
+ * 系统里关掉了动效：不流，整段按每个请求的颜色描一道，熄了直接拿掉。
  */
 function FlowEdge({
   e,
   w,
-  n,
+  ids,
   dim,
   calm,
-  paint,
 }: {
   e: PlacedEdge;
   w: number;
-  /** 这段线上在途的请求数，0 = 不在途 */
-  n: number;
+  /** 这段线上在途的请求，空 = 不在途 */
+  ids: readonly number[];
   dim: boolean;
   calm: boolean;
-  /** 光点的颜色（渐变的 `url(#…)`） */
-  paint: string;
 }) {
+  const n = ids.length;
   const on = n > 0;
+  // 熄了之后淡出的那一会儿还画着刚才那几个请求的光点
+  const last = useRef(ids);
+  if (on) last.current = ids;
   // 熄了之后还要再画一会儿：淡出的这段时间里光点照常流
   const [shown, setShown] = useState(on);
   useEffect(() => {
@@ -386,11 +368,13 @@ function FlowEdge({
   return (
     <g data-flow={on ? e.edge.id : undefined} style={style}>
       {draw &&
-        (calm ? (
-          <path d={e.d} stroke={paint} strokeWidth={over(w)} strokeOpacity={0.7} />
-        ) : (
-          <FlowPulses d={e.d} cycles={flowCycles(e.length)} w={over(w)} paint={paint} />
-        ))}
+        last.current.map((id) =>
+          calm ? (
+            <path key={id} d={e.d} stroke={flowColor(id)} strokeWidth={over(w)} strokeOpacity={0.7 / Math.sqrt(n || 1)} />
+          ) : (
+            <FlowPulses key={id} d={e.d} cycles={flowCycles(e.length)} w={over(w)} paint={flowColor(id)} shift={flowShift(id)} />
+          ),
+        )}
     </g>
   );
 }
@@ -399,7 +383,21 @@ function FlowEdge({
  * 一段线上往前流的光点（几层叠成一个，见 `FLOW_LAYERS`）。挂上的那一刻按页面时钟对好
  * 相位（`flowDelay`），之后整段线重画也不改，动画不会从头来。
  */
-function FlowPulses({ d, cycles, w, paint }: { d: string; cycles: number; w: number; paint: string }) {
+function FlowPulses({
+  d,
+  cycles,
+  w,
+  paint,
+  shift,
+}: {
+  d: string;
+  cycles: number;
+  w: number;
+  /** 这个请求的颜色 */
+  paint: string;
+  /** 这个请求的错开量（`flowShift`） */
+  shift: number;
+}) {
   const [now] = useState(() => (typeof performance === "undefined" ? 0 : performance.now()));
   return FLOW_LAYERS.map((l) => (
     <path
@@ -412,7 +410,7 @@ function FlowPulses({ d, cycles, w, paint }: { d: string; cycles: number; w: num
       strokeLinecap="round"
       strokeDasharray={`${l.dash} ${1 - l.dash}`}
       className="motion-flow"
-      style={{ animationDuration: `${FLOW_MS}ms`, animationDelay: `${flowDelay(now, l.dash)}ms` }}
+      style={{ animationDuration: `${FLOW_MS}ms`, animationDelay: `${flowDelay(now, l.dash, shift)}ms` }}
     />
   ));
 }

@@ -10,6 +10,9 @@
  * · 一个光点是叠在一起的几层（`FLOW_LAYERS`）：长而淡的尾巴、一圈柔光、短而亮的头，
  *   头都对齐在前面。
  * · 同一段线上在途的请求越多越亮一点（`flowStrength`），封顶。
+ * · **每个请求一种颜色，整条路同色**（`flowColor`）：密钥到路由、路由到上游是同一个请求
+ *   的光点，看得出它是一条路。同一段线上几个请求的光点错开着走（`flowShift`），不叠在
+ *   一起；错开量跟着请求走，一段一段照样接得上。
  */
 
 /** 光点之间大约隔这么远（像素） */
@@ -18,6 +21,19 @@ export const FLOW_PERIOD_PX = 84;
 export const FLOW_MS = 1300;
 /** 这段线不在途了之后，光点淡出要这么久（之后才卸掉，动画随之停下） */
 export const FLOW_FADE_MS = 600;
+
+/** 有几种颜色（index.css 的 `--flow-1…`，浅色、深色各一套）。先后到的请求轮着取，相邻的不同色 */
+export const FLOW_COLORS = 5;
+
+/** 请求 `id` 的光点是哪种颜色 */
+export function flowColor(id: number): string {
+  return `var(--flow-${(Math.abs(id) % FLOW_COLORS) + 1})`;
+}
+
+/** 请求 `id` 的光点比基准相位错开多少（一个间距的几分之几）。同色的请求错开量也一样 */
+export function flowShift(id: number): number {
+  return (Math.abs(id) % FLOW_COLORS) / FLOW_COLORS;
+}
 
 /** 长 `length` 像素的线上排几个间距：取最接近的整数，至少一个 */
 export function flowCycles(length: number): number {
@@ -34,10 +50,10 @@ export function flowStrength(n: number): number {
  * 一层光点的动画该从哪儿开始（`animation-delay`，毫秒，≤ 0）：此刻 `now`（页面时钟，
  * `performance.now()`，和动画的时间线是同一个起点）对到同一个相位上，后挂上的线和
  * 先挂上的接得上。`dash` 是这一层的长短（单位）：长的那层往后错开同样多，每层的**前头**
- * 落在同一处。
+ * 落在同一处。`shift`：这个请求的错开量（`flowShift`），它每一段都传同一个。
  */
-export function flowDelay(now: number, dash: number): number {
-  const phase = (((now - dash * FLOW_MS) % FLOW_MS) + FLOW_MS) % FLOW_MS;
+export function flowDelay(now: number, dash: number, shift = 0): number {
+  const phase = (((now - (dash + shift) * FLOW_MS) % FLOW_MS) + FLOW_MS) % FLOW_MS;
   return phase === 0 ? 0 : -phase;
 }
 
