@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Input } from "@/ui/input";
+import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -22,20 +23,28 @@ import type {
   SheetRef,
   ZaiFamily,
 } from "@/types";
-import { useAccountLogin, type AccountLogin } from "./accountLogin";
-import { AccountPanel } from "./AccountPanel";
+import { useAccountLogin, type AccountLogin, type LoginAccount } from "./accountLogin";
+import { AccountLine, AccountPanel, AccountSummary } from "./AccountPanel";
 import { api } from "./api";
 import { BillingSection } from "./BillingSection";
 import { ChatgptAccountSection } from "./ChatgptAccountSection";
-import { AuthField, ConnectionSection, ProxyField, SiteField, type ZaiAccount } from "./ConnectionSection";
-import { coreText, errorText, plain, protocolLabel, shortUrl } from "./labels";
+import {
+  AuthField,
+  CheckButton,
+  CheckSummary,
+  ConnectionSection,
+  ProxyField,
+  SiteField,
+  type ZaiAccount,
+} from "./ConnectionSection";
+import { coreText, errorText, planLabel, plain, protocolLabel, shortUrl } from "./labels";
 import { useManualEntry } from "./ManualModelInput";
 import { addToList, unionModels } from "./manualModels";
 import { ModelsSection, catalogOf, type ModelCatalog } from "./ModelsSection";
 import { DialogError, FormItem, ProviderTile, StepNav } from "./parts";
 import { CUSTOM, ZAI_ENDPOINTS, accountKind, presetById } from "./presets";
 import type { Relogin } from "./ReloginDialog";
-import { PresetTile, ServiceSection } from "./ServiceSection";
+import { PresetTile, ServiceSearch, ServiceSection } from "./ServiceSection";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
 import { upstreamDialogText } from "./UpstreamDialog.i18n";
@@ -88,11 +97,12 @@ export type UpstreamDialogMode =
   | { kind: "create"; draft?: BedrockDraft }
   | { kind: "edit"; name: string; section?: Section };
 
-/** 登录账号建出来的上游：登录时选的服务类型和站点（之后表单换成了那个上游的定义） */
+/** 登录账号建出来的上游：登录时选的服务类型和站点（之后表单换成了那个上游的定义）、登上的账号 */
 interface SignedIn {
   preset: string;
   family: ZaiFamily;
   provider: string;
+  account: LoginAccount | null;
 }
 
 /**
@@ -102,9 +112,17 @@ interface SignedIn {
  * 随意切换**，「保存」一次提交所有分节的改动 —— core 那边是一次写入、一个
  * 配置版本。取消不写入任何东西。
  *
+ * **一屏放下**：默认窗口（1100×720）里每一步都不出整页的滚动条，只有长列表（模型表、价格表）
+ * 在自己的框里滚。窗口再小时中间那一块可以滚。
+ *
+ * **新建时点「下一步」就检测连接**：按钮转圈，通过了进「模型」，结果写在那一步顶上；没通过就
+ * 留在这一步，底部一条红色横幅说原因，给「重试」和「仍然继续」—— 有的上游不接受检测却能用，
+ * 有的没有模型列表。编辑时没有「下一步」，「检测连接」照旧是一个按钮。
+ *
  * **登录账号（ChatGPT、Z.ai / BigModel）在第二步里完成**：登录成功时 core 已经把上游
- * 写进配置，之后的「模型」「计费」两步改的就是这个上游，走编辑那条路，最后一步「完成」
- * 只在有改动时写一次。登录之后回不到第一步：上游已经建好了。
+ * 写进配置，直接进「模型」，顶上写登的是哪个账号；之后的「模型」「计费」两步改的就是这个
+ * 上游，走编辑那条路，最后一步「完成」只在有改动时写一次。登录之后回不到第一步：上游已经
+ * 建好了。
  */
 export function UpstreamDialog({
   mode,
@@ -125,7 +143,8 @@ export function UpstreamDialog({
   onChanged: () => void;
   /**
    * 给已有的账号上游换一次凭据：ChatGPT 账号「账号」一节里的重新登录，Z.ai / BigModel 上游
-   * 登录账号换一把密钥。这张表单让位给重新登录的对话框
+   * 登录账号换一把密钥，新建时登录之后回到「账号」一步点的重新登录。这张表单让位给重新登录
+   * 的对话框
    */
   onRelogin: (relogin: Relogin) => void;
 }) {
@@ -163,9 +182,11 @@ export function UpstreamDialog({
   const [adoptedFrom, setAdoptedFrom] = useState<string | null>(editing?.name ?? null);
   const ready = saved != null && adoptedFrom === saved.name;
 
-  const login = useAccountLogin(accountKind(signedIn?.preset ?? form.preset) ?? "chatgpt", (provider) => {
-    setSignedIn({ preset: form.preset, family: form.zaiFamily, provider });
-    // 上游已经在配置里了：概览重读之后才有它的定义
+  const login = useAccountLogin(accountKind(signedIn?.preset ?? form.preset) ?? "chatgpt", (provider, account) => {
+    setSignedIn({ preset: form.preset, family: form.zaiFamily, provider, account });
+    // 上游已经在配置里了：直接进「模型」。概览重读之后才有它的定义，那之前模型表先占着位
+    setCatalogLoading(true);
+    enter("models");
     onChanged();
   });
 
@@ -192,9 +213,14 @@ export function UpstreamDialog({
     const want = account && mode.section === "connection" ? "account" : mode.section;
     return want && own.includes(want) ? want : own[0]!;
   });
+  /** 此刻在哪一步。检测回来时用：人已经退回别的步了，就不再替他往下走 */
+  const here = useRef(section);
+  here.current = section;
   const [visited, setVisited] = useState<Set<Section>>(
     () => new Set<Section>(drafted ? ["service", "connection"] : ["service"]),
   );
+  /** 第一步的搜索框。放在这里：它画在步骤条右边，不在那一节里 */
+  const [query, setQuery] = useState("");
 
   const [preview, setPreview] = useState<ProviderPreview | null>(null);
   const [test, setTest] = useState<ProviderTestResult | null>(null);
@@ -340,7 +366,11 @@ export function UpstreamDialog({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sheetKey, modelsKey, ov.price_sheets]);
 
-  async function runTest() {
+  /**
+   * 按表单里的这一份检测一次。交回结果；回来时表单已经改了、或者又检测了一次，交回 null
+   * （这个结果不算，也不往下走）
+   */
+  async function runTest(): Promise<ProviderTestResult | null> {
     const current = tests.start();
     setTesting(true);
     try {
@@ -349,7 +379,7 @@ export function UpstreamDialog({
         current: saved?.name,
       });
       // 回来时表单已经改了，或者又点了一次：这个结果不算（finally 里也不收转圈）
-      if (!current()) return;
+      if (!current()) return null;
       setTest(r);
       setCatalog(
         r.ok && r.models.kind === "listed"
@@ -363,10 +393,19 @@ export function UpstreamDialog({
               error: plain(r.ok ? describeModelList(r.models) : t.connectionFailed(r.error ? coreText(r.error) : t.unknownError)),
             },
       );
+      return r;
     } catch (e) {
-      if (!current()) return;
+      if (!current()) return null;
       const error = errorText(e);
-      setTest({ ok: false, protocol: null, latency_ms: 0, models: { kind: "empty" }, error: plain(error), balance: null });
+      const r: ProviderTestResult = {
+        ok: false,
+        protocol: null,
+        latency_ms: 0,
+        models: { kind: "empty" },
+        error: plain(error),
+        balance: null,
+      };
+      setTest(r);
       setCatalog({
         source: "none",
         status: "failed",
@@ -374,6 +413,7 @@ export function UpstreamDialog({
         checkedAtMs: Date.now(),
         error: plain(t.connectionFailed(error)),
       });
+      return r;
     } finally {
       if (current()) setTesting(false);
     }
@@ -398,7 +438,7 @@ export function UpstreamDialog({
   /** 第一步选了一种服务类型：预设填进表单，进到下一步 */
   function pickService(id: string) {
     setForm((f) => applyPreset(f, id, taken));
-    go("connection");
+    enter("connection");
   }
 
   const original = saved?.name ?? null;
@@ -418,7 +458,7 @@ export function UpstreamDialog({
     // 手动添加的输入框里还有没按回车的：先加上；写错了就不存，回到「模型」一节，毛病在那里说
     const added = entry.commit(true);
     if (added?.problem) {
-      go("models");
+      enter("models");
       return;
     }
     const f = added ? { ...form, ...added.patch } : form;
@@ -444,13 +484,37 @@ export function UpstreamDialog({
     }
   }
 
-  function go(to: Section) {
+  /** 到某一步，记成走过 */
+  function enter(to: Section) {
     setSection(to);
     setVisited((v) => new Set([...v, to]));
-    // 新建时没检测过就到了模型这一步：替用户检测一次，这一步才有内容可选。检测不产生费用
-    if (to === "models" && !saved && catalog == null && !testing) void runTest();
+  }
+
+  /**
+   * 新建时从「连接」往后走都先检测（「下一步」、点步骤条上后面的步、「重试」）：检测过、
+   * 通过了的直接走；通过了才走，没通过就留在这一步，底部说原因。检测回来时人已经退回
+   * 别的步了，就不再替他往下走
+   */
+  async function checkThen(to: Section) {
+    if (test?.ok) {
+      enter(to);
+      return;
+    }
+    const r = await runTest();
+    if (r?.ok && here.current === "connection") enter(to);
+  }
+
+  /** 新建、不登录账号时，「连接」这一步往后走要先检测 */
+  const checksOnNext = !editing && !signingIn && section === "connection";
+  function go(to: Section) {
+    const ahead = sections.findIndex((s) => s.id === to) > sections.findIndex((s) => s.id === section);
+    if (checksOnNext && ahead) void checkThen(to);
+    else enter(to);
   }
   const index = sections.findIndex((s) => s.id === section);
+  const next = sections[index + 1]?.id;
+  /** 新建时点「下一步」检测没通过：底部那一条。重试的时候留着，「重试」转圈 */
+  const checkFailed = checksOnNext && test != null && !test.ok ? test : null;
 
   /**
    * 回不去的几步：登录进行中别的步都不能去（表单让位给了登录）；登录之后回不到第一步 ——
@@ -483,12 +547,34 @@ export function UpstreamDialog({
         }
       : undefined;
 
+  /** 登上的账号：登录时 core 给的；没有的话，ChatGPT 账号看上游的定义里记的 */
+  const signedAccount: LoginAccount | null = signedIn
+    ? (signedIn.account ??
+      (saved?.oauth?.account
+        ? { who: saved.oauth.account.email ?? null, plan: planLabel(saved.oauth.account.plan) }
+        : null))
+    : null;
+  /** 「模型」一步顶上那一行：新建时登录的账号，或者点「下一步」检测通过的结果 */
+  const modelsHead =
+    mode.kind !== "create" ? undefined : signedIn ? (
+      <AccountSummary
+        kind={accountKind(signedIn.preset) ?? "chatgpt"}
+        provider={signedIn.provider}
+        account={signedAccount}
+        family={signedIn.preset === "zai" ? signedIn.family : null}
+      />
+    ) : test?.ok ? (
+      <CheckSummary result={test} />
+    ) : undefined;
+  /** 新建走到模型、计费时标题旁带上名称 */
+  const named = mode.kind === "create" && (section === "models" || section === "billing") && form.name.trim() !== "";
+
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       {/*
-        固定高度：切换分节时对话框不跳动，内容在中间滚动。点到对话框外面不关 ——
-        填了一半的表单不该因为一次误点丢掉；Esc、×、取消照常。登录进行中关掉就是放弃
-        这一次登录（`useAccountLogin` 卸载时取消）
+        固定高度：切换分节时对话框不跳动；默认窗口里每一步都放得下，只有长列表在自己的框里
+        滚，窗口更小时中间那一块滚。点到对话框外面不关 —— 填了一半的表单不该因为一次误点
+        丢掉；Esc、×、取消照常。登录进行中关掉就是放弃这一次登录（`useAccountLogin` 卸载时取消）
       */}
       <DialogContent
         className="flex h-[min(88vh,760px)] flex-col gap-4 sm:max-w-[900px]"
@@ -527,21 +613,40 @@ export function UpstreamDialog({
             ) : (
               // 第一步选定的服务类型，之后每一步都看得见；还没选时写这一步要做什么
               <DialogDescription className="truncate">
-                {section === "service" ? t.pickService : service.label}
+                {section === "service" ? (
+                  t.pickService
+                ) : (
+                  <>
+                    {service.label}
+                    {named && (
+                      <>
+                        {" · "}
+                        <span className="font-mono text-foreground">{form.name.trim()}</span>
+                      </>
+                    )}
+                  </>
+                )}
               </DialogDescription>
             )}
           </div>
         </DialogHeader>
 
-        <StepNav
-          steps={sections}
-          current={section}
-          done={editing ? undefined : visited}
-          locked={locked}
-          onPick={go}
-        />
+        <div className="flex shrink-0 items-center gap-4">
+          <StepNav
+            steps={sections}
+            current={section}
+            done={editing ? undefined : visited}
+            locked={locked}
+            onPick={go}
+          />
+          {section === "service" && (
+            <div className="ml-auto">
+              <ServiceSearch value={query} onChange={setQuery} />
+            </div>
+          )}
+        </div>
 
-        <div className="-mx-4 min-h-0 flex-1 overflow-y-auto px-4 pb-1">
+        <div data-slot="upstream-dialog-body" className="-mx-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-1">
           {section === "account" && editing && (
             <ChatgptAccountSection
               form={form}
@@ -555,11 +660,12 @@ export function UpstreamDialog({
             <ServiceSection
               // 表单从「自定义」起步，但还没点过就不标选中；退回来时标着上次选的
               value={visited.has("connection") ? form.preset : null}
+              query={query}
               onPick={pickService}
             />
           )}
           {section === "connection" && (
-            <div className="flex flex-col gap-4">
+            <div className="flex flex-col gap-3.5">
               <ConnectionHead
                 form={form}
                 signedIn={signedIn}
@@ -577,6 +683,17 @@ export function UpstreamDialog({
                   frozen={login.waiting || signedIn != null}
                   family={signedIn?.family ?? form.zaiFamily}
                   onNewProxy={() => setNested({ kind: "proxy" })}
+                  signedIn={signedIn}
+                  account={signedAccount}
+                  onRelogin={() =>
+                    signedIn &&
+                    onRelogin({
+                      kind: accountKind(signedIn.preset) ?? "chatgpt",
+                      name: signedIn.provider,
+                      proxy: saved?.proxy ?? form.proxy,
+                      family: signedIn.family,
+                    })
+                  }
                 />
               ) : (
                 <ConnectionSection
@@ -585,9 +702,6 @@ export function UpstreamDialog({
                   editing={editing}
                   ov={ov}
                   preview={preview}
-                  testing={testing}
-                  test={test}
-                  onTest={runTest}
                   onNewProxy={() => setNested({ kind: "proxy" })}
                   account={zaiAccount}
                 />
@@ -596,6 +710,7 @@ export function UpstreamDialog({
           )}
           {section === "models" && (
             <ModelsSection
+              head={modelsHead}
               form={form}
               set={set}
               catalog={catalog}
@@ -625,12 +740,43 @@ export function UpstreamDialog({
           )}
         </div>
 
+        {/*
+          点「下一步」检测没通过：留在这一步，说 core 给的原因。「重试」再检测一次，「仍然继续」
+          不检测往下走 —— 有的上游拒绝检测却能用，有的没有模型列表
+        */}
+        <Banner
+          show={checkFailed != null}
+          layout="inline"
+          tone="error"
+          title={t.checkFailed}
+          actions={
+            <>
+              <Button variant="outline" size="sm" pending={testing} onClick={() => next && void checkThen(next)}>
+                {c.retry}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => next && enter(next)}>
+                {t.continueAnyway}
+              </Button>
+            </>
+          }
+        >
+          <span className="select-text break-words">
+            {checkFailed?.error ? coreText(checkFailed.error) : t.unknownError}
+          </span>
+        </Banner>
+
         <DialogError error={error} />
 
         <DialogFooter className="items-center">
           {editing ? (
             <>
-              {blocking && <span className="mr-auto tw-label text-muted-foreground">{blocking}</span>}
+              {/* 「检测连接」只在连接这一节，结果接在它右边 */}
+              {section === "connection" ? (
+                <CheckButton testing={testing} test={test} onTest={() => void runTest()} />
+              ) : (
+                <span className="flex-1" />
+              )}
+              {blocking && <span className="tw-label text-muted-foreground">{blocking}</span>}
               <Button variant="outline" onClick={onClose}>
                 {c.cancel}
               </Button>
@@ -661,14 +807,18 @@ export function UpstreamDialog({
                 <Button
                   variant="outline"
                   disabled={login.waiting}
-                  onClick={() => go(sections[index - 1]!.id)}
+                  onClick={() => enter(sections[index - 1]!.id)}
                 >
                   {t.back}
                 </Button>
               )}
               {/* 第一步点一格就往下走，没有「下一步」 */}
-              {section === "service" ? null : index < sections.length - 1 ? (
-                <Button onClick={() => go(sections[index + 1]!.id)} disabled={missing != null}>
+              {section === "service" ? null : next ? (
+                <Button
+                  onClick={() => go(next)}
+                  pending={checksOnNext && testing}
+                  disabled={missing != null}
+                >
                   {t.next}
                 </Button>
               ) : (
@@ -727,9 +877,9 @@ export function UpstreamDialog({
 }
 
 /**
- * 第二步顶上：认证方式（这种服务有几种时）和 Z.ai / BigModel 的站点。登录进行中和登录之后
- * 定住不能改 —— 登录用的就是这几样，上游已经按它们建好了。编辑时站点跟着账号走
- * （`siteLocked`）：登录换来的密钥、要登录的账号都在那一边
+ * 第二步顶上：认证方式（这种服务有几种时）和 Z.ai / BigModel 的站点，两样都有时并排、各占
+ * 一半。登录进行中和登录之后定住不能改 —— 登录用的就是这几样，上游已经按它们建好了。编辑时
+ * 站点跟着账号走（`siteLocked`）：登录换来的密钥、要登录的账号都在那一边
  */
 function ConnectionHead({
   form,
@@ -758,16 +908,19 @@ function ConnectionHead({
       }
     : form;
   const rules = fieldRules(shown);
+  const auth = rules.auth.length > 1;
+  if (!auth && !rules.site) return null;
   return (
-    <>
-      {rules.auth.length > 1 && <AuthField form={shown} options={rules.auth} onChange={onAuth} disabled={frozen} />}
+    <div className={rules.site ? "grid grid-cols-2 gap-4" : undefined}>
+      {auth && <AuthField form={shown} options={rules.auth} onChange={onAuth} disabled={frozen} />}
       {rules.site && <SiteField value={shown.zaiFamily} onChange={onSite} disabled={frozen || siteFrozen} />}
-    </>
+    </div>
   );
 }
 
 /**
- * 「账号」一步：名称和出站代理（和 API 密钥时同一行、同一个位置），下面是登录那一块。
+ * 「账号」一步：名称和出站代理（和 API 密钥时同一行、同一个位置），下面是登录那一块；登录
+ * 之后再回到这一步，那一块换成一行已登录的账号和「重新登录」。
  *
  * 名称的检查按 core 的规矩：ChatGPT 账号不能和已有的上游重名；Z.ai / BigModel 同名、
  * 同一个站点的上游是给它换一把密钥，写明是替换，不算重名。
@@ -780,6 +933,9 @@ function AccountStep({
   frozen,
   family,
   onNewProxy,
+  signedIn,
+  account,
+  onRelogin,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
@@ -788,17 +944,20 @@ function AccountStep({
   frozen: boolean;
   family: ZaiFamily;
   onNewProxy: () => void;
+  signedIn: SignedIn | null;
+  account: LoginAccount | null;
+  onRelogin: () => void;
 }) {
   const t = useText(upstreamDialogText);
   const name = form.name.trim();
-  const existing = login.phase.at === "idle" ? ov.providers.find((p) => p.name === name) : undefined;
+  const existing = login.phase.at === "idle" && !signedIn ? ov.providers.find((p) => p.name === name) : undefined;
   const replaces =
     login.kind === "zai" &&
     existing != null &&
     existing.base_url.replace(/\/+$/, "") === ZAI_ENDPOINTS[family].replace(/\/+$/, "");
   const taken = existing != null && !replaces;
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3.5">
       <div className="grid grid-cols-2 gap-4">
         <FormItem label={t.name} htmlFor="up-name">
           <Input
@@ -820,11 +979,20 @@ function AccountStep({
           disabled={frozen}
         />
       </div>
-      <AccountPanel
-        login={login}
-        params={{ name: form.name, proxy: form.proxy, family }}
-        blocked={name === "" || taken}
-      />
+      {signedIn ? (
+        <AccountLine
+          kind={login.kind}
+          account={account}
+          family={signedIn.preset === "zai" ? signedIn.family : null}
+          onRelogin={onRelogin}
+        />
+      ) : (
+        <AccountPanel
+          login={login}
+          params={{ name: form.name, proxy: form.proxy, family }}
+          blocked={name === "" || taken}
+        />
+      )}
     </div>
   );
 }

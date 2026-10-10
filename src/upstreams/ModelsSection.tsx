@@ -1,4 +1,4 @@
-import { useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CircleAlertIcon, RefreshCwIcon, SearchIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { compact, whenMinute } from "@/format";
@@ -27,7 +27,7 @@ import { type ManualAdd, type ManualEntry, ManualModelList, ManualTag } from "./
 import { manualModelInputText } from "./ManualModelInput.i18n";
 import { unionModels } from "./manualModels";
 import { modelsSectionText } from "./ModelsSection.i18n";
-import { FormItem, Note } from "./parts";
+import { Note } from "./parts";
 import { inScope, withManualRemoved, type UpstreamForm } from "./upstreamForm";
 
 /** 这家上游有哪些模型，以及是怎么知道的 */
@@ -81,8 +81,10 @@ export function modelCount(hasList: boolean, listed: number, added: number): str
 }
 
 /**
- * 编辑对话框的「模型」一节：上游列出的和手动添加的合成一张表，勾选启用范围，最后一行手动
- * 添加模型（名单式输入，和模型弹窗的「添加模型…」共用，见 `ManualModelInput`）。
+ * 对话框的「模型」一节，**一屏放下**：顶上一行（新建时是检测结果或登录的账号，编辑时是清单从哪儿
+ * 来、多少个），一条工具条（启用范围、已启用几个、筛选、刷新），下面是上游列出的和手动添加的
+ * 合成的一张表，最后一行手动添加模型（名单式输入，和模型弹窗的「添加模型…」共用，见
+ * `ManualModelInput`）。**只有那张表在自己的框里滚**，框按剩下的高度收放。
  *
  * 手动添加的那几行标「手动」、行尾「移除」。加和移除都只改表单，和别的设置一起保存。
  * 指定了启用范围时，新加的一并勾上（`withManualAdded`）。
@@ -91,6 +93,7 @@ export function modelCount(hasList: boolean, listed: number, added: number): str
  * 写错了不存（见 `UpstreamDialog` 的 `save`）。
  */
 export function ModelsSection({
+  head,
   form,
   set,
   catalog,
@@ -102,6 +105,8 @@ export function ModelsSection({
   refreshing,
   onRefresh,
 }: {
+  /** 顶上那一行：新建时检测通过的结果，或者登录的账号。不给就写清单的来历 */
+  head?: ReactNode;
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
   catalog: ModelCatalog | null;
@@ -194,169 +199,175 @@ export function ModelsSection({
   const note = known && !hasList ? noListNote(catalog) : null;
 
   return (
-    <div className="flex flex-col gap-4">
-      <div className="flex items-center gap-2">
-        <span className="tw-body font-medium">{t.title}</span>
-        {catalog && !waiting && (
-          <Badge variant={source === "none" && catalog.status === "failed" ? "warning" : "secondary"}>
-            {modelSourceLabel(source, catalog.status)}
-          </Badge>
-        )}
-        {count && (
-          <span className="tw-label tw-num text-muted-foreground">
-            {count}
-            {hasList && catalog.checkedAtMs ? ` · ${t.fetchedAt(whenMinute(catalog.checkedAtMs))}` : ""}
-          </span>
+    <div className="flex min-h-0 flex-1 flex-col gap-3">
+      {head ?? (
+        <div className="flex min-h-6 shrink-0 items-center gap-2">
+          <span className="tw-body font-medium">{t.title}</span>
+          {catalog && !waiting && (
+            <Badge variant={source === "none" && catalog.status === "failed" ? "warning" : "secondary"}>
+              {modelSourceLabel(source, catalog.status)}
+            </Badge>
+          )}
+          {count && (
+            <span className="tw-label tw-num text-muted-foreground">
+              {count}
+              {hasList && catalog.checkedAtMs ? ` · ${t.fetchedAt(whenMinute(catalog.checkedAtMs))}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+
+      {note && <Note tone={note.tone}>{note.text}</Note>}
+      {!catalog && !loading && <Note>{t.notFetched}</Note>}
+
+      {/* 工具条：同一行的控件一样高（28px） */}
+      <div className="flex shrink-0 items-center gap-2.5">
+        {known && (
+          <>
+            <span className="tw-body font-medium">{t.scope}</span>
+            <Segmented
+              label={t.scope}
+              value={form.scope}
+              options={[
+                { id: "all", label: t.all },
+                { id: "some", label: t.some },
+              ]}
+              onChange={(v) =>
+                set({
+                  scope: v,
+                  // 第一次切到指定模型：从全部勾上开始，由用户往下减
+                  scopeList: v === "some" && form.scopeList.length === 0 ? models : form.scopeList,
+                })
+              }
+            />
+            {union.length > 0 && (
+              <span className="tw-label tw-num text-muted-foreground">{t.enabled(enabled.length, models.length)}</span>
+            )}
+          </>
         )}
         <div className="flex-1" />
-        <Button variant="ghost" size="xs" onClick={onRefresh} disabled={busy} aria-busy={busy || undefined}>
+        {known && union.length > 0 && (
+          <InputGroup className="h-7 w-48">
+            <InputGroupAddon>
+              <SearchIcon />
+            </InputGroupAddon>
+            <InputGroupInput placeholder={t.filter} aria-label={t.filter} value={filter} onChange={(e) => setFilter(e.target.value)} />
+          </InputGroup>
+        )}
+        <Button variant="ghost" size="sm" onClick={onRefresh} disabled={busy} aria-busy={busy || undefined}>
           {busy ? <Spinner /> : <RefreshCwIcon />}
           {t.refresh}
         </Button>
       </div>
 
-      {note && <Note tone={note.tone}>{note.text}</Note>}
-      {!catalog && !loading && <Note>{t.notFetched}</Note>}
-
-      {known && (
-        <FormItem label={t.scope}>
-          <Segmented
-            value={form.scope}
-            options={[
-              { id: "all", label: t.all },
-              { id: "some", label: t.some },
-            ]}
-            onChange={(v) =>
-              set({
-                scope: v,
-                // 第一次切到指定模型：从全部勾上开始，由用户往下减
-                scopeList: v === "some" && form.scopeList.length === 0 ? models : form.scopeList,
-              })
-            }
-          />
-        </FormItem>
-      )}
-
       {known && patterns.length > 0 && <Note>{t.patterns(patterns)}</Note>}
 
-      <div className="flex flex-col gap-2">
-        {known && union.length > 0 && (
-          <div className="flex items-center gap-2">
-            <InputGroup className="w-64">
-              <InputGroupAddon>
-                <SearchIcon />
-              </InputGroupAddon>
-              <InputGroupInput placeholder={t.filter} value={filter} onChange={(e) => setFilter(e.target.value)} />
-            </InputGroup>
-            <div className="flex-1" />
-            <span className="tw-label tw-num text-muted-foreground">{t.enabled(enabled.length, models.length)}</span>
+      <ManualModelList
+        fill
+        entry={entry}
+        inputRef={input}
+        label={t.addLabel}
+        placeholder={t.addPlaceholder}
+        hint={hasList ? `${shared.about}${t.sep}${shared.hint}` : shared.hint}
+        // 和上面的模型 ID 对齐：让出勾选那一列（36px）和单元格的内边距
+        inputRowClassName={known && union.length > 0 ? "pl-11" : undefined}
+      >
+        {waiting ? (
+          <div className="border-b border-border px-3 py-2.5">
+            <StatusLabel tone="pending" muted>
+              {t.fetching}
+            </StatusLabel>
           </div>
-        )}
-        <ManualModelList
-          entry={entry}
-          inputRef={input}
-          label={t.addLabel}
-          placeholder={t.addPlaceholder}
-          hint={hasList ? `${shared.about}${t.sep}${shared.hint}` : shared.hint}
-          // 和上面的模型 ID 对齐：让出勾选那一列（36px）和单元格的内边距
-          inputRowClassName={known && union.length > 0 ? "pl-11" : undefined}
-        >
-          {waiting ? (
-            <div className="border-b border-border px-3 py-2.5">
-              <StatusLabel tone="pending" muted>
-                {t.fetching}
-              </StatusLabel>
-            </div>
-          ) : loading ? (
-            <TableSkeleton rows={5} cols={3} />
-          ) : union.length > 0 ? (
-            <div ref={scroller} className="max-h-72 overflow-y-auto border-b border-border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    {known && (
-                      <TableHead className="w-9">
-                        <Checkbox
-                          aria-label={t.selectAll}
-                          checked={allShownOn ? true : someShownOn ? "indeterminate" : false}
-                          onCheckedChange={(v) => toggleAll(v === true)}
-                        />
-                      </TableHead>
-                    )}
-                    <TableHead>{t.modelId}</TableHead>
-                    <TableHead>{t.context}</TableHead>
-                    {perToken && <TableHead>{t.pricing}</TableHead>}
-                    {anyManual && (
-                      <TableHead>
-                        <span className="sr-only">{t.actions}</span>
-                      </TableHead>
-                    )}
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {shown.map(({ item: m, key, presence }) => {
-                    const on = inScope(form, m.id);
-                    const price = prices[m.id];
-                    const ctx = catalog?.manualContext?.[m.id] ?? price?.max_input_tokens;
-                    return (
-                      <TableRow key={key} className={rowMotion(presence)}>
-                        {known && (
-                          <TableCell>
-                            <Checkbox aria-label={m.id} checked={on} onCheckedChange={(v) => toggle(m.id, v === true)} />
-                          </TableCell>
-                        )}
-                        <TableCell className={cn("w-full max-w-0", !on && "text-muted-foreground")}>
-                          <div className="flex min-w-0 items-center gap-2">
-                            {/* Bedrock 应用推理配置的 ARN 有八十来个字符：截断，悬停看全 */}
-                            <span title={m.id} className="min-w-0 truncate font-mono">
-                              {m.id}
-                            </span>
-                            {m.manual && <ManualTag listed={m.listed} />}
-                          </div>
+        ) : loading ? (
+          <TableSkeleton rows={5} cols={3} />
+        ) : union.length > 0 ? (
+          // 表在自己的框里滚，表头吸顶。框至少留几行高：再矮就让整页去滚
+          <div ref={scroller} className="min-h-28 overflow-y-auto border-b border-border">
+            <Table scroll={false}>
+              <TableHeader className="sticky top-0 z-10 bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)] [&_tr]:border-b-0">
+                <TableRow>
+                  {known && (
+                    <TableHead className="w-9">
+                      <Checkbox
+                        aria-label={t.selectAll}
+                        checked={allShownOn ? true : someShownOn ? "indeterminate" : false}
+                        onCheckedChange={(v) => toggleAll(v === true)}
+                      />
+                    </TableHead>
+                  )}
+                  <TableHead>{t.modelId}</TableHead>
+                  <TableHead>{t.context}</TableHead>
+                  {perToken && <TableHead>{t.pricing}</TableHead>}
+                  {anyManual && (
+                    <TableHead>
+                      <span className="sr-only">{t.actions}</span>
+                    </TableHead>
+                  )}
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {shown.map(({ item: m, key, presence }) => {
+                  const on = inScope(form, m.id);
+                  const price = prices[m.id];
+                  const ctx = catalog?.manualContext?.[m.id] ?? price?.max_input_tokens;
+                  return (
+                    <TableRow key={key} className={rowMotion(presence)}>
+                      {known && (
+                        <TableCell>
+                          <Checkbox aria-label={m.id} checked={on} onCheckedChange={(v) => toggle(m.id, v === true)} />
                         </TableCell>
-                        <TableCell className="tw-num text-muted-foreground">{ctx ? compact(ctx) : "—"}</TableCell>
-                        {perToken && (
-                          <TableCell>
-                            {!price ? (
-                              <span className="text-muted-foreground">—</span>
-                            ) : price.price ? (
-                              <span className="text-muted-foreground">
-                                {price.estimated ? t.pricedEstimated : t.priced}
-                              </span>
-                            ) : (
-                              <Badge variant="warning">{t.unpriced}</Badge>
-                            )}
-                          </TableCell>
-                        )}
-                        {anyManual && (
-                          <TableCell className="py-0 pr-1 text-right">
-                            {m.manual && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="xs"
-                                aria-label={t.removeLabel(m.id)}
-                                className="text-muted-foreground"
-                                onClick={() => set(withManualRemoved(form, m.id, m.listed))}
-                              >
-                                {t.remove}
-                              </Button>
-                            )}
-                          </TableCell>
-                        )}
-                      </TableRow>
-                    );
-                  })}
-                </TableBody>
-              </Table>
-              {shown.length === 0 && <p className="px-3 py-2.5 tw-label text-muted-foreground">{t.noMatch}</p>}
-            </div>
-          ) : null}
-        </ManualModelList>
-      </div>
+                      )}
+                      <TableCell className={cn("w-full max-w-0", !on && "text-muted-foreground")}>
+                        <div className="flex min-w-0 items-center gap-2">
+                          {/* Bedrock 应用推理配置的 ARN 有八十来个字符：截断，悬停看全 */}
+                          <span title={m.id} className="min-w-0 truncate font-mono">
+                            {m.id}
+                          </span>
+                          {m.manual && <ManualTag listed={m.listed} />}
+                        </div>
+                      </TableCell>
+                      <TableCell className="tw-num text-muted-foreground">{ctx ? compact(ctx) : "—"}</TableCell>
+                      {perToken && (
+                        <TableCell>
+                          {!price ? (
+                            <span className="text-muted-foreground">—</span>
+                          ) : price.price ? (
+                            <span className="text-muted-foreground">
+                              {price.estimated ? t.pricedEstimated : t.priced}
+                            </span>
+                          ) : (
+                            <Badge variant="warning">{t.unpriced}</Badge>
+                          )}
+                        </TableCell>
+                      )}
+                      {anyManual && (
+                        <TableCell className="py-0 pr-1 text-right">
+                          {m.manual && (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="xs"
+                              aria-label={t.removeLabel(m.id)}
+                              className="text-muted-foreground"
+                              onClick={() => set(withManualRemoved(form, m.id, m.listed))}
+                            >
+                              {t.remove}
+                            </Button>
+                          )}
+                        </TableCell>
+                      )}
+                    </TableRow>
+                  );
+                })}
+              </TableBody>
+            </Table>
+            {shown.length === 0 && <p className="px-3 py-2.5 tw-label text-muted-foreground">{t.noMatch}</p>}
+          </div>
+        ) : null}
+      </ManualModelList>
 
       {unpriced.length > 0 && (
-        <p className="flex items-start gap-2 tw-label text-warning">
+        <p className="flex shrink-0 items-start gap-2 tw-label text-warning">
           <CircleAlertIcon className="mt-px size-3.5 shrink-0" />
           <span>{t.unpricedNote(unpriced.length, sheetLabel)}</span>
         </p>

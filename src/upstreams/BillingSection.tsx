@@ -57,9 +57,10 @@ export function BillingSection({
       ]
     : [];
 
+  // 一屏放下：价格表在自己的框里滚，框按剩下的高度收
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-2 gap-4">
+    <div className="flex min-h-0 flex-1 flex-col gap-4">
+      <div className="grid shrink-0 grid-cols-2 gap-4">
         <FormItem label={t.billing} desc={BILLINGS.find((b) => b.id === form.billing)?.desc}>
           <Segmented
             label={t.billing}
@@ -95,7 +96,7 @@ export function BillingSection({
       </div>
 
       {perToken && sheet && (
-        <div className="flex items-center gap-2.5 rounded-lg border border-border px-3 py-2.5">
+        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2">
           <span className="shrink-0 tw-label text-muted-foreground">{t.usedBy}</span>
           <UpstreamChips names={users} providers={ov.providers} empty="" />
           <div className="flex-1" />
@@ -107,8 +108,8 @@ export function BillingSection({
       )}
 
       {perToken && (
-        <div className="flex flex-col gap-2">
-          <div className="flex items-baseline gap-2">
+        <div className="flex min-h-0 flex-col gap-2">
+          <div className="flex shrink-0 items-baseline gap-2">
             <span className="tw-body font-medium">{t.effective}</span>
             <div className="flex-1" />
             <span className="tw-label text-muted-foreground">{t.unit}</span>
@@ -116,9 +117,9 @@ export function BillingSection({
           {models.length === 0 ? (
             <Note>{t.empty}</Note>
           ) : (
-            <Boxed className="max-h-72 overflow-y-auto">
-              <Table>
-                <TableHeader>
+            <Boxed className="min-h-28 overflow-y-auto">
+              <Table scroll={false}>
+                <TableHeader className="sticky top-0 z-10 bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)] [&_tr]:border-b-0">
                   <TableRow>
                     <TableHead>{t.model}</TableHead>
                     {PRICE_COLUMNS.map((c) => (
@@ -152,7 +153,7 @@ export function BillingSection({
             </Boxed>
           )}
           {unpriced.length > 0 && (
-            <div className="flex items-center gap-2 tw-label text-warning">
+            <div className="flex shrink-0 items-center gap-2 tw-label text-warning">
               <CircleAlertIcon className="size-3.5 shrink-0" />
               <span>{t.unpriced(unpriced.length)}</span>
               <div className="flex-1" />

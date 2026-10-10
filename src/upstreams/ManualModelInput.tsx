@@ -72,6 +72,7 @@ export function ManualModelList<R extends ManualAdd>({
   hint,
   inputRowClassName,
   inputRef,
+  fill = false,
 }: {
   entry: ManualEntry<R>;
   children?: ReactNode;
@@ -84,15 +85,20 @@ export function ManualModelList<R extends ManualAdd>({
   /** 输入那一行：比如左边让出表格勾选的那一列，和上面的模型 ID 对齐 */
   inputRowClassName?: string;
   inputRef?: Ref<HTMLInputElement>;
+  /**
+   * 放在一屏排满的一节里（上游对话框的「模型」）：框按剩下的高度收，`children` 里那一层滚动的
+   * 跟着收，输入行和提示不收
+   */
+  fill?: boolean;
 }) {
   const t = useText(manualModelInputText);
   const noteId = useId();
   const message = entry.problem ? problemText(entry.problem, t) : null;
   return (
-    <div className="flex flex-col gap-1">
-      <Boxed className={cn(entry.problem && "border-destructive")}>
+    <div className={cn("flex flex-col gap-1", fill && "min-h-0")}>
+      <Boxed className={cn(fill && "flex min-h-0 flex-col", entry.problem && "border-destructive")}>
         {children}
-        <div className={cn("flex h-8 items-center gap-2.5 bg-background px-3", inputRowClassName)}>
+        <div className={cn("flex h-8 shrink-0 items-center gap-2.5 bg-background px-3", inputRowClassName)}>
           <Input
             ref={inputRef}
             aria-label={label ?? t.models}
@@ -119,7 +125,7 @@ export function ManualModelList<R extends ManualAdd>({
           <span className="shrink-0 tw-label text-muted-foreground">{t.enterToAdd}</span>
         </div>
       </Boxed>
-      <p id={noteId} className={cn("tw-label", message ? "text-destructive" : "text-muted-foreground")}>
+      <p id={noteId} className={cn("shrink-0 tw-label", message ? "text-destructive" : "text-muted-foreground")}>
         {message ?? hint ?? t.hint}
       </p>
     </div>
