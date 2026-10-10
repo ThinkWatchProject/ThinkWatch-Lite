@@ -432,6 +432,8 @@ export interface PlacedEdge {
   d: string;
   /** 起点在第几层，点亮时按它错开一点，读起来是从左往右走过去 */
   layer: number;
+  /** 线有多长（像素）。在途请求流过去的光点按它排，每条线上一样快 */
+  length: number;
 }
 
 export interface ChainLayout {
@@ -492,8 +494,39 @@ export function layoutChain(chain: Chain, width: number): ChainLayout {
     const y2 = mid(b);
     // 穿过策略组那一列的线：先平着穿过这一列，再弯向上游
     const x1 = a.x + a.w;
-    const start = a.node.kind === "via" ? `M ${a.x} ${y1} L ${x1} ${y1}` : `M ${x1} ${y1}`;
-    edges.push({ edge: e, d: `${start} ${curve(x1, y1, b.x, y2)}`, layer: a.node.layer });
+    const via = a.node.kind === "via";
+    const start = via ? `M ${a.x} ${y1} L ${x1} ${y1}` : `M ${x1} ${y1}`;
+    edges.push({
+      edge: e,
+      d: `${start} ${curve(x1, y1, b.x, y2)}`,
+      layer: a.node.layer,
+      length: (via ? a.w : 0) + curveLength(x1, y1, b.x, y2),
+    });
   }
   return { width, height, dense, cols, nodes: [...placed.values()], edges };
+}
+
+/**
+ * `curve` 画的那段弯线有多长：两个控制点在中间、和两头同高的三次贝塞尔，切成小段量
+ * 折线。弯得最厉害的线也只差零点几像素，够排光点用
+ */
+export function curveLength(x1: number, y1: number, x2: number, y2: number): number {
+  const dx = (x2 - x1) / 2;
+  const at = (t: number, a: number, b: number, c: number, d: number) => {
+    const u = 1 - t;
+    return u * u * u * a + 3 * u * u * t * b + 3 * u * t * t * c + t * t * t * d;
+  };
+  const STEPS = 24;
+  let len = 0;
+  let px = x1;
+  let py = y1;
+  for (let i = 1; i <= STEPS; i++) {
+    const t = i / STEPS;
+    const x = at(t, x1, x1 + dx, x2 - dx, x2);
+    const y = at(t, y1, y1, y2, y2);
+    len += Math.hypot(x - px, y - py);
+    px = x;
+    py = y;
+  }
+  return len;
 }

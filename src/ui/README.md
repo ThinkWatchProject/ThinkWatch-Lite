@@ -170,6 +170,7 @@ All colours are CSS tokens (`src/index.css`) exposed as Tailwind colours. **Neve
 | `idle` | not working but not a fault: unused, disabled, no data yet |
 | `warning-foreground`, `destructive-foreground`, `success-foreground` | **Text** in that hue on a tinted background (`bg-warning/10`). Not text on a solid fill — that is `text-white`. |
 | `chart-1…5`, `chart-other`, `cache-*` | Data visualisation only (`chart-other` is the grey "Other" series) |
+| `--flow-from` / `--flow-to` | The brand cyan → magenta, for requests moving along the routing map (`motion-flow`). Nowhere else. |
 | `--chrome-*` | Window chrome (sidebar, toolbar). Shell only. |
 
 Tinted status backgrounds are the status colour at low alpha: `bg-warning/10`,
@@ -407,6 +408,7 @@ movement. Do not write your own `@keyframes` or `transition-all` in pages.
 | Bars, meters, progress | Built into `Meter` and `Sparkline`. Anything else: `motion-bar` on the element whose width/height changes. |
 | Live / in-flight | `<StatusDot tone="pending" />` or `motion-live` on a dot. |
 | New data at a live edge | `motion-ping` on a dot (HTML or SVG): one ring, not looping. Re-key the element to play it again. |
+| Requests moving along a path | `motion-flow` on an SVG `path` with an integer `pathLength` and a `stroke-dasharray` inside one unit; the caller sets `animation-duration` / `animation-delay` so paths share one clock (routing map, `src/routing/flow.ts`). Mount it only while something is in flight. |
 | Skeleton shimmer | Built into `Skeleton` (`motion-shimmer`). |
 | Hover / press | `transition-colors duration-(--motion-fast)`. |
 

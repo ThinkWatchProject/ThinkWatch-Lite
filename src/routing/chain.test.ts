@@ -3,6 +3,7 @@ import type { ClientView, GroupView, ProviderView, RouteHits, RouteView, RuleHit
 import {
   buildChain,
   chainId,
+  curveLength,
   DENSE_FROM,
   EDGE_W,
   edgeWidth,
@@ -307,6 +308,24 @@ describe("路由图的排版", () => {
       for (let i = 1; i < ns.length; i++) expect(ns[i]!.y).toBeGreaterThanOrEqual(ns[i - 1]!.y + ns[i - 1]!.h);
       for (const p of ns) expect(p.y + p.h).toBeLessThanOrEqual(l.height + 0.001);
     }
+  });
+
+  it("每条线量出长度：平着的就是两头的距离，弯的长一点，穿过第二列的加上那一列的宽", () => {
+    expect(curveLength(0, 10, 90, 10)).toBeCloseTo(90, 6);
+    const bent = curveLength(0, 0, 90, 60);
+    expect(bent).toBeGreaterThan(Math.hypot(90, 60) - 0.01);
+    expect(bent).toBeLessThan(90 + 60);
+    const l = layoutChain(buildChain(sample()), 860);
+    const placed = new Map(l.nodes.map((p) => [p.node.id, p]));
+    for (const e of l.edges) {
+      const a = placed.get(e.edge.from)!;
+      const b = placed.get(e.edge.to)!;
+      const span = b.x - (a.x + a.w);
+      const via = a.node.kind === "via" ? a.w : 0;
+      expect(e.length).toBeGreaterThanOrEqual(via + span - 0.001);
+      expect(e.length).toBeLessThanOrEqual(via + span + Math.abs(b.y + b.h / 2 - (a.y + a.h / 2)) + 0.001);
+    }
+    expect(l.edges.some((e) => e.edge.from.startsWith("via:"))).toBe(true);
   });
 
   it("窗口很窄时列变窄，列之间仍留出弯线的空", () => {

@@ -318,6 +318,23 @@
   }
 }
 
+/* ─────────────────────────────────────────────────────── 在途的光点
+ *
+ * 路由图上请求流过去的那几个光点：品牌色的青 → 品红（和图标、启动画面同一对颜色），
+ * 从密钥那一列铺到上游那一列。**只有这一处用它**：别的地方颜色仍只留给状态。浅色底上
+ * 两头各压暗一档，不然青色在白底上发虚。
+ */
+:root {
+  --flow-from: #14c3d3;
+  --flow-to: #d94fc9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --flow-from: #22e5f2;
+    --flow-to: #f05cd8;
+  }
+}
+
 /* ─────────────────────────────────────────────────── macOS 的半透侧栏
  *
  * 主窗口在 macOS 上是透明的网页叠在一层 NSVisualEffectView（sidebar 材质）
@@ -406,6 +423,15 @@
     opacity: 0;
   }
 }
+/* 虚线往前挪一个周期。线的 `pathLength` 写成整数个周期，所以一个周期就是 1 */
+@keyframes tw-flow {
+  from {
+    stroke-dashoffset: 1;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
 @keyframes tw-shimmer {
   0%,
   100% {
@@ -489,6 +515,17 @@
   animation: tw-ping 900ms var(--motion-ease) both;
   pointer-events: none;
 }
+/* 沿着一条线往前流的光点（路由图上在途的请求）：SVG 的 path 上写 `pathLength`（整数个
+ * 周期）和 `stroke-dasharray`（一个周期内的亮、暗），这里让它匀速往前走。时长、起点由
+ * 用的地方写（`animation-duration` / `animation-delay`），几条线才对得上同一个时钟。
+ *
+ * **动的是虚线偏移**：WebKit 和 Chromium 都画得稳，不靠滤镜、不靠渐变动画。只在有请求
+ * 时挂着，没有请求就卸掉，不空转 */
+@utility motion-flow {
+  animation-name: tw-flow;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
 /* 骨架的明暗。比 `animate-pulse` 慢、幅度小，读起来是「在取」而不是「在闪」 */
 @utility motion-shimmer {
   animation: tw-shimmer 1.6s ease-in-out infinite;
@@ -505,6 +542,7 @@
   .motion-row-in::after,
   .motion-row-in > td::after,
   .motion-live::after,
+  .motion-flow,
   .motion-shimmer {
     animation: none;
   }
