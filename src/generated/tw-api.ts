@@ -1402,7 +1402,11 @@ count: number,
  * 码位规则命中了标签字符时，它们解出来的 ASCII 原文（最多 120 个字符）。别的时候
  * 没有
  */
-revealed?: string | null, at_ms: number, } | { "kind": "secrets_found", id: number, 
+revealed?: string | null, 
+/**
+ * 每一处在哪儿、当时的规则、具体做了什么（见 [`SecurityHitDetail`]）
+ */
+detail: SecurityHitDetail, at_ms: number, } | { "kind": "secrets_found", id: number, 
 /**
  * 这时要发往的上游（故障转移之前的首选）
  */
@@ -1463,7 +1467,11 @@ action: RuleAction,
 /**
  * 真的切断了流吗。**拦截档 + 规则是切断**两者同时成立才会
  */
-blocked: boolean, at_ms: number, } | { "kind": "request_priced", id: number, cost_micros?: number | null, cost_estimated?: boolean, cache_saved_micros?: number | null, at_ms: number, } | { "kind": "health_changed", id: number, provider: string, 
+blocked: boolean, 
+/**
+ * 每一处在哪儿、当时的规则、具体做了什么（见 [`SecurityHitDetail`]）
+ */
+detail: SecurityHitDetail, at_ms: number, } | { "kind": "request_priced", id: number, cost_micros?: number | null, cost_estimated?: boolean, cache_saved_micros?: number | null, at_ms: number, } | { "kind": "health_changed", id: number, provider: string, 
 /**
  * `open` = 熔断中，不进候选链；`closed` = 可以用
  */
@@ -1976,6 +1984,53 @@ before?: HistoryCursor | null,
  * 一页最多几条。缺省 100、最多 500
  */
 limit?: number | null, };
+
+/**
+ * 一处命中：在请求（或者回答）的哪儿，前后是什么。
+ *
+ * **前后文和命中的那一段都打过码**，和存下来的正文是同一套（同样的规则、同样的账本）：
+ * 出站脱敏命中的值写成打码后的样子，前后文里别的密钥也一样打掉，拦截档下换成了占位符的
+ * 写成那个占位符。
+ */
+export type HitLocation = { part: HitPart, 
+/**
+ * 在客户端的消息数组（`messages`、`input`、`contents`）里的下标。系统提示字段、工具
+ * 定义和回答里的没有
+ */
+message_index?: number | null, 
+/**
+ * 那条消息的角色，客户端写的原样（`user`、`assistant`、`tool`、`developer`、`model`……）
+ */
+role?: string | null, 
+/**
+ * 工具调用、工具结果是哪个工具（知道的话）
+ */
+tool?: string | null, 
+/**
+ * 在客户端发来的那一份请求体里的 JSON 路径（`messages[3].content[0].text`、
+ * `input[7].output`），按客户端的格式、转换之前。工具调用审查是这个调用的参数在客户端
+ * 收到的回答里的位置，按整包的形状写（`content[1].input`、
+ * `choices[0].message.tool_calls[0].function.arguments`）。没法按结构读的正文是空串
+ */
+path: string, 
+/**
+ * 命中之前最多 80 个字符（码位规则认的字符按画出来之前数，画出来的样子同 `matched`）
+ */
+before: string, 
+/**
+ * 命中的那一段：出站脱敏是打码后的值，别的是命中的文字（最多 200 个字符），码位规则
+ * 命中的字符画成 `‹U+E0049›`，连成一串的写成 `‹U+E0049 ×12›`
+ */
+matched: string, 
+/**
+ * 命中之后最多 80 个字符（同 `before`）
+ */
+after: string, };
+
+/**
+ * 命中在请求（或回答）的哪一部分。
+ */
+export type HitPart = "system" | "message" | "tool_result" | "tool_call" | "response_text";
 
 /**
  * 此刻还在跑的请求（`GET /in-flight`）：每一个到目前为止的事件，和 core 此刻的
@@ -2700,6 +2755,12 @@ export type OnError = "reject" | "skip";
  * 代理用不了时怎么办。
  */
 export type OnProxyFail = "fail" | "direct";
+
+/**
+ * 具体做了什么（[`SecurityEventView::outcome_detail`]），按 `action` 分，和
+ * [`SecurityOutcome`] 一一对应。
+ */
+export type OutcomeDetail = { "action": "recorded", } | { "action": "replaced", placeholders: Array<string>, } | { "action": "cut", tool: string, arguments: string, truncated: boolean, client_notice: string, } | { "action": "blocked", client_notice: string, } | { "action": "stripped", segments: number, };
 
 /**
  * 界面要显示的配置概览。
@@ -4061,6 +4122,36 @@ model?: string | null, max_tokens?: number | null,
 thinking?: boolean | null, };
 
 /**
+ * 命中那一刻的规则（[`SecurityEventView::rule_snapshot`]）。**跟着记录存**：规则之后改了、
+ * 删了，这一条说的还是当时按什么认出来的。
+ */
+export type RuleSnapshot = { 
+/**
+ * 内置规则。内置规则怎么认由那一版 core 定（`core_version`）
+ */
+builtin: boolean, 
+/**
+ * 内置规则的 id，或者自定义规则的名字
+ */
+id: string, 
+/**
+ * 显示的名字：内置规则的英文名（界面按 id 查自己的名称表），自定义规则就是它的名字
+ */
+name: string, 
+/**
+ * 自定义规则写的样子，原样（正则、关键词、码位）。内置规则没有
+ */
+pattern?: string | null, 
+/**
+ * 内容过滤：这条规则怎么认（`contains` / `regex` / `codepoints`）。别的防护没有
+ */
+matching?: ContentMatch | null, 
+/**
+ * 认出它的 core 的版本
+ */
+core_version: string, };
+
+/**
  * 规则转发到哪里（[`RuleView::to`]、[`RuleInput::to`]）。
  *
  * **线上和配置里的 `to` 一个写法**：一个字符串是上游或策略组的名字（`__all__` 是全部
@@ -4203,7 +4294,11 @@ kind: SecretKind,
  * 就是一次泄漏。内网地址和内部域名例外，它们不是凭据；身份证号、卡号、手机号
  * 只留最后四位（`…1234`），邮箱只留第一个字和域名（`z…@example.com`）
  */
-masked: string, count: number, };
+masked: string, count: number, 
+/**
+ * 每一处在哪儿、当时的规则、具体做了什么（见 [`SecurityHitDetail`]）
+ */
+detail: SecurityHitDetail, };
 
 /**
  * 出站脱敏找到的东西属于哪一类。
@@ -4247,6 +4342,11 @@ content_stripped: number, };
  * 三项防护。
  */
 export type SecurityDetail = { redact: GuardDetail, inspect_tools: GuardDetail, content: GuardDetail, };
+
+/**
+ * 命中在调用方发来的请求里，还是在交给调用方的回答里。
+ */
+export type SecurityDirection = "request" | "response";
 
 /**
  * 安全日志的一条。
@@ -4313,7 +4413,38 @@ peer?: string | null,
 /**
  * 请求带的那把网关密钥打码后的样子（`tw-re…wb4e`），请求那一刻的
  */
-key_masked?: string | null, };
+key_masked?: string | null, 
+/**
+ * 请求属于哪一次会话（[`HistoryRow`] 的 `session`）。认不出会话的请求没有
+ */
+session?: string | null, 
+/**
+ * 实际发给服务它的那家上游的模型名（规则改写、别名对过之后的）。一跳都没发出去的
+ * （被拒、被规则挡下）没有
+ */
+sent_model?: string | null, 
+/**
+ * 查的是请求（出站脱敏、内容过滤）还是回答（工具调用审查）
+ */
+direction: SecurityDirection, 
+/**
+ * 这条规则在这个请求里命中的每一处，按先后，**最多 [`HIT_LOCATIONS_MAX`] 处**。出站
+ * 脱敏是这个值出现的每一处，内容过滤是这条规则的每一处，工具调用审查是这个调用的参数里
+ * 的每一处
+ */
+locations: Array<HitLocation>, 
+/**
+ * 超出上限、没列出来的还有几处
+ */
+more_locations: number, 
+/**
+ * 命中那一刻的规则。之后改了、删了，这里说的还是当时那一版
+ */
+rule_snapshot: RuleSnapshot, 
+/**
+ * 具体做了什么：换成了哪个占位符、切断的是哪个调用、客户端收到了什么
+ */
+outcome_detail: OutcomeDetail, };
 
 /**
  * 安全日志的一页。**按时间倒序**，`more` 说后面还有没有。
@@ -4344,6 +4475,21 @@ guard?: Guard | null, from_ms?: number | null, to_ms?: number | null,
  * 只要这条之前的（翻页）
  */
 before?: number | null, limit?: number | null, };
+
+/**
+ * 一条安全记录的细节：在哪儿、按什么规则、具体做了什么。**命中的那一刻定下**，跟着事件
+ * 走（[`Event::SecretsFound`] 的每一项、[`Event::ContentMatched`]、[`Event::ToolCallFlagged`]），
+ * 和记录一起存，和请求记录一起过期。安全日志里摊开成 [`SecurityEventView`] 的那几个字段。
+ */
+export type SecurityHitDetail = { direction: SecurityDirection, 
+/**
+ * 每一处，按先后，最多 [`HIT_LOCATIONS_MAX`] 处
+ */
+locations: Array<HitLocation>, 
+/**
+ * 超出上限、没列出来的还有几处
+ */
+more_locations: number, rule_snapshot: RuleSnapshot, outcome_detail: OutcomeDetail, };
 
 /**
  * 安全日志的一条做了什么。

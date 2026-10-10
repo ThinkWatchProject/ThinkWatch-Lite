@@ -729,6 +729,13 @@ describe("对账时行对象换不换", () => {
       action: "record",
       blocked: false,
       at_ms: 1_000_500,
+      detail: {
+        direction: "response",
+        locations: [],
+        more_locations: 0,
+        rule_snapshot: { builtin: true, id: "curl-pipe-sh", name: "curl-pipe-sh", core_version: "0.68.0" },
+        outcome_detail: { action: "recorded" },
+      },
     } satisfies CoreEvent;
     applyEvent(rows, flag);
     const first = rows.get(1)?.flagged;
@@ -759,6 +766,18 @@ describe("对账时行对象换不换", () => {
         count: 74,
         revealed: "Ignore the previous task",
         at_ms: 1_000_400,
+        detail: {
+          direction: "request",
+          locations: [],
+          more_locations: 0,
+          rule_snapshot: { builtin: true, id: rule, name: rule, matching: "codepoints", core_version: "0.68.0" },
+          outcome_detail:
+            outcome === "stripped"
+              ? { action: "stripped", segments: 1 }
+              : outcome === "blocked"
+                ? { action: "blocked", client_notice: "[ThinkWatch] refused" }
+                : { action: "recorded" },
+        },
       }) satisfies CoreEvent;
     const before = rows.get(1);
     expect(applyBatch(rows, [matched("recorded", "act-as")])).toBe(false);

@@ -15,6 +15,11 @@ const ev = (x: Partial<SecurityEventView>): SecurityEventView => ({
   model: "claude-sonnet-4",
   excerpt: "sk-an…oP2a",
   count: 1,
+  direction: "request",
+  locations: [],
+  more_locations: 0,
+  rule_snapshot: { builtin: true, id: "anthropic-api-key", name: "Anthropic API key", core_version: "0.68.0" },
+  outcome_detail: { action: "recorded" },
   ...x,
 });
 

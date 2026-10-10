@@ -9,7 +9,7 @@
  */
 import { textOf } from "@/i18n";
 import { appLabel } from "@/labels";
-import type { HitLocation, OutcomeDetail, SecurityEventFull, SecurityEventsPageFull, SecurityEventsQuery } from "@/types";
+import type { HitLocation, OutcomeDetail, SecurityEventView, SecurityEventsPage, SecurityEventsQuery } from "@/types";
 import { exportText } from "./export.i18n";
 import { matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -21,14 +21,14 @@ export type ExportFormat = "json" | "csv";
 const BOM = String.fromCharCode(0xfeff);
 
 /** 读一页。缺省是控制面；测试里换成假的 */
-type Page = (q: SecurityEventsQuery) => Promise<SecurityEventsPageFull>;
+type Page = (q: SecurityEventsQuery) => Promise<SecurityEventsPage>;
 
 /**
  * `[from, to)` 里的全部命中，按时间倒序（和日志一样）。按 `before` 往前翻，直到 core 说
  * 没有更多。
  */
-export async function fetchAll(page: Page, from: number, to: number): Promise<SecurityEventFull[]> {
-  const out: SecurityEventFull[] = [];
+export async function fetchAll(page: Page, from: number, to: number): Promise<SecurityEventView[]> {
+  const out: SecurityEventView[] = [];
   let before: number | null = null;
   for (;;) {
     const p = await page({ from_ms: from, to_ms: to, before, limit: MAX_PAGE });
@@ -40,7 +40,7 @@ export async function fetchAll(page: Page, from: number, to: number): Promise<Se
 }
 
 /** JSON：控制面的原样字段，外加这一段的起止和导出的时刻 */
-export function toJson(events: SecurityEventFull[], from: number, to: number, now = Date.now()): string {
+export function toJson(events: SecurityEventView[], from: number, to: number, now = Date.now()): string {
   return `${JSON.stringify({ from_ms: from, to_ms: to, exported_at_ms: now, count: events.length, events }, null, 2)}\n`;
 }
 
@@ -92,7 +92,7 @@ export function csvCell(v: string | number | boolean | null | undefined): string
  * 语言写；JSON 才是给程序读的原样字段。开头带 BOM、行尾 CRLF：表格软件按 UTF-8 打开，
  * 中文不乱码。
  */
-export function toCsv(events: SecurityEventFull[]): string {
+export function toCsv(events: SecurityEventView[]): string {
   const t = textOf(exportText);
   const lt = textOf(securityLabelsText);
   const c = t.columns;

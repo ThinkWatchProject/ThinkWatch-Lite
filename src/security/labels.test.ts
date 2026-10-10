@@ -109,6 +109,11 @@ const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   excerpt: "summarize ‹U+E0049 ×74› the diff",
   count: 74,
   match: "codepoints",
+  direction: "request",
+  locations: [],
+  more_locations: 0,
+  rule_snapshot: { builtin: true, id: "unicode-tags", name: "Unicode tags", matching: "codepoints", core_version: "0.68.0" },
+  outcome_detail: { action: "stripped", segments: 1 },
   ...x,
 });
 

@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { prettyJson } from "@/prettyJson";
 import { clip } from "@/traffic/transcript";
-import type { HitLocation, OutcomeDetail, SecurityEventFull, SecurityOutcome } from "@/types";
+import type { HitLocation, OutcomeDetail, SecurityEventView, SecurityOutcome } from "@/types";
 import { Highlight, type Mark } from "./Highlight";
 import { Code, matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -48,7 +48,7 @@ export function HitDetail({
   className,
   id,
 }: {
-  e: SecurityEventFull;
+  e: SecurityEventView;
   stacked?: boolean;
   onOpenRequest?: (requestId: number) => void;
   onOpenSession?: (session: string) => void;
@@ -189,7 +189,7 @@ function Location({ l, tone, head }: { l: HitLocation; tone: Mark["tone"]; head:
  * 命中那一刻的规则。自定义规则写出原样的写法和匹配方式；内置规则写名字和定义它的那一版
  * core —— 内置规则随版本变，同名的规则换了版本可能认得不一样。
  */
-function RuleText({ e }: { e: SecurityEventFull }) {
+function RuleText({ e }: { e: SecurityEventView }) {
   const t = useText(hitDetailText);
   const lt = useText(securityLabelsText);
   const s = e.rule_snapshot;
@@ -213,7 +213,7 @@ function RuleText({ e }: { e: SecurityEventFull }) {
 }
 
 /** 具体做了什么 */
-function OutcomeText({ d, direction }: { d: OutcomeDetail; direction: SecurityEventFull["direction"] }) {
+function OutcomeText({ d, direction }: { d: OutcomeDetail; direction: SecurityEventView["direction"] }) {
   const t = useText(hitDetailText);
   switch (d.action) {
     case "recorded":

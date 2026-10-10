@@ -17,7 +17,7 @@ import { pluginLabelsText } from "@/plugins/labels.i18n";
 import { cpuMs } from "@/plugins/model";
 import { egressLabel } from "@/upstreams/labels";
 import { OutcomeOf, PluginText } from "@/plugins/parts";
-import type { AttemptView, PluginRunView, RequestDetail, SecurityEventFull } from "@/types";
+import type { AttemptView, PluginRunView, RequestDetail, SecurityEventView } from "@/types";
 import { Elapsed } from "../cells";
 import { CostText, Row, Rows, Stat, type DrawerState } from "./parts";
 import { requestDrawerText } from "./RequestDrawer.i18n";
@@ -161,8 +161,7 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
         )}
         {/* 这次请求在各项防护上的全部命中：哪条规则、什么值、做了什么；点开一条看细节 */}
         {r.security && r.security.length > 0 && (
-          // TODO(S1): drop the cast when bindings are regenerated (the row's entries carry the detail)
-          <Row label={t.security} value={<SecurityHits events={r.security as SecurityEventFull[]} />} />
+          <Row label={t.security} value={<SecurityHits events={r.security} />} />
         )}
         {/* 这次请求上跑过的插件：哪一个、请求还是回答、结果、CPU 时间、出错的原因；试过不止
             一跳的按跳分组 */}
@@ -217,7 +216,7 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
  * 这一次命中的详情**（和安全日志里点开的是同一块，标签在上，这一栏窄）。请求就是这一条，
  * 详情里不再给「请求」的链接；会话的链接跳到流量页的那次会话。
  */
-function SecurityHits({ events }: { events: SecurityEventFull[] }) {
+function SecurityHits({ events }: { events: SecurityEventView[] }) {
   const nav = useNav();
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
   const toggle = (id: number) =>

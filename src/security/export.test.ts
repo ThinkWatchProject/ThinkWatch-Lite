@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { HitLocation, SecurityEventFull, SecurityEventsPageFull, SecurityEventsQuery } from "@/types";
+import type { HitLocation, SecurityEventView, SecurityEventsPage, SecurityEventsQuery } from "@/types";
 import { csvCell, fetchAll, fileName, locationLine, outcomeLine, toCsv, toJson } from "./export";
 import { matchingOf, partLabel, snapshotName } from "./labels";
 
@@ -18,7 +18,7 @@ const loc = (x: Partial<HitLocation>): HitLocation => ({
   ...x,
 });
 
-const hit = (x: Partial<SecurityEventFull>): SecurityEventFull => ({
+const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   id: 1,
   at_ms: new Date(2026, 9, 10, 16, 42, 7).getTime(),
   request_id: 48123,
@@ -52,7 +52,7 @@ describe("导出读完整段", () => {
   it("一页一页翻到底", async () => {
     const all = Array.from({ length: 1203 }, (_, i) => hit({ id: 1203 - i }));
     const asked: SecurityEventsQuery[] = [];
-    const page = async (q: SecurityEventsQuery): Promise<SecurityEventsPageFull> => {
+    const page = async (q: SecurityEventsQuery): Promise<SecurityEventsPage> => {
       asked.push(q);
       const rest = all.filter((e) => q.before == null || e.id < q.before);
       const limit = q.limit ?? 100;

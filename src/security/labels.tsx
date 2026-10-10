@@ -8,7 +8,6 @@ import type {
   GuardMode,
   HitLocation,
   Matcher,
-  SecurityEventFull,
   SecurityEventView,
   SecurityOutcome,
   SecurityRuleView,
@@ -133,7 +132,7 @@ export function partLabel(l: HitLocation): string {
  * 命中那一刻的规则叫什么。**按快照，不按现在的规则表**：规则改了名、删掉了，日志里
  * 还是当时那一条。内置规则的名字照常查词表（快照里的英文名是退路）。
  */
-export function snapshotName(e: SecurityEventFull): string {
+export function snapshotName(e: SecurityEventView): string {
   const s = e.rule_snapshot;
   return s.builtin ? ruleName(e.guard, s.id, false, s.name) : s.name;
 }
@@ -142,7 +141,7 @@ export function snapshotName(e: SecurityEventFull): string {
  * 自定义规则怎么认。内容过滤的快照里写着；**另两项的自定义规则只有正则一种写法**
  * （脱敏和工具调用规则都是一个正则），快照里不写，这里补上。内置规则没有写法可展示。
  */
-export function matchingOf(e: SecurityEventFull): ContentMatch | null {
+export function matchingOf(e: SecurityEventView): ContentMatch | null {
   const s = e.rule_snapshot;
   if (s.builtin) return null;
   return s.matching ?? (e.guard === "content" ? null : "regex");

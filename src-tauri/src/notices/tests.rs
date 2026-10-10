@@ -403,6 +403,23 @@ async fn what_was_held_back_and_then_resolved_or_read_is_not_mentioned() {
 
 // ---------------------------------------------------------------- 一次性的事
 
+/// 一次工具调用命中的细节：通知规则不看它，给一份 core 会给的样子
+fn flag_detail() -> tw_api::SecurityHitDetail {
+    tw_api::SecurityHitDetail {
+        direction: tw_api::SecurityDirection::Response,
+        locations: Vec::new(),
+        more_locations: 0,
+        rule_snapshot: tw_api::RuleSnapshot {
+            builtin: true,
+            id: "curl-pipe-sh".into(),
+            name: "Download and run".into(),
+            core_version: "0.68.0".into(),
+            ..Default::default()
+        },
+        outcome_detail: tw_api::OutcomeDetail::Recorded {},
+    }
+}
+
 /// 一次被拦下的工具调用，和 core 发来的一样走规则
 fn blocked(provider: &str) -> Signal {
     rules::from_event(&tw_api::Event::ToolCallFlagged {
@@ -416,6 +433,7 @@ fn blocked(provider: &str) -> Signal {
         action: tw_api::RuleAction::Cut,
         blocked: true,
         at_ms: T0,
+        detail: flag_detail(),
     })
     .remove(0)
 }
@@ -686,6 +704,7 @@ fn a_flagged_tool_call_never_carries_the_call_itself() {
         action: tw_api::RuleAction::Cut,
         blocked: true,
         at_ms: T0,
+        detail: flag_detail(),
     });
     let s = &signals[0];
     assert!(!s.body.contains("curl"), "锁屏上看得见，不能带调用内容");
@@ -844,6 +863,7 @@ fn a_rule_that_only_records_does_not_interrupt_anyone() {
         action: tw_api::RuleAction::Record,
         blocked: false,
         at_ms: T0,
+        detail: flag_detail(),
     });
     assert!(signals.is_empty());
 }
@@ -1083,6 +1103,7 @@ fn in_english_no_rule_writes_a_chinese_word() {
         action: tw_api::RuleAction::Cut,
         blocked,
         at_ms: T0,
+        detail: flag_detail(),
     };
     let events = vec![
         quota_exhausted("5h", Some(7_200)),

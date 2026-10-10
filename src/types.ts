@@ -10,7 +10,6 @@
 // 概览那一份（Rust 侧 `dashboard` 命令拼的）、金额的写法，以及几个封闭集合
 // 在运行时要用的全部取值。
 import type {
-  ContentMatch,
   CostBucket,
   CostBucketGroup,
   Event,
@@ -19,8 +18,6 @@ import type {
   LatencyView,
   Msg,
   SecretItem,
-  SecurityEventsPage,
-  SecurityEventView,
   Status,
   StorageStatus,
   Summary,
@@ -48,77 +45,6 @@ export type CoreStatus = Status;
 
 /** 三项防护，按安全页标签的顺序。每一项都有规则表 */
 export const GUARDS: readonly Guard[] = ["redact", "inspect_tools", "content"];
-
-// ─── TODO(S1): remove when bindings are regenerated ───
-//
-// core `feat/security-detail` adds the hit detail below to `SecurityEventView` (the security
-// log contract of 2026-10-10). Until the pinned core has it, the shapes are written here by
-// hand, exactly as the contract has them. When `src/generated/tw-api.ts` is regenerated:
-// delete this block, replace `SecurityEventFull` with `SecurityEventView` and
-// `SecurityEventsPageFull` with `SecurityEventsPage`, and drop the two casts marked
-// `TODO(S1)` (`security/api.ts` `events`, `traffic/drawer/Timeline.tsx`). The generated
-// `HitLocation` / `RuleSnapshot` / `OutcomeDetail` take over these names.
-
-/** 一次命中的一处：在请求（或回答）的哪一段、JSON 里的路径、前后文 */
-export interface HitLocation {
-  part: "system" | "message" | "tool_result" | "tool_call" | "response_text";
-  /** 在客户端的 messages / input 数组里的下标（从 0 数）。系统提示、回答正文没有 */
-  message_index?: number | null;
-  /** 客户端写的角色（user / assistant / tool / developer …） */
-  role?: string | null;
-  /** tool_call / tool_result 的工具名（知道的话） */
-  tool?: string | null;
-  /** 客户端报文里的 JSON 路径，如 `messages[3].content[0].text`、`input[7].output` */
-  path: string;
-  /** 命中之前最多 80 个字符，和存下来的报文一样脱敏过 */
-  before: string;
-  /** 出站脱敏是掩码后的值；其余是命中的那一段（最多 200 个字符，码位规则画成码位） */
-  matched: string;
-  /** 命中之后最多 80 个字符，脱敏过 */
-  after: string;
-}
-
-/** 命中那一刻的规则 */
-export interface RuleSnapshot {
-  builtin: boolean;
-  /** 内置规则的 id，或自定义规则的名字 */
-  id: string;
-  name: string;
-  /** 自定义规则：原样的写法。内置规则没有 */
-  pattern?: string | null;
-  /** 内容过滤：怎么认 */
-  matching?: ContentMatch | null;
-  /** 做判断的那一版 core（内置规则由版本决定） */
-  core_version: string;
-}
-
-/** 具体做了什么，按 `action` 分 */
-export type OutcomeDetail =
-  | { action: "recorded" }
-  | { action: "replaced"; placeholders: string[] }
-  | { action: "cut"; tool: string; arguments: string; truncated: boolean; client_notice: string }
-  | { action: "blocked"; client_notice: string }
-  | { action: "stripped"; segments: number };
-
-/** 安全日志的一条，带着命中的细节 */
-export type SecurityEventFull = SecurityEventView & {
-  /** 这次请求的会话 */
-  session?: string | null;
-  /** 实际发给服务它的上游的模型名。没发出的没有 */
-  sent_model?: string | null;
-  direction: "request" | "response";
-  /** 这条规则在这次请求里命中的每一处，按出现的先后，最多 50 处 */
-  locations: HitLocation[];
-  /** 超出 50 处的还有几处 */
-  more_locations: number;
-  rule_snapshot: RuleSnapshot;
-  outcome_detail: OutcomeDetail;
-};
-
-/** 安全日志的一页，带着细节 */
-export type SecurityEventsPageFull = Omit<SecurityEventsPage, "events"> & { events: SecurityEventFull[] };
-
-// ─── end TODO(S1) ───
 
 /** 命中了工具调用规则的一个调用 */
 export interface FlaggedCall {

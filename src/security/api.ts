@@ -12,7 +12,6 @@ import type {
   Guard,
   GuardMode,
   RuleAction,
-  SecurityEventsPageFull,
   SecurityEventsQuery,
 } from "@/types";
 
@@ -26,8 +25,7 @@ export const hasAction = (g: Guard): g is ActionGuard => g === "inspect_tools" |
 export const api = {
   detail: () => call("Security", null),
   /** 安全日志的一页。`guard` 不给就是全部；`before` 翻页 */
-  // TODO(S1): drop the cast when bindings are regenerated (the generated page carries the detail)
-  events: (q: SecurityEventsQuery) => call("SecurityEvents", q) as Promise<SecurityEventsPageFull>,
+  events: (q: SecurityEventsQuery) => call("SecurityEvents", q),
   /**
    * 导出的文件：弹系统的「存储」对话框，`name` 是默认文件名，存到用户选的地方。返回存到的
    * 路径；用户取消了是 `null`。**对话框和写文件都在 Rust 这一侧**（`export::save_export`），

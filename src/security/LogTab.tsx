@@ -17,7 +17,7 @@ import { KeyLabel } from "@/KeyLabel";
 import { useText } from "@/i18n";
 import { useNav } from "@/nav";
 import RequestDrawer from "@/traffic/drawer/RequestDrawer";
-import { GUARDS, type Guard, type SecurityDetail, type SecurityEventFull } from "@/types";
+import { GUARDS, type Guard, type SecurityDetail, type SecurityEventView } from "@/types";
 import { api } from "./api";
 import { fetchAll, fileName, toCsv, toJson, type ExportFormat } from "./export";
 import { HitDetail } from "./HitDetail";
@@ -180,7 +180,7 @@ function LogTable({
   loadMore,
   loadingMore,
 }: {
-  events: SecurityEventFull[];
+  events: SecurityEventView[];
   more: boolean;
   detail: SecurityDetail | undefined;
   actions: LogActions;
@@ -224,10 +224,10 @@ function LogTable({
   }
 
   /** 这条规则现在还在不在、开没开。删掉的自定义规则，菜单里那两项就灰掉 */
-  const ruleOf = (e: SecurityEventFull) =>
+  const ruleOf = (e: SecurityEventView) =>
     detail?.[e.guard].rules.find((r) => r.id === e.rule && r.custom === e.custom);
 
-  function menu(e: SecurityEventFull): MenuItems {
+  function menu(e: SecurityEventView): MenuItems {
     const r = ruleOf(e);
     return [
       { kind: "item", label: t.viewRequest, onSelect: () => onOpen(e.request_id) },

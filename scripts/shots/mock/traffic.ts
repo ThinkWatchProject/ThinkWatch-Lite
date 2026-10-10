@@ -27,6 +27,7 @@ import type {
   RouteHits,
   RouteStats,
   RoutingView,
+  HitLocation,
   SecurityEventView,
   SessionView,
   Summary,
@@ -506,7 +507,49 @@ function generate() {
 
 // ───────────────────────────────────────── 安全日志
 
-type Hit = Omit<SecurityEventView, "id" | "at_ms" | "request_id" | "provider" | "client" | "model" | "client_hint" | "peer" | "key_masked">;
+type Detail = "direction" | "locations" | "more_locations" | "rule_snapshot" | "outcome_detail";
+type Hit = Omit<SecurityEventView, "id" | "at_ms" | "request_id" | "provider" | "client" | "model" | "client_hint" | "peer" | "key_masked" | Detail> &
+  Partial<Pick<SecurityEventView, Detail>>;
+
+/**
+ * 一次命中的细节，照 core 的写法补：脱敏在发出的请求里、占位符 `<<TW_SECRET_n>>`；工具调用在
+ * 回答里；内容过滤看在哪儿命中（工具结果是请求里的）。没给的按摘录补，最多三处
+ */
+function detailOf(hit: Hit): Pick<SecurityEventView, Detail> {
+  const direction = hit.direction ?? (hit.guard === "redact" || hit.tool === "tool_result" ? "request" : "response");
+  const loc: HitLocation =
+    hit.guard === "inspect_tools"
+      ? { part: "tool_call", tool: hit.tool ?? null, path: "output[2].arguments", before: '{"command":"', matched: hit.excerpt, after: '"}' }
+      : hit.tool === "tool_result"
+        ? { part: "tool_result", message_index: 6, role: "user", tool: "Read", path: "messages[6].content[1].content", before: "", matched: hit.excerpt, after: "" }
+        : { part: "message", message_index: 4, role: "user", path: "messages[4].content[0].text", before: "", matched: hit.excerpt, after: "" };
+  const locations = hit.locations ?? Array.from({ length: Math.min(hit.count, 3) }, () => loc);
+  const outcome_detail: SecurityEventView["outcome_detail"] =
+    hit.outcome_detail ??
+    (hit.action === "replaced"
+      ? { action: "replaced", placeholders: locations.map((_, i) => `<<TW_SECRET_${i + 1}>>`) }
+      : hit.action === "cut"
+        ? { action: "cut", tool: hit.tool ?? "", arguments: `{"command":"${hit.excerpt}"}`, truncated: false, client_notice: `[ThinkWatch] ${CUT.text}` }
+        : hit.action === "stripped"
+          ? { action: "stripped", segments: 1 }
+          : hit.action === "blocked"
+            ? { action: "blocked", client_notice: `[ThinkWatch] Content rule “${hit.rule}” matched this request (“${hit.excerpt}”), so it was not sent.` }
+            : { action: "recorded" });
+  return {
+    direction,
+    locations,
+    more_locations: hit.more_locations ?? 0,
+    rule_snapshot: hit.rule_snapshot ?? {
+      builtin: !hit.custom,
+      id: hit.rule,
+      name: hit.rule,
+      pattern: hit.custom ? "CUST-\\d{4,}" : null,
+      matching: hit.guard === "content" ? (hit.match ?? null) : null,
+      core_version: "0.68.0",
+    },
+    outcome_detail,
+  };
+}
 
 /**
  * 几次命中，写法照 recorder：出站脱敏的摘录是打码的值（头 5 尾 4；内部地址类原样），
@@ -526,6 +569,7 @@ function securityLog() {
       peer: null,
       key_masked: row.key_masked ?? null,
       ...hit,
+      ...detailOf(hit),
     };
     SEC_EVENTS.push(ev);
     (row.security ??= []).push(ev);
