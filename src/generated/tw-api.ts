@@ -627,7 +627,7 @@ unpriced_models?: Array<string>, };
 /**
  * 路由规则 `when` 里的键。
  */
-export type ConditionField = "model" | "client" | "dialect" | "input_tokens" | "max_tokens" | "tool_count" | "intent" | "provider_would_be" | "cache" | "tools" | "image" | "thinking" | "stream";
+export type ConditionField = "model" | "client" | "dialect" | "input_tokens" | "max_tokens" | "tool_count" | "intent" | "provider_would_be" | "cache" | "tools" | "image" | "thinking" | "stream" | "time";
 
 /**
  * 规则里的一个条件。

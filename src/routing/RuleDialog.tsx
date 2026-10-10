@@ -52,6 +52,7 @@ import { PinnedModels } from "./PinnedModels";
 import { routingText } from "./routing.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import { modelHint, type ModelHint } from "./target";
+import { TimeCondition } from "./TimeCondition";
 
 /** 目标下拉里「新建策略组…」那一项的值。只活在这个下拉里，不会写进配置 */
 const NEW_GROUP = "::new-group";
@@ -537,12 +538,15 @@ function ConditionRow({
           />
         );
       break;
+    case "time":
+      control = <TimeCondition values={c.values} onChange={(values) => onChange({ ...c, values })} label={name} />;
+      break;
   }
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-start gap-2">
         <span className="w-24 shrink-0 pt-1.5 tw-body text-muted-foreground">{name}</span>
-        <div className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2", f.kind === "many" && "pt-1")}>
+        <div className={cn("flex min-w-0 flex-1 flex-wrap items-center gap-2", (f.kind === "many" || f.kind === "time") && "pt-1")}>
           {control}
         </div>
         {/* 写成字：对话框右上角的 × 是关闭，同一个面板里不能再有一个 × 表示删除 */}
