@@ -10,7 +10,7 @@
 //! **不留一个没人要的任务**：
 //!
 //! - 请求结束（core 发 `end`、关掉流）、流断了、换了连接，读的那个任务自己收场：最后一批带上
-//!   `closed`，从登记里摘掉自己
+//!   `closed`（断了的带着原因），从登记里摘掉自己
 //! - 退订就地叫停它，连着 core 的那条连接跟着断开（`LiveStream` 丢掉就断）
 //! - 网页重新载入过、退订没送到的，最多留 [`MAX`] 个：再订阅时最早的那个叫停 —— 而它们本来
 //!   也只活到那个请求结束
@@ -115,7 +115,9 @@ pub fn live_unsubscribe(subs: tauri::State<'_, LiveSubs>, sub: String) {
 }
 
 /// 读到 `end`（或者流断了、换了连接）为止，一批一批交给界面。正常结束是 `Ok`：最后一批
-/// 由调用方带着 `closed` 发
+/// 由调用方带着 `closed` 发。
+///
+/// **换了连接不算出错**：界面跟着换过去、整个重新取，旧的那个 core 上的这条请求不必再说什么
 async fn pump(
     app: &tauri::AppHandle,
     sub: &str,
@@ -141,7 +143,10 @@ async fn pump(
         tokio::select! {
             // **先看换没换连接**：换了之后，旧的那个 core 的内容不该再落到界面上
             biased;
-            _ = moved.changed() => anyhow::bail!("switched to another connection"),
+            _ = moved.changed() => {
+                tracing::debug!("换了连接，实时内容不再跟");
+                return Ok(());
+            }
             _ = tokio::time::sleep_until(due.unwrap_or_else(tokio::time::Instant::now)), if due.is_some() => {
                 send(&mut batch);
                 due = None;

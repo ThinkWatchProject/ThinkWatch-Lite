@@ -534,8 +534,15 @@ impl LiveStream {
     /// 下一条。交出 `end` 之后是 `None`。
     ///
     /// **没等到 `end` 流就断了是错误**（core 退了、连接断了、太久没有一个字节）：请求怎么
-    /// 收的场这一侧不知道，调用方该去取一次存下的详情
+    /// 收的场这一侧不知道，调用方该去取一次存下的详情。界面上会显示这一句，原话进日志
     pub async fn next(&mut self) -> Result<Option<tw_api::LiveContent>> {
+        let cut = |why: &dyn std::fmt::Display| {
+            tracing::debug!("实时内容断了：{why}");
+            anyhow::anyhow!(tr!(
+                "连接在请求结束前中断",
+                "The connection closed before the request ended"
+            ))
+        };
         loop {
             if let Some(c) = self.ready.pop_front() {
                 self.ended |= matches!(c, tw_api::LiveContent::End(_));
@@ -544,8 +551,10 @@ impl LiveStream {
             if self.ended {
                 return Ok(None);
             }
-            let Some(chunk) = silent_frame(&mut self.resp, "live content stream").await? else {
-                anyhow::bail!("the live content stream closed before the request ended");
+            let chunk = match silent_frame(&mut self.resp, "live content stream").await {
+                Ok(Some(chunk)) => chunk,
+                Ok(None) => return Err(cut(&"closed")),
+                Err(e) => return Err(cut(&format!("{e:#}"))),
             };
             for m in self.frames.push(&chunk) {
                 if let Some(c) = tw_api::LiveContent::parse(&m.event, &m.data) {

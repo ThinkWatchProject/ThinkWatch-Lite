@@ -223,6 +223,7 @@ function ResponseBox({
   onUserScroll: (atEnd: boolean) => void;
 }) {
   const t = useText(contentText);
+  const r = useText(requestDrawerText);
   const body = hop.body.kind === "body" ? hop.body.body : null;
   const growing = body?.growing ?? false;
   const json = body ? isJson(body) : false;
@@ -248,6 +249,7 @@ function ResponseBox({
           <span className="tw-label tw-num text-muted-foreground">
             {size(body.bytes)}
             {log && log.total > 0 && ` · ${t.events(log.total)}`}
+            {body.truncated && ` · ${r.truncated}`}
           </span>
         )}
         <CopyAll text={() => plain(hop.head, body ? bodyText(body) : null)} />
