@@ -273,6 +273,262 @@ async fn a_refusal_comes_back_with_its_code() {
     assert!(!m.code.is_empty(), "{m:?}");
 }
 
+/// 实时内容（`GET /request/{id}/live`）也走握手，**没在跑的请求是 core 那条带码的 404**：
+/// 界面据此去取存下的详情。它和事件流一样自己拼请求，坏了的样子是「内容」那一页一直等
+#[tokio::test]
+async fn live_content_of_a_request_that_is_not_running_comes_back_with_its_code() {
+    use thinkwatch_lite_lib::control::Refused;
+
+    let core = Core::start();
+    core.wait_ready().await;
+
+    let Err(e) = core.ok().open_live(987_654_321).await else {
+        panic!("没在跑的请求居然订阅上了");
+    };
+    let Some(Refused(m)) = e.downcast_ref::<Refused>() else {
+        panic!("拒绝没按 ErrorBody 读出来：{e:#}");
+    };
+    assert_eq!(m.code, "control.request_not_running", "{m:?}");
+
+    let wrong = core.client(core.wrong_key()).open_live(1).await;
+    assert!(wrong.is_err(), "钥匙不对的订阅居然进去了");
+}
+
+/// 读一个 HTTP/1.1 请求的头和正文（按 `content-length`），交出请求行
+async fn read_request(s: &mut tokio::net::TcpStream) -> String {
+    use tokio::io::AsyncReadExt;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 4096];
+    let head_end = loop {
+        let n = s.read(&mut chunk).await.unwrap();
+        assert!(n > 0, "请求没写完连接就关了");
+        buf.extend_from_slice(&chunk[..n]);
+        if let Some(i) = buf.windows(4).position(|w| w == b"\r\n\r\n") {
+            break i + 4;
+        }
+    };
+    let head = String::from_utf8_lossy(&buf[..head_end]).into_owned();
+    let len = head
+        .lines()
+        .find_map(|l| {
+            let (k, v) = l.split_once(':')?;
+            k.eq_ignore_ascii_case("content-length")
+                .then(|| v.trim().parse::<usize>().ok())?
+        })
+        .unwrap_or(0);
+    while buf.len() < head_end + len {
+        let n = s.read(&mut chunk).await.unwrap();
+        assert!(n > 0, "正文没写完连接就关了");
+        buf.extend_from_slice(&chunk[..n]);
+    }
+    head.lines().next().unwrap_or_default().to_string()
+}
+
+/// 一个假的 Anthropic 上游：`POST /v1/messages` 答一个 SSE 流，先给开头那几个事件，等
+/// `gate` 放行再给其余的；别的请求（取模型列表这些）答 404
+async fn gated_upstream(gate: std::sync::Arc<tokio::sync::Notify>) -> u16 {
+    use tokio::io::AsyncWriteExt;
+    let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = l.local_addr().unwrap().port();
+    tokio::spawn(async move {
+        loop {
+            let Ok((mut s, _)) = l.accept().await else {
+                return;
+            };
+            let gate = gate.clone();
+            tokio::spawn(async move {
+                let line = read_request(&mut s).await;
+                if !line.starts_with("POST /v1/messages") {
+                    let _ = s
+                        .write_all(b"HTTP/1.1 404 Not Found\r\ncontent-length: 0\r\nconnection: close\r\n\r\n")
+                        .await;
+                    return;
+                }
+                let ev = |name: &str, data: &str| format!("event: {name}\ndata: {data}\n\n");
+                let opening = format!(
+                    "HTTP/1.1 200 OK\r\ncontent-type: text/event-stream\r\ncache-control: no-cache\r\nconnection: close\r\n\r\n{}{}{}",
+                    ev(
+                        "message_start",
+                        r#"{"type":"message_start","message":{"id":"msg_1","type":"message","role":"assistant","model":"claude-test","content":[],"usage":{"input_tokens":5,"output_tokens":1}}}"#
+                    ),
+                    ev(
+                        "content_block_start",
+                        r#"{"type":"content_block_start","index":0,"content_block":{"type":"text","text":""}}"#
+                    ),
+                    ev(
+                        "content_block_delta",
+                        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"你好"}}"#
+                    ),
+                );
+                s.write_all(opening.as_bytes()).await.unwrap();
+                s.flush().await.unwrap();
+                gate.notified().await;
+                let rest = format!(
+                    "{}{}{}{}",
+                    ev(
+                        "content_block_delta",
+                        r#"{"type":"content_block_delta","index":0,"delta":{"type":"text_delta","text":"，世界"}}"#
+                    ),
+                    ev(
+                        "content_block_stop",
+                        r#"{"type":"content_block_stop","index":0}"#
+                    ),
+                    ev(
+                        "message_delta",
+                        r#"{"type":"message_delta","delta":{"stop_reason":"end_turn"},"usage":{"output_tokens":3}}"#
+                    ),
+                    ev("message_stop", r#"{"type":"message_stop"}"#),
+                );
+                let _ = s.write_all(rest.as_bytes()).await;
+                let _ = s.shutdown().await;
+            });
+        }
+    });
+    port
+}
+
+/// **整条路走一遍**：一个流式请求经过网关时订阅它的实时内容，补发的报文头和请求体、之后
+/// 一段一段的回答、最后的 `end` 都到得了，凭据打了码。core 发的和这一侧读的是不是同一种
+/// 东西，只有在两个真进程之间才说得清
+#[tokio::test]
+async fn a_streaming_request_can_be_followed_live_until_it_ends() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tw_api::{
+        LiveContent, OAuthChange, OnProxyFail, Protocol, ProviderInput, ProviderSave, WireDir,
+        WireSide, ep,
+    };
+
+    const UPSTREAM_KEY: &str = "sk-ant-api03-fakeupstreamkey0123456789";
+    let gate = std::sync::Arc::new(tokio::sync::Notify::new());
+    let upstream = gated_upstream(gate.clone()).await;
+    let core = Core::start();
+    core.wait_ready().await;
+    let c = core.ok();
+    c.call::<ep::CreateProvider>(
+        &[],
+        &ProviderSave {
+            provider: ProviderInput {
+                name: "fake".into(),
+                base_url: format!("http://127.0.0.1:{upstream}"),
+                key: Some(UPSTREAM_KEY.into()),
+                headers: vec![],
+                oauth: OAuthChange::default(),
+                aws: None,
+                protocol: Some(Protocol::Anthropic),
+                forward_client_identity: false,
+                proxy: "direct".into(),
+                on_proxy_fail: OnProxyFail::Fail,
+                models: vec!["claude-test".into()],
+                models_only: None,
+                billing: None,
+                pricing: None,
+                max_concurrent: None,
+                disabled: false,
+            },
+            base_version: None,
+        },
+    )
+    .await
+    .expect("建不出上游");
+    let key_name = c.call::<ep::Keys>(&[], &()).await.unwrap()[0].name.clone();
+    let key = c
+        .call::<ep::KeyValue>(&[key_name.as_str()], &())
+        .await
+        .unwrap()
+        .key;
+    let gw = c
+        .status()
+        .await
+        .unwrap()
+        .gateway_addr
+        .expect("网关没有地址");
+
+    // 客户端：一个流式的 Anthropic 请求，读到连接关掉为止
+    let sent_key = key.clone();
+    let client = tokio::spawn(async move {
+        let key = sent_key;
+        let body = r#"{"model":"claude-test","max_tokens":16,"stream":true,"messages":[{"role":"user","content":"hi"}]}"#;
+        let mut s = tokio::net::TcpStream::connect(gw.as_str()).await.unwrap();
+        let req = format!(
+            "POST /v1/messages HTTP/1.1\r\nhost: {gw}\r\ncontent-type: application/json\r\nanthropic-version: 2023-06-01\r\nx-api-key: {key}\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+            body.len()
+        );
+        s.write_all(req.as_bytes()).await.unwrap();
+        let mut out = Vec::new();
+        let _ = s.read_to_end(&mut out).await;
+        String::from_utf8_lossy(&out).into_owned()
+    });
+
+    // 等它在跑
+    let deadline = Instant::now() + Duration::from_secs(15);
+    let id = loop {
+        let f = c.call::<ep::InFlight>(&[], &()).await.unwrap();
+        if let Some(r) = f.requests.first() {
+            break r.id;
+        }
+        assert!(Instant::now() < deadline, "请求一直没跑起来");
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    };
+    let mut live = c.open_live(id).await.expect("订阅不上在跑的请求");
+
+    let mut heads = Vec::new();
+    let mut answer = String::new();
+    let mut released = false;
+    let end = loop {
+        let item = tokio::time::timeout(Duration::from_secs(15), live.next())
+            .await
+            .expect("实时内容十五秒没有动静")
+            .expect("实时内容断了");
+        match item {
+            Some(LiveContent::Head(h)) => heads.push(h),
+            Some(LiveContent::Body(b)) => {
+                if b.side == WireSide::Client && b.dir == WireDir::Response {
+                    answer.push_str(&b.text);
+                    // 开头那一段到了：让上游接着说
+                    if !released && answer.contains("你好") {
+                        released = true;
+                        gate.notify_one();
+                    }
+                }
+            }
+            Some(LiveContent::End(e)) => break e,
+            None => panic!("没有 end 就结束了"),
+        }
+    };
+    assert!(live.next().await.unwrap().is_none(), "end 之后还有东西");
+    assert!(released, "回答的开头没有实时到");
+    assert!(answer.contains("，世界"), "放行之后的回答没到：{answer}");
+    assert_eq!(end.status, Some(200));
+    assert_eq!(end.outcome, tw_api::LiveOutcome::Finished);
+
+    let line = |side, dir| {
+        heads
+            .iter()
+            .find(|h| h.side == side && h.dir == dir)
+            .map(|h| h.line.clone())
+            .unwrap_or_default()
+    };
+    assert_eq!(
+        line(WireSide::Client, WireDir::Request),
+        "POST /v1/messages HTTP/1.1"
+    );
+    assert!(
+        line(WireSide::Upstream, WireDir::Request).starts_with("POST http://127.0.0.1:"),
+        "{heads:?}"
+    );
+    assert!(
+        line(WireSide::Client, WireDir::Response).contains("200"),
+        "{heads:?}"
+    );
+    // 凭据打了码：网关密钥和上游的密钥都不原样出现
+    let all = format!("{heads:?}");
+    assert!(!all.contains(&key), "网关密钥原样出现在报文头里");
+    assert!(!all.contains(UPSTREAM_KEY), "上游密钥原样出现在报文头里");
+
+    let said = client.await.unwrap();
+    assert!(said.contains("，世界"), "客户端没收到完整的回答：{said}");
+}
+
 /// 接管要问 core 的只有两件事，都问得到：客户端该连的网关地址（按配置里的端口），
 /// 和为这个客户端发的专用密钥 —— 第二次问拿到的是同一把，记着是为谁发的
 #[tokio::test]
