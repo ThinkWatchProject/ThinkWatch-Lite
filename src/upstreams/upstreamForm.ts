@@ -23,7 +23,7 @@ import type {
 } from "@/types";
 import { globMatch } from "./glob";
 import { bedrockRegionOf, bedrockUrl } from "./labels";
-import { CUSTOM } from "./presets";
+import { CUSTOM, presetById } from "./presets";
 import { upstreamFormText } from "./upstreamForm.i18n";
 
 /** `aws-keys` / `aws-profile` 只给 Bedrock 上游 */
@@ -110,7 +110,29 @@ export function freeName(base: string, taken: string[]): string {
   }
 }
 
-/** 新建时的空表单。服务类型从「自定义」开始，在对话框里选 */
+/**
+ * 新建的第一步选了一种服务类型：预设填进表单。
+ *
+ * 名称只在没被手动改过时跟着换（空的，或者还是上一个预设填的）；地址、协议、计费
+ * 一律按预设 —— 这一步就是用来定这几样的。「自定义」清空地址和协议，交给人填。
+ */
+export function applyPreset(form: UpstreamForm, id: string, taken: string[]): UpstreamForm {
+  const prev = presetById(form.preset);
+  const next = presetById(id);
+  return {
+    ...form,
+    preset: next.id,
+    name:
+      form.name === "" || form.name === freeName(prev.name, taken)
+        ? freeName(next.name, taken)
+        : form.name,
+    baseUrl: next.baseUrl,
+    protocol: next.protocol,
+    billing: next.billing ?? "per-token",
+  };
+}
+
+/** 新建时的空表单。服务类型在第一步选，从「自定义」开始 */
 export function blankForm(): UpstreamForm {
   return {
     preset: CUSTOM.id,

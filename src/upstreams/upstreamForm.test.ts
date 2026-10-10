@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ProviderView } from "@/types";
 import {
+  applyPreset,
   blankForm,
   connectionChanged,
   connectionMissing,
@@ -177,6 +178,32 @@ describe("编辑时回填原样", () => {
     expect(connectionChanged({ ...f, headers: [...f.headers, headerRow("X-Org", "o-1")] }, p)).toBe(true);
     expect(connectionChanged({ ...f, protocol: "openai-chat" }, p)).toBe(true);
     expect(connectionChanged({ ...f, proxy: "system" }, p)).toBe(true);
+  });
+});
+
+describe("第一步选服务类型", () => {
+  it("预设填地址、协议、名称；名称已被占用就加序号", () => {
+    const f = applyPreset(blankForm(), "anthropic", ["anthropic"]);
+    expect(f.preset).toBe("anthropic");
+    expect(f.name).toBe("anthropic-2");
+    expect(f.baseUrl).toBe("https://api.anthropic.com");
+    expect(f.protocol).toBe("anthropic");
+    expect(f.billing).toBe("per-token");
+  });
+
+  it("退回第一步换一种：没手动改过的名称跟着换，改过的留着", () => {
+    const a = applyPreset(blankForm(), "anthropic", []);
+    expect(applyPreset(a, "openai", []).name).toBe("openai");
+    const mine = applyPreset({ ...a, name: "work" }, "openai", []);
+    expect(mine.name).toBe("work");
+    expect(mine.baseUrl).toBe("https://api.openai.com");
+  });
+
+  it("本地服务不计费；换回自定义清空地址和协议", () => {
+    const o = applyPreset(blankForm(), "ollama", []);
+    expect(o.billing).toBe("free");
+    const c = applyPreset(o, "custom", []);
+    expect(c).toMatchObject({ preset: "custom", name: "", baseUrl: "", protocol: "", billing: "per-token" });
   });
 });
 

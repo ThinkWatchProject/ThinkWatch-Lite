@@ -29,10 +29,13 @@ import { useManualEntry } from "./ManualModelInput";
 import { addToList, unionModels } from "./manualModels";
 import { ModelsSection, catalogOf, type ModelCatalog } from "./ModelsSection";
 import { DialogError, ProviderTile, StepNav } from "./parts";
+import { CHATGPT, ZAI, presetById } from "./presets";
+import { PresetTile, ServiceSection } from "./ServiceSection";
 import { PriceSheetDialog } from "./PriceSheetDialog";
 import { ProxyDialog } from "./ProxyDialog";
 import { upstreamDialogText } from "./UpstreamDialog.i18n";
 import {
+  applyPreset,
   blankForm,
   connectionChanged,
   connectionMissing,
@@ -46,9 +49,18 @@ import {
   type UpstreamForm,
 } from "./upstreamForm";
 
-export type Section = "connection" | "account" | "models" | "billing";
+export type Section = "service" | "connection" | "account" | "models" | "billing";
 
+/** 编辑时的分节。服务类型是新建时定的，编辑不再换 */
 const SECTIONS: Section[] = ["connection", "models", "billing"];
+
+/**
+ * 新建的分步：先选服务类型，点一格就进「连接」。
+ *
+ * 选定的类型决定后面怎么填（账号登录整个让位，Bedrock 的凭据另一套），所以单独一步
+ * 放在最前；它只是一次点击，没有「下一步」。
+ */
+const CREATE_SECTIONS: Section[] = ["service", "connection", "models", "billing"];
 
 /**
  * ChatGPT 账号上游的分节。
@@ -67,7 +79,7 @@ export type UpstreamDialogMode =
 /**
  * 新建与编辑上游。
  *
- * **新建分步走**（连接、模型、计费，后两步都有默认值）；**编辑按节
+ * **新建分步走**（服务类型、连接、模型、计费，后两步都有默认值）；**编辑按节
  * 随意切换**，「保存」一次提交所有分节的改动 —— core 那边是一次写入、一个
  * 配置版本。取消不写入任何东西。
  */
@@ -120,9 +132,14 @@ export function UpstreamDialog({
   const account = editing?.protocol === "chatgpt";
   /** 登的是哪个账号。core 从凭据的令牌里读，和列表那一行是同一份 */
   const email = editing?.oauth?.account?.email;
-  const sections = (account ? ACCOUNT_SECTIONS : SECTIONS).map((id) => ({ id, label: t.sections[id] }));
+  const sections = (editing ? (account ? ACCOUNT_SECTIONS : SECTIONS) : CREATE_SECTIONS).map((id) => ({
+    id,
+    label: t.sections[id],
+  }));
+  // 按客户端原来的 Bedrock 设置新建：类型已经定了，直接落到「连接」
+  const drafted = mode.kind === "create" && mode.draft != null;
   const [section, setSection] = useState<Section>(() => {
-    if (mode.kind !== "edit") return "connection";
+    if (mode.kind !== "edit") return drafted ? "connection" : "service";
     const own = account ? ACCOUNT_SECTIONS : SECTIONS;
     // 账号上游没有「连接」这一节，出站连接（代理）在「账号」那一节里：从删代理的对话框
     // 点「查看」过来时落到那里。**不在这一套里的节一律不画** —— 画出来的是这种上游
@@ -130,7 +147,9 @@ export function UpstreamDialog({
     const want = account && mode.section === "connection" ? "account" : mode.section;
     return want && own.includes(want) ? want : own[0]!;
   });
-  const [visited, setVisited] = useState<Set<Section>>(() => new Set(["connection"]));
+  const [visited, setVisited] = useState<Set<Section>>(
+    () => new Set<Section>(drafted ? ["service", "connection"] : ["service"]),
+  );
 
   const [preview, setPreview] = useState<ProviderPreview | null>(null);
   const [test, setTest] = useState<ProviderTestResult | null>(null);
@@ -317,6 +336,20 @@ export function UpstreamDialog({
     }
   }
 
+  /** 第一步选了一种服务类型：账号登录让位给登录对话框，预设填进表单并进到「连接」 */
+  function pickService(id: string) {
+    if (id === CHATGPT) {
+      onChatgptLogin();
+      return;
+    }
+    if (id === ZAI) {
+      onZaiLogin();
+      return;
+    }
+    setForm((f) => applyPreset(f, id, taken));
+    go("connection");
+  }
+
   const missing =
     section === "connection"
       ? connectionMissing(form, editing?.name ?? null, taken)
@@ -373,8 +406,13 @@ export function UpstreamDialog({
         className="flex h-[min(88vh,680px)] flex-col gap-4 sm:max-w-[900px]"
         onInteractOutside={(e) => e.preventDefault()}
       >
-        <DialogHeader className={editing ? "flex-row items-center gap-3" : undefined}>
-          {editing && <ProviderTile p={editing} />}
+        <DialogHeader className="flex-row items-center gap-3">
+          {/* 新建：第一步还没选，标题旁没有标志；选定之后每一步都带着 */}
+          {editing ? (
+            <ProviderTile p={editing} />
+          ) : (
+            section !== "service" && <PresetTile preset={presetById(form.preset)} />
+          )}
           <div className="flex min-w-0 flex-col gap-0.5">
             <DialogTitle className="tw-title">{editing ? t.titleEdit : t.titleNew}</DialogTitle>
             {editing ? (
@@ -388,7 +426,10 @@ export function UpstreamDialog({
                 {account ? email && ` · ${email}` : ` · ${shortUrl(editing.base_url)}`}
               </DialogDescription>
             ) : (
-              <DialogDescription className="sr-only">{t.desc}</DialogDescription>
+              // 第一步选定的服务类型，之后每一步都看得见；还没选时写这一步要做什么
+              <DialogDescription className="truncate">
+                {section === "service" ? t.pickService : presetById(form.preset).label}
+              </DialogDescription>
             )}
           </div>
         </DialogHeader>
@@ -410,6 +451,15 @@ export function UpstreamDialog({
               onRelogin={() => onChatgptLogin({ name: editing.name, proxy: editing.proxy })}
             />
           )}
+          {section === "service" && (
+            <ServiceSection
+              // 表单从「自定义」起步，但还没点过就不标选中；退回来时标着上次选的
+              value={visited.has("connection") ? form.preset : null}
+              onPick={pickService}
+              onChatgptLogin={() => onChatgptLogin()}
+              onZaiLogin={onZaiLogin}
+            />
+          )}
           {section === "connection" && (
             <ConnectionSection
               form={form}
@@ -421,8 +471,6 @@ export function UpstreamDialog({
               test={test}
               onTest={runTest}
               onNewProxy={() => setNested({ kind: "proxy" })}
-              onChatgptLogin={onChatgptLogin}
-              onZaiLogin={onZaiLogin}
             />
           )}
           {section === "models" && (
@@ -481,7 +529,8 @@ export function UpstreamDialog({
                   {t.back}
                 </Button>
               )}
-              {index < sections.length - 1 ? (
+              {/* 第一步点一格就往下走，没有「下一步」 */}
+              {section === "service" ? null : index < sections.length - 1 ? (
                 <Button onClick={() => go(sections[index + 1]!.id)} disabled={missing != null}>
                   {t.next}
                 </Button>
