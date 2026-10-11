@@ -1773,3 +1773,58 @@ fn closing_does_not_drop_a_proposal_not_yet_taken() {
     gate.close(t0);
     assert_eq!(gate.take(), Some(a));
 }
+
+/// New API 的聊天预设 `thinkwatch://import?service=newapi&url={address}&key={key}`：站点把
+/// `{address}` 换成 `encodeURIComponent` 编码后的服务器地址，`{key}` 换成补上 `sk-` 的令牌
+/// （不编码）。生成出来的这一条要原样收下
+#[test]
+fn a_new_api_chat_preset_link_is_accepted() {
+    let got = p(&format!(
+        "thinkwatch://import?service=newapi&url={}&key=sk-{}",
+        enc("https://api.example.com"),
+        "abc123XYZ"
+    ))
+    .unwrap();
+    assert_eq!(got.service, ImportService::Newapi);
+    assert_eq!(got.base_url.as_deref(), Some("https://api.example.com"));
+    assert_eq!(got.key.as_deref(), Some("sk-abc123XYZ"));
+    assert_eq!(got.protocol, None);
+    assert_eq!(got.name, None);
+    // 站点配在子路径下、带端口的也一样
+    let sub = p(&format!(
+        "thinkwatch://import?service=newapi&url={}&key=sk-abc",
+        enc("https://relay.example:8443/newapi")
+    ))
+    .unwrap();
+    assert_eq!(
+        sub.base_url.as_deref(),
+        Some("https://relay.example:8443/newapi")
+    );
+}
+
+/// Sub2API 的「导入到 ThinkWatch Lite」：地址去掉末尾的 `/` 和 `/v1`，Antigravity 分组接上
+/// `/antigravity` 并指定 Anthropic 协议，每个值都 `encodeURIComponent`
+#[test]
+fn sub2api_import_button_links_are_accepted() {
+    let plain = pp(&[
+        ("service", "sub2api"),
+        ("url", "https://relay.example"),
+        ("key", "sk-a+b/c=="),
+    ])
+    .unwrap();
+    assert_eq!(plain.service, ImportService::Sub2api);
+    assert_eq!(plain.base_url.as_deref(), Some("https://relay.example"));
+    assert_eq!(plain.key.as_deref(), Some("sk-a+b/c=="));
+    let antigravity = pp(&[
+        ("service", "sub2api"),
+        ("url", "https://relay.example/antigravity"),
+        ("protocol", "anthropic"),
+        ("key", "sk-abc"),
+    ])
+    .unwrap();
+    assert_eq!(
+        antigravity.base_url.as_deref(),
+        Some("https://relay.example/antigravity")
+    );
+    assert_eq!(antigravity.protocol, Some(Protocol::Anthropic));
+}
