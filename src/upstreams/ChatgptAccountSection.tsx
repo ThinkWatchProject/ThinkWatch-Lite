@@ -116,10 +116,9 @@ export function ChatgptAccountSection({
   const list = credits?.credits ?? [];
   const available = list.filter((c) => c.status === AVAILABLE);
 
-  // 一屏放下：名称、出站方式、并发上限一行，额度和重置卡左右两栏
   return (
-    <div className="flex flex-col gap-4">
-      <div className="grid grid-cols-3 gap-4">
+    <div className="flex flex-col gap-5">
+      <div className="grid grid-cols-2 gap-4">
         <FormItem label={t.name} htmlFor="cg-name">
           <Input
             id="cg-name"
@@ -128,7 +127,7 @@ export function ChatgptAccountSection({
             onChange={(e) => set({ name: e.target.value })}
           />
         </FormItem>
-        <FormItem label={t.egress} htmlFor="cg-proxy">
+        <FormItem label={t.egress} htmlFor="cg-proxy" desc={t.egressDesc}>
           <NativeSelect
             id="cg-proxy"
             className="w-full"
@@ -145,15 +144,15 @@ export function ChatgptAccountSection({
           </NativeSelect>
         </FormItem>
         {/* 账号一样限制同时进行的请求 */}
-        <ConcurrencyField form={form} set={set} bare />
+        <ConcurrencyField form={form} set={set} />
       </div>
 
       <LoginBox editing={editing} onRelogin={onRelogin} />
 
       {!broken && (
-        <div className="grid grid-cols-2 items-start gap-6">
-          <section className="flex min-w-0 flex-col gap-2">
-            <div className="flex h-7 items-center justify-between gap-3">
+        <>
+          <section className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3">
               <h3 className="tw-head font-medium">{t.quota}</h3>
               <Button variant="ghost" size="sm" onClick={() => void load()} pending={loading}>
                 {!loading && <RefreshCwIcon />}
@@ -195,8 +194,8 @@ export function ChatgptAccountSection({
             ) : null}
           </section>
 
-          <section className="flex min-w-0 flex-col gap-2">
-            <div className="flex h-7 items-center justify-between gap-3">
+          <section className="flex flex-col gap-2">
+            <div className="flex items-baseline justify-between gap-3">
               <h3 className="tw-head font-medium">
                 {t.credits}
                 {credits && ` · ${t.available(available.length)}`}
@@ -233,7 +232,7 @@ export function ChatgptAccountSection({
               </ul>
             )}
           </section>
-        </div>
+        </>
       )}
 
       <DialogError error={error} />

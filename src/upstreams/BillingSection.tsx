@@ -65,7 +65,7 @@ export function BillingSection({
       ]
     : [];
 
-  // 一屏放下：价格表在自己的框里滚，框按剩下的高度收
+  // 价格表在自己的框里滚，框按剩下的高度收；再矮就让对话框中间那一块去滚
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
       <div className="grid shrink-0 grid-cols-2 gap-4">
@@ -110,13 +110,15 @@ export function BillingSection({
       </div>
 
       {perToken && linkSheet && (
-        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2">
-          <span className="min-w-0 truncate tw-label text-muted-foreground">
-            {t.linkSheetDetail(linkSheet.multiplier, Object.keys(linkSheet.models).length)}
-          </span>
-          {sheetProblem && <span className="min-w-0 truncate tw-label text-destructive">{sheetProblem}</span>}
-          <div className="flex-1" />
-          <Button variant="outline" size="sm" onClick={onEditNewSheet}>
+        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2.5">
+          {/* 两句都整句写出来：名称被占用的那一句要照着去改 */}
+          <div className="flex min-w-0 flex-1 flex-col gap-0.5 tw-label">
+            <span className="text-muted-foreground">
+              {t.linkSheetDetail(linkSheet.multiplier, Object.keys(linkSheet.models).length)}
+            </span>
+            {sheetProblem && <span className="text-destructive">{sheetProblem}</span>}
+          </div>
+          <Button variant="outline" size="sm" className="shrink-0" onClick={onEditNewSheet}>
             <PencilIcon />
             {t.editSheet}
           </Button>
@@ -124,7 +126,7 @@ export function BillingSection({
       )}
 
       {perToken && sheet && (
-        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2">
+        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2.5">
           <span className="shrink-0 tw-label text-muted-foreground">{t.usedBy}</span>
           <UpstreamChips names={users} providers={ov.providers} empty="" />
           <div className="flex-1" />

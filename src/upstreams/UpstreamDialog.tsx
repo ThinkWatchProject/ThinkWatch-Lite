@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { LinkIcon } from "lucide-react";
 import { Input } from "@/ui/input";
 import { Banner } from "@/ui/banner";
@@ -34,7 +34,6 @@ import { BillingSection } from "./BillingSection";
 import { ChatgptAccountSection } from "./ChatgptAccountSection";
 import {
   AuthField,
-  CheckButton,
   CheckSummary,
   ConnectionSection,
   ProxyField,
@@ -127,12 +126,15 @@ interface SignedIn {
  * 随意切换**，「保存」一次提交所有分节的改动 —— core 那边是一次写入、一个
  * 配置版本。取消不写入任何东西。
  *
- * **一屏放下**：默认窗口（1100×720）里每一步都不出整页的滚动条，只有长列表（模型表、价格表）
- * 在自己的框里滚。窗口再小时中间那一块可以滚。
+ * **高度固定，内容高了中间那一块滚**。选项少、空白多的步（选服务类型、只要一把密钥的连接、
+ * 登录）收拾紧凑，在默认窗口（1100×720）里一屏放下；设置多的步（展开的高级设置、OAuth、账号
+ * 的额度与重置卡）可以滚，滚动条不算毛病。**不为了省掉滚动条**把选项挤成几栏、删掉有用的
+ * 说明、或者把结果藏进悬停里。长列表（模型表、价格表）在自己的框里滚，框按剩下的高度收放。
  *
  * **新建时点「下一步」就检测连接**：按钮转圈，通过了进「模型」，结果写在那一步顶上；没通过就
  * 留在这一步，底部一条红色横幅说原因，给「重试」和「仍然继续」—— 有的上游不接受检测却能用，
- * 有的没有模型列表。编辑时没有「下一步」，「检测连接」照旧是一个按钮。
+ * 有的没有模型列表。编辑时没有「下一步」，「检测连接」是「连接」一节最后的一个按钮，结果
+ * （连同读到的余额）整句写在它下面。
  *
  * **登录账号（ChatGPT、Z.ai / BigModel）在第二步里完成**：登录成功时 core 已经把上游
  * 写进配置，直接进「模型」，顶上写登的是哪个账号；之后的「模型」「计费」两步改的就是这个
@@ -244,21 +246,6 @@ export function UpstreamDialog({
   const [visited, setVisited] = useState<Set<Section>>(
     () => new Set<Section>(drafted ? ["service", "connection"] : ["service"]),
   );
-  /**
-   * 导入的对话框顶上那一句占的高度（连同它和步骤条之间的间距）。**加在对话框的高度上，不从
-   * 中间那一块里扣**：没有它时放得下的每一步，有它时照样放得下
-   */
-  // 对话框画在 portal 里，挂上得晚一步：等那一句真的挂上了再量
-  const [noteEl, setNoteEl] = useState<HTMLDivElement | null>(null);
-  const [noteHeight, setNoteHeight] = useState(0);
-  useLayoutEffect(() => {
-    if (!noteEl) return;
-    const measure = () => setNoteHeight(noteEl.offsetHeight + NOTE_GAP);
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(noteEl);
-    return () => ro.disconnect();
-  }, [noteEl]);
   /** 第一步的搜索框。放在这里：它画在步骤条右边，不在那一节里 */
   const [query, setQuery] = useState("");
 
@@ -677,13 +664,12 @@ export function UpstreamDialog({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       {/*
-        固定高度：切换分节时对话框不跳动；默认窗口里每一步都放得下，只有长列表在自己的框里
-        滚，窗口更小时中间那一块滚。点到对话框外面不关 —— 填了一半的表单不该因为一次误点
-        丢掉；Esc、×、取消照常。登录进行中关掉就是放弃这一次登录（`useAccountLogin` 卸载时取消）
+        固定高度：切换分节时对话框不跳动，内容高了中间那一块滚。点到对话框外面不关 —— 填了
+        一半的表单不该因为一次误点丢掉；Esc、×、取消照常。登录进行中关掉就是放弃这一次登录
+        （`useAccountLogin` 卸载时取消）
       */}
       <DialogContent
         className="flex h-[min(88vh,760px)] flex-col gap-4 sm:max-w-[900px]"
-        style={noteHeight > 0 ? { height: `calc(min(88vh, 760px) + ${noteHeight}px)` } : undefined}
         onInteractOutside={(e) => e.preventDefault()}
         // 导入链接打开的不是点出来的：焦点放在对话框上，不落到第一个按钮上画一圈焦点框
         onOpenAutoFocus={imported ? focusSelf : undefined}
@@ -754,9 +740,9 @@ export function UpstreamDialog({
           )}
         </div>
 
+        {/* 占的是中间那一块的高度：放不下时那一块滚 */}
         {imported && (
           <ImportNote
-            ref={setNoteEl}
             hosts={importHosts(signedIn ? signedInForm(form, signedIn) : form)}
             plain={!signedIn && importPlainText(form)}
           />
@@ -781,7 +767,7 @@ export function UpstreamDialog({
             />
           )}
           {section === "connection" && (
-            <div className="flex flex-col gap-3.5">
+            <div className="flex flex-col gap-4">
               <ConnectionHead
                 form={form}
                 signedIn={signedIn}
@@ -821,6 +807,8 @@ export function UpstreamDialog({
                   preview={preview}
                   onNewProxy={() => setNested({ kind: "proxy" })}
                   account={zaiAccount}
+                  // 新建时点「下一步」就检测，没有这个按钮
+                  check={editing ? { testing, test, onTest: () => void runTest() } : undefined}
                 />
               )}
             </div>
@@ -899,13 +887,7 @@ export function UpstreamDialog({
         <DialogFooter className="items-center">
           {editing ? (
             <>
-              {/* 「检测连接」只在连接这一节，结果接在它右边 */}
-              {section === "connection" ? (
-                <CheckButton testing={testing} test={test} onTest={() => void runTest()} />
-              ) : (
-                <span className="flex-1" />
-              )}
-              {blocking && <span className="tw-label text-muted-foreground">{blocking}</span>}
+              {blocking && <span className="mr-auto tw-label text-muted-foreground">{blocking}</span>}
               <Button variant="outline" onClick={onClose}>
                 {c.cancel}
               </Button>
@@ -1027,26 +1009,19 @@ export function UpstreamDialog({
   );
 }
 
-/** 那一句和步骤条之间的间距：对话框各块之间是 16px，它往上提了 8px（`-mt-2`） */
-const NOTE_GAP = 8;
-
 /**
  * 导入的对话框每一步顶上那一句：来自导入链接，请求和密钥发往哪台主机（OAuth 的 Token 端点在
  * 别的主机上时两台都写）。主机名是 ASCII，IDN 已转成 punycode。只陈述，不是警告。
  *
- * `plain`：地址是内网的明文 `http://`，下面再一行说不加密
+ * `plain`：地址是内网的明文 `http://`，下面再一行说不加密。主机名长的折行，不截断
  */
-function ImportNote({ hosts, plain, ref }: { hosts: string[]; plain: boolean; ref?: Ref<HTMLDivElement> }) {
+function ImportNote({ hosts, plain }: { hosts: string[]; plain: boolean }) {
   const t = useText(upstreamDialogText);
   return (
-    <div
-      ref={ref}
-      data-testid="import-note"
-      className="-mt-2 flex shrink-0 flex-col gap-0.5 tw-label text-muted-foreground"
-    >
-      <p className="flex items-center gap-1.5">
-        <LinkIcon className="size-3.5 shrink-0" />
-        <span className="min-w-0 truncate">
+    <div data-testid="import-note" className="-mt-2 flex shrink-0 flex-col gap-0.5 tw-label text-muted-foreground">
+      <p className="flex items-start gap-1.5">
+        <LinkIcon className="mt-px size-3.5 shrink-0" />
+        <span className="min-w-0 break-words">
           {t.importFrom}
           {hosts.length > 0 && (
             <>
@@ -1178,7 +1153,7 @@ function AccountStep({
     existing.base_url.replace(/\/+$/, "") === ZAI_ENDPOINTS[family].replace(/\/+$/, "");
   const taken = existing != null && !replaces;
   return (
-    <div className="flex flex-col gap-3.5">
+    <div className="flex flex-col gap-4">
       <div className="grid grid-cols-2 gap-4">
         <FormItem label={t.name} htmlFor="up-name">
           <Input

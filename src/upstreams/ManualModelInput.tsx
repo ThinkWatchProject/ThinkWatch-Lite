@@ -86,8 +86,8 @@ export function ManualModelList<R extends ManualAdd>({
   inputRowClassName?: string;
   inputRef?: Ref<HTMLInputElement>;
   /**
-   * 放在一屏排满的一节里（上游对话框的「模型」）：框按剩下的高度收，`children` 里那一层滚动的
-   * 跟着收，输入行和提示不收
+   * 放在按剩下的高度排的一节里（上游对话框的「模型」）：框按剩下的高度收，`children` 里那一层
+   * 滚动的跟着收，输入行和提示不收
    */
   fill?: boolean;
 }) {

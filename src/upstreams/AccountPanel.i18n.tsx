@@ -18,6 +18,7 @@ export const accountPanelText = messages(
     noticeTheirPage: "授权页由对方提供，页面上显示的是他们自己的客户端名称。",
     noticeKey:
       "登录会在账号中创建一把名为 thinkwatch 的 API 密钥（已存在则直接使用），额度按该密钥计入套餐。",
+    noticeKeyStorage: (where: string) => `得到的密钥保存在${where}的配置文件中，与其他上游一同管理。`,
     here: "本机",
     server: (name: string) => ` ${name} `,
     understood: "已阅读上述说明",
@@ -45,7 +46,7 @@ export const accountPanelText = messages(
     open: "打开",
     deviceWaiting: (min: number) => `等待输入 · ${min} 分钟内有效`,
     newCode: "重新获取",
-    deviceWarning: "只输入这里显示的设备码",
+    deviceWarning: "只输入这里显示的设备码；他人提供的设备码请勿输入。",
     doneTitle: "已登录",
     reloginDone: (name: ReactNode) => <>已重新登录，上游 {name} 的凭据已更新。</>,
     signedIn: "已登录",
@@ -75,6 +76,8 @@ export const accountPanelText = messages(
     noticeTheirPage: "The authorization page is theirs, and it names their own client.",
     noticeKey:
       "Signing in creates an API key named thinkwatch on the account, or uses the existing one. Quota is counted against that key.",
+    noticeKeyStorage: (where: string) =>
+      `The key obtained by signing in is stored in the config file ${where} and managed together with the other upstreams.`,
     here: "on this computer",
     server: (name: string) => `on ${name}`,
     understood: "Acknowledge the notes above",
@@ -103,7 +106,7 @@ export const accountPanelText = messages(
     open: "Open",
     deviceWaiting: (min: number) => `Waiting for the code · valid for ${min} min`,
     newCode: "Get a new code",
-    deviceWarning: "Enter only the device code shown here",
+    deviceWarning: "Enter only the device code shown here; never enter a device code provided by someone else.",
     doneTitle: "Signed in",
     reloginDone: (name: ReactNode) => <>Signed in again. The credential of the upstream {name} has been replaced.</>,
     signedIn: "Signed in",

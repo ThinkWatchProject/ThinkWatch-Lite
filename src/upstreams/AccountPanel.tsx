@@ -159,6 +159,7 @@ function Methods({
               <>
                 <li>{t.noticeTheirPage}</li>
                 <li>{t.noticeKey}</li>
+                <li>{t.noticeKeyStorage(where)}</li>
               </>
             )}
           </ul>
@@ -273,8 +274,8 @@ function Way({
 }
 
 /**
- * 设备码登录：验证网址和设备码并排（网址能复制、能打开，码大字、能复制），下面是有效期、
- * 重新获取和那一句提醒。在这台电脑上时还能改回浏览器登录
+ * 设备码登录：验证网址和设备码并排（网址能复制、能打开，码大字、能复制），下面是有效期和
+ * 重新获取（在这台电脑上时还能改回浏览器登录），最后一句提醒
  */
 function DeviceCode({ login, params }: { login: AccountLogin; params: LoginParams }) {
   const t = useText(accountPanelText);
@@ -317,9 +318,9 @@ function DeviceCode({ login, params }: { login: AccountLogin; params: LoginParam
             </LinkButton>
           </>
         )}
-        {/* 拿着别人给的码去输，等于把自己的账号授权给对方 */}
-        <span className="ml-auto tw-label">{t.deviceWarning}</span>
       </div>
+      {/* 拿着别人给的码去输，等于把自己的账号授权给对方 */}
+      <p className="tw-label text-muted-foreground">{t.deviceWarning}</p>
     </>
   );
 }
