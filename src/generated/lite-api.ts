@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { CostBucketGroup, CostGroup, HeadView, LiveBody, LiveEnd, Msg, PinnedModel, Protocol } from "./tw-api";
+import type { BalanceSetting, Billing, CostBucketGroup, CostGroup, HeadView, LiveBody, LiveEnd, Msg, PinnedModel, Protocol, ZaiFamily } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -248,34 +248,113 @@ export type HookView = { client: string, event: string, command: string, source:
 line: number, };
 
 /**
- * 一条导入链接（`thinkwatch://import?…`）提议新建的上游。**已经在 Rust 侧逐项校验过**
- * （`import_link::parse`），界面只负责给人确认；确认之前不写配置、不发任何请求。
+ * 导入链接能选的认证方式。AWS profile 不在里面：它让应用读这台机器上的凭证文件
  */
-export type ImportProposal = { 
+export type ImportAuth = "key" | "oauth" | "account" | "aws-keys";
+
 /**
- * 链接给的名称。没给是空，界面按地址起一个
+ * Bedrock 的访问密钥（`auth=aws-keys`）
  */
-name?: string | null, 
+export type ImportAwsKeys = { access_key_id: string, secret_access_key: string, session_token: string | null, };
+
 /**
- * 规范化之后的接口地址：主机名是 ASCII（IDN 转成 punycode），末尾没有 `/`
+ * 一行请求头
  */
-base_url: string, 
+export type ImportHeader = { name: string, value: string, };
+
 /**
- * 请求和密钥会发往的主机（带端口时带上端口），ASCII
+ * 一条导入链接（`thinkwatch://import?…`）走到界面的结果（`take_import_link`）：一份提议，
+ * 或者链接里有这一版不认识的参数。写坏了的、值不合规矩的链接到不了这里（Rust 侧丢掉，
+ * 只记原因）
  */
-host: string, 
+export type ImportLink = { "kind": "proposal", proposal: ImportProposal, } | { "kind": "unsupported", param: string | null, };
+
 /**
- * 没给就是自动识别
+ * OAuth 凭据（`auth=oauth`）
  */
-protocol?: Protocol | null, 
+export type ImportOAuth = { 
 /**
- * API 密钥，原样。保证不含 `$`、`{`、`}`：不会被当成 `${变量名}` 展开
+ * Token 端点，规范化之后（主机名是 ASCII）
  */
-key?: string | null, 
+endpoint: string, refresh: string, client_id: string | null, client_secret: string | null, };
+
 /**
- * 服务不提供模型列表时的手动清单
+ * 新价目表里一个模型的覆盖价，美元 / 百万 tokens。链接里没写的缓存价已经按输入价补上
  */
-models: Array<string>, };
+export type ImportPrice = { model: string, input: number, output: number, cache_read: number, cache_write_5m: number, cache_write_1h: number, };
+
+/**
+ * 一条导入链接提议新建的上游。**已经在 Rust 侧逐项校验过**（`import_link::parse`）：
+ * 每一项都是这种服务、这种认证方式的新建对话框里显示的一栏，值合规矩，不含 `$`、`{`、`}`
+ * （不会被当成 `${变量名}` 展开）。界面拿它预填新建对话框；之后由人决定，按「下一步」
+ * 或开始登录之前不写配置、不发任何请求。没给的一项是 null（或空的），由对话框照常填
+ */
+export type ImportProposal = { service: ImportService, auth: ImportAuth, 
+/**
+ * Z.ai / BigModel 的站点：链接写的，或者从地址认出来的，都没有是 BigModel。别的服务是 null
+ */
+site: ZaiFamily | null, name: string | null, 
+/**
+ * 规范化之后的接口地址：主机名是 ASCII（IDN 转成 punycode），末尾没有 `/`。null = 用这种
+ * 服务自己的地址（Bedrock 按区域生成，Ollama 是本机的默认地址）
+ */
+base_url: string | null, protocol: Protocol | null, 
+/**
+ * API 密钥，原样（Bedrock 是 Bedrock API Key）
+ */
+key: string | null, oauth: ImportOAuth | null, 
+/**
+ * Bedrock 的区域
+ */
+region: string | null, aws: ImportAwsKeys | null, headers: Array<ImportHeader>, 
+/**
+ * 转发客户端身份
+ */
+client_identity: boolean, 
+/**
+ * 并发上限，1 到 1000
+ */
+concurrency: number | null, 
+/**
+ * 余额从哪里读（只有「自定义」）
+ */
+balance: BalanceSetting | null, 
+/**
+ * 手动添加的模型
+ */
+models: Array<string>, 
+/**
+ * 启用范围：指定这几项（模型 ID 或通配规则）。null = 全部模型
+ */
+models_only: Array<string> | null, 
+/**
+ * 上游建好之后再写的模型规格
+ */
+specs: Array<ImportSpec>, billing: Billing | null, 
+/**
+ * 新价目表。链接里有 `price_multiplier` 或 `prices` 时才有
+ */
+price_sheet: ImportSheet | null, };
+
+/**
+ * 导入链接能选的服务类型：新建对话框第一步的那几格（`src/upstreams/presets.ts`，顺序也
+ * 一样）。线上是那一格的 ID
+ */
+export type ImportService = "anthropic" | "openai" | "gemini" | "deepseek" | "zai" | "bedrock" | "openrouter" | "thinkwatch" | "sub2api" | "newapi" | "ollama" | "custom";
+
+/**
+ * 链接带来的新价目表：和上游一起创建，名称跟着上游
+ */
+export type ImportSheet = { 
+/**
+ * 作用于默认价目表的倍率。链接没写是 1
+ */
+multiplier: number, prices: Array<ImportPrice>, };
+
+/**
+ * 一个模型的规格。空着的一项不写（用价目表的）；至少有一项
+ */
+export type ImportSpec = { model: string, context_window: number | null, max_output_tokens: number | null, reasoning: boolean | null, image_input: boolean | null, };
 
 /**
  * 换完之后的结果：core 换好的那把，加上**这台机器上**跟着改好、或者没能改好的客户端。

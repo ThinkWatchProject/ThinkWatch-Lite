@@ -1,0 +1,278 @@
+{
+  "services": [
+    {
+      "id": "anthropic",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "own",
+        "address": "https://api.anthropic.com"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "anthropic"
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "openai",
+      "auth": [
+        "key",
+        "account"
+      ],
+      "address": {
+        "kind": "own",
+        "address": "https://api.openai.com"
+      },
+      "protocols": {
+        "kind": "choice",
+        "protocols": [
+          "openai-chat",
+          "openai-responses"
+        ]
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "gemini",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "own",
+        "address": "https://generativelanguage.googleapis.com"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "gemini"
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "deepseek",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "own",
+        "address": "https://api.deepseek.com/anthropic"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "anthropic"
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "zai",
+      "auth": [
+        "key",
+        "account"
+      ],
+      "address": {
+        "kind": "site"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "anthropic"
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "bedrock",
+      "auth": [
+        "key",
+        "aws-keys"
+      ],
+      "address": {
+        "kind": "endpoint",
+        "default": "https://bedrock-runtime.us-east-1.amazonaws.com"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "bedrock"
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "openrouter",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "own",
+        "address": "https://openrouter.ai/api"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "openai-chat"
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "thinkwatch",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "required"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": null
+      },
+      "key": "required",
+      "client_identity": false,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "sub2api",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "required"
+      },
+      "protocols": {
+        "kind": "choice",
+        "protocols": [
+          "anthropic",
+          "openai-chat",
+          "openai-responses",
+          "gemini"
+        ]
+      },
+      "key": "required",
+      "client_identity": true,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "newapi",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "required"
+      },
+      "protocols": {
+        "kind": "choice",
+        "protocols": [
+          "anthropic",
+          "openai-chat",
+          "openai-responses",
+          "gemini"
+        ]
+      },
+      "key": "required",
+      "client_identity": true,
+      "balance": false,
+      "billing": "per-token"
+    },
+    {
+      "id": "ollama",
+      "auth": [
+        "key"
+      ],
+      "address": {
+        "kind": "local",
+        "default": "http://127.0.0.1:11434"
+      },
+      "protocols": {
+        "kind": "fixed",
+        "protocol": "openai-chat"
+      },
+      "key": "none",
+      "client_identity": false,
+      "balance": false,
+      "billing": "free"
+    },
+    {
+      "id": "custom",
+      "auth": [
+        "key",
+        "oauth"
+      ],
+      "address": {
+        "kind": "required"
+      },
+      "protocols": {
+        "kind": "choice",
+        "protocols": [
+          "anthropic",
+          "openai-chat",
+          "openai-responses",
+          "gemini"
+        ]
+      },
+      "key": "optional",
+      "client_identity": true,
+      "balance": true,
+      "billing": "per-token"
+    }
+  ],
+  "hosts": [
+    {
+      "host": "api.anthropic.com",
+      "service": "anthropic"
+    },
+    {
+      "host": "api.openai.com",
+      "service": "openai"
+    },
+    {
+      "host": "generativelanguage.googleapis.com",
+      "service": "gemini"
+    },
+    {
+      "host": "api.deepseek.com",
+      "service": "deepseek"
+    },
+    {
+      "host": "openrouter.ai",
+      "service": "openrouter"
+    },
+    {
+      "host": "api.z.ai",
+      "service": "zai"
+    },
+    {
+      "host": "open.bigmodel.cn",
+      "service": "zai"
+    }
+  ],
+  "zai": {
+    "zai": "https://api.z.ai/api/anthropic",
+    "bigmodel": "https://open.bigmodel.cn/api/anthropic"
+  },
+  "protocols": [
+    "anthropic",
+    "openai-chat",
+    "openai-responses",
+    "gemini"
+  ],
+  "bedrock_default_region": "us-east-1"
+}

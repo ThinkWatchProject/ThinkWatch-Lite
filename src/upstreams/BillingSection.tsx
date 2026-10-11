@@ -15,10 +15,12 @@ import type { Overview, ResolvedPrice } from "@/types";
 import { billingSectionText } from "./BillingSection.i18n";
 import { BILLINGS, PRICE_COLUMNS, perMillion, priceSourceLabel } from "./labels";
 import { Boxed, FormItem, Note, UpstreamChips } from "./parts";
-import type { UpstreamForm } from "./upstreamForm";
+import { newSheetName, sheetMissing, type UpstreamForm } from "./upstreamForm";
 
 /** 「新建价目表…」在下拉里的占位值。名称首尾不能有空白，不会和真实名称重复 */
 const NEW_SHEET = " new-sheet";
+/** 导入链接带来的新价目表在下拉里的值，同上 */
+const LINK_SHEET = " link-sheet";
 
 export function BillingSection({
   form,
@@ -29,6 +31,7 @@ export function BillingSection({
   prices,
   onNewSheet,
   onEditSheet,
+  onEditNewSheet,
   onPriceModels,
 }: {
   form: UpstreamForm;
@@ -41,13 +44,18 @@ export function BillingSection({
   prices: Record<string, ResolvedPrice>;
   onNewSheet: () => void;
   onEditSheet: (name: string) => void;
+  /** 改导入链接带来的那张新价目表（草稿） */
+  onEditNewSheet: () => void;
   /** 为无法计价的模型设置价格：已选自定义价目表就在其中覆盖，否则新建一张 */
   onPriceModels: (models: string[]) => void;
 }) {
   const t = useText(billingSectionText);
   const perToken = form.billing === "per-token";
   const unpriced = models.filter((m) => prices[m] && !prices[m].price);
-  const sheet = ov.price_sheets.find((s) => s.name === form.pricing);
+  /** 选的是导入链接带来的新价目表 */
+  const linkSheet = form.newSheet?.chosen ? form.newSheet : null;
+  const sheet = linkSheet ? undefined : ov.price_sheets.find((s) => s.name === form.pricing);
+  const sheetProblem = sheetMissing(form, ov.price_sheets);
   const users = sheet
     ? [
         ...new Set([
@@ -75,10 +83,13 @@ export function BillingSection({
             <NativeSelect
               id="up-sheet"
               className="w-full"
-              value={form.pricing}
-              onChange={(e) =>
-                e.target.value === NEW_SHEET ? onNewSheet() : set({ pricing: e.target.value })
-              }
+              value={linkSheet ? LINK_SHEET : form.pricing}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === NEW_SHEET) onNewSheet();
+                else if (v === LINK_SHEET) set({ newSheet: form.newSheet && { ...form.newSheet, chosen: true } });
+                else set({ pricing: v, newSheet: form.newSheet && { ...form.newSheet, chosen: false } });
+              }}
             >
               <NativeSelectOption value="">{t.defaultSheet}</NativeSelectOption>
               {ov.price_sheets.map((s) => (
@@ -86,14 +97,31 @@ export function BillingSection({
                   {s.name}
                 </NativeSelectOption>
               ))}
-              {form.pricing && !sheet && (
+              {form.pricing && !sheet && !ov.price_sheets.some((s) => s.name === form.pricing) && (
                 <NativeSelectOption value={form.pricing}>{form.pricing}</NativeSelectOption>
+              )}
+              {form.newSheet && (
+                <NativeSelectOption value={LINK_SHEET}>{t.linkSheet(newSheetName(form) || t.unnamed)}</NativeSelectOption>
               )}
               <NativeSelectOption value={NEW_SHEET}>{t.newSheet}</NativeSelectOption>
             </NativeSelect>
           </FormItem>
         )}
       </div>
+
+      {perToken && linkSheet && (
+        <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2">
+          <span className="min-w-0 truncate tw-label text-muted-foreground">
+            {t.linkSheetDetail(linkSheet.multiplier, Object.keys(linkSheet.models).length)}
+          </span>
+          {sheetProblem && <span className="min-w-0 truncate tw-label text-destructive">{sheetProblem}</span>}
+          <div className="flex-1" />
+          <Button variant="outline" size="sm" onClick={onEditNewSheet}>
+            <PencilIcon />
+            {t.editSheet}
+          </Button>
+        </div>
+      )}
 
       {perToken && sheet && (
         <div className="flex shrink-0 items-center gap-2.5 rounded-lg border border-border px-3 py-2">

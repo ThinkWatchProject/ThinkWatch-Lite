@@ -45,6 +45,7 @@ import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { NextClientsHint } from "@/guide/PageHints";
+import { releaseImportLink } from "@/import/link";
 import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { aliasesText } from "@/aliases/aliases.i18n";
@@ -155,9 +156,12 @@ export default function UpstreamsPage({
     if (p.edit && ov.providers.some((x) => x.name === p.edit)) {
       setTab("upstreams");
       setDialog({ kind: "upstream", mode: { kind: "edit", name: p.edit } });
+    } else if (p.create === "upstream" && p.imported && dialog !== null) {
+      // 导入链接来的时候这一页开着对话框：表单不换掉，这一条丢掉
+      void releaseImportLink();
     } else if (p.create === "upstream") {
       setTab("upstreams");
-      setDialog({ kind: "upstream", mode: { kind: "create", draft: p.draft } });
+      setDialog({ kind: "upstream", mode: { kind: "create", draft: p.draft, imported: p.imported } });
     } else if (p.create) {
       setTab(p.create === "proxy" ? "proxies" : "pricing");
       setDialog({ kind: p.create, mode: { kind: "create" } });
@@ -166,6 +170,16 @@ export default function UpstreamsPage({
       setDialog({ kind: p.test, provider: null });
     }
   });
+
+  /*
+    导入链接打开的新建对话框，怎么关都算关了（取消、×、Esc、创建完、换成重新登录的对话框、
+    离开这一页）：报一声，下一条导入链接可以进来
+  */
+  const importOpen = dialog?.kind === "upstream" && dialog.mode.kind === "create" && dialog.mode.imported != null;
+  useEffect(() => {
+    if (!importOpen) return;
+    return () => void releaseImportLink();
+  }, [importOpen]);
 
   /**
    * **打开这一页时补问模型清单**：还没有的、没问到的、过期的。

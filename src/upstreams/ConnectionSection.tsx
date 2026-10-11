@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, PlugIcon } from "lucide-react";
 import { Button, DISCLOSURE } from "@/ui/button";
 import { Input } from "@/ui/input";
+import { Label } from "@/ui/label";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
@@ -11,10 +12,18 @@ import { Tip } from "@/ui/tip";
 import { cn } from "@/lib/utils";
 import { ms } from "@/format";
 import { useText } from "@/i18n";
-import type { Overview, Protocol, ProviderPreview, ProviderTestResult, ProviderView, ZaiFamily } from "@/types";
+import type {
+  BalanceSetting,
+  Overview,
+  Protocol,
+  ProviderPreview,
+  ProviderTestResult,
+  ProviderView,
+  ZaiFamily,
+} from "@/types";
 import { AccountKeyPanel } from "./AccountPanel";
 import { connectionSectionText } from "./ConnectionSection.i18n";
-import { balanceBrief } from "./balance";
+import { balanceBrief, sourceLabel } from "./balance";
 import { useSystemProxyLabel } from "@/connection/Remote";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
@@ -306,8 +315,12 @@ export function ConnectionSection({
   );
 }
 
+/** 「余额来源」能选的：自动识别、不读取，然后是认得的几种来源 */
+const BALANCE_SETTINGS: BalanceSetting[] = ["auto", "off", "openrouter", "deepseek", "moonshot", "sub2api", "newapi", "thinkwatch"];
+
 /**
- * 「高级设置」：请求头、转发客户端身份（中转站和自定义才有）、代理不可用时、并发上限。
+ * 「高级设置」：请求头、转发客户端身份（中转站和自定义才有）、代理不可用时、并发上限、余额来源
+ * （只有自定义：别的服务由服务类型定）。
  *
  * **默认收起**，收起时那一行写着里面有哪几项；有一项不是默认值就自动展开（`advancedNonDefault`）
  * —— 收着的一节里藏着一项在起作用的设置，等于看不见它。展开与否在这一节出现时定，之后由
@@ -327,9 +340,13 @@ function AdvancedSettings({
 }) {
   const t = useText(connectionSectionText);
   const [open, setOpen] = useState(() => advancedNonDefault(form));
-  const inside = [t.headers, rules.clientIdentity ? t.clientIdentity : null, t.onProxyFail, t.concurrency].filter(
-    (x): x is string => x !== null,
-  );
+  const inside = [
+    t.headers,
+    rules.clientIdentity ? t.clientIdentity : null,
+    t.onProxyFail,
+    t.concurrency,
+    rules.balance ? t.balanceSource : null,
+  ].filter((x): x is string => x !== null);
   return (
     <div className="flex flex-col gap-3">
       <Button
@@ -345,12 +362,34 @@ function AdvancedSettings({
         {!open && <span className="truncate font-normal text-muted-foreground">{inside.join(t.listSep)}</span>}
       </Button>
       {/*
-        展开时左右两栏：左边请求头，右边转发客户端身份、代理不可用时和并发上限 —— 上下排开
-        放不进一屏
+        展开时左右两栏：左边请求头（自定义的余额来源接在下面，和请求头一样是这个服务自己的事），
+        右边转发客户端身份、代理不可用时和并发上限 —— 上下排开放不进一屏
       */}
       {open && (
         <div id="up-advanced" className="grid grid-cols-2 items-start gap-x-6 motion-fade">
-          <div className="min-w-0">{children}</div>
+          <div className="flex min-w-0 flex-col gap-4">
+            {children}
+            {/* 标签和下拉在一行：一屏放得下展开的这一节 */}
+            {rules.balance && (
+              <div className="flex items-center gap-3">
+                <Label htmlFor="up-balance" className="shrink-0 tw-body font-medium">
+                  {t.balanceSource}
+                </Label>
+                <NativeSelect
+                  id="up-balance"
+                  className="w-40"
+                  value={form.balance ?? "auto"}
+                  onChange={(e) => set({ balance: e.target.value as BalanceSetting })}
+                >
+                  {BALANCE_SETTINGS.map((b) => (
+                    <NativeSelectOption key={b} value={b}>
+                      {b === "auto" ? t.balanceAuto : b === "off" ? t.balanceOff : sourceLabel(b)}
+                    </NativeSelectOption>
+                  ))}
+                </NativeSelect>
+              </div>
+            )}
+          </div>
           <div className="flex min-w-0 flex-col gap-4">
             {/* 只有中转站和自定义的服务会只接受特定客户端；各家官方的接口不看这个 */}
             {rules.clientIdentity && (

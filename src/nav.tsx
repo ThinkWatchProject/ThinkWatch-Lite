@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useRef } from "react";
 import type { Filter } from "./requestTable";
-import type { BedrockDraft } from "./types";
+import type { BedrockDraft, ImportProposal } from "./types";
 import type { LogFocus } from "./security/SecurityPage";
 
 /**
@@ -40,7 +40,7 @@ export type Surface = (typeof SURFACES)[number];
  *
  * · `edit` / `editRoute` / `editGroup` / `detail`：打开这一项的编辑或详情（点那一行）。
  * · `create`：新建。`upstreams` 的新建分上游、代理、价目表；新建上游可以带一份 `draft`
- *   预填（接管确认框里的「新建 Bedrock 上游」）。
+ *   预填（接管确认框里的「新建 Bedrock 上游」），或者一条导入链接的提议（`imported`）。
  * · `upstreams.test`：推理测速、链路测速；`routing.dryRun`：试算。
  * · `clients.setup`：手动配置（未安装的、不能接管的客户端，点那一行就是它）。
  * · `plugins.add`：添加插件；`plugins.review`：审核这个插件变了的文件。
@@ -58,6 +58,11 @@ export interface NavParams {
     create?: "upstream" | "proxy" | "sheet";
     /** 新建上游时按它预填：客户端原来直连 Bedrock 时的设置（接管确认框里带过来的） */
     draft?: BedrockDraft;
+    /**
+     * 新建上游时按它预填：一条导入链接（Rust 侧校验过）。**页面上已经开着对话框时不打开**，
+     * 报一声「关了」放下一条进来（`releaseImportLink`）
+     */
+    imported?: ImportProposal;
     test?: "speed" | "link";
   };
   routing: { editRoute?: string; editGroup?: string; create?: "route" | "group"; dryRun?: boolean };

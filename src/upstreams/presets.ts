@@ -97,6 +97,26 @@ export const ZAI_ENDPOINTS: Record<ZaiFamily, string> = {
   bigmodel: "https://open.bigmodel.cn/api/anthropic",
 };
 
+/**
+ * 登录 ChatGPT 账号之后请求发往的主机。**地址由 core 决定**：这一份只给导入链接的那一句说明用
+ * （`importHosts`）
+ */
+export const CHATGPT_HOST = "chatgpt.com";
+
+/**
+ * 官方地址 → 服务类型。只认主机：路径不一样（别的接口、别的版本）照样是这一家。导入链接没写
+ * 服务类型时 Rust 侧按同一张表认（`import_link::HOSTS`，测试核对两边一样）
+ */
+export const SERVICE_HOSTS: Record<string, string> = {
+  "api.anthropic.com": "anthropic",
+  "api.openai.com": "openai",
+  "generativelanguage.googleapis.com": "gemini",
+  "api.deepseek.com": "deepseek",
+  "openrouter.ai": "openrouter",
+  "api.z.ai": "zai",
+  "open.bigmodel.cn": "zai",
+};
+
 export const PRESETS: Preset[] = [
   {
     id: "anthropic",
@@ -300,17 +320,6 @@ export function zaiSiteOf(url: string): ZaiFamily | null {
   return null;
 }
 
-/** 官方地址 → 服务类型。只认主机：路径不一样（别的接口、别的版本）照样是这一家 */
-const HOSTS: Record<string, string> = {
-  "api.anthropic.com": "anthropic",
-  "api.openai.com": "openai",
-  "generativelanguage.googleapis.com": "gemini",
-  "api.deepseek.com": "deepseek",
-  "openrouter.ai": "openrouter",
-  "api.z.ai": "zai",
-  "open.bigmodel.cn": "zai",
-};
-
 /**
  * 已保存的上游是哪一种服务：编辑时按它定问哪几项（和新建时选了那一格一样）。
  *
@@ -336,7 +345,7 @@ export function serviceOf(u: {
   const family: ZaiFamily = host === "open.bigmodel.cn" ? "bigmodel" : "zai";
   const at = (preset: string) => ({ preset, family });
   if (u.protocol === "chatgpt" || host === "chatgpt.com") return at(CUSTOM.id);
-  const byHost = HOSTS[host];
+  const byHost = SERVICE_HOSTS[host];
   if (byHost) return at(byHost);
   if (u.protocol === "bedrock" || /^bedrock-runtime(-fips)?\.[a-z0-9-]+\.amazonaws\.com$/.test(host)) {
     return at("bedrock");

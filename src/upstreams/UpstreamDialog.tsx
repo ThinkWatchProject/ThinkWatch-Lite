@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type Ref } from "react";
+import { LinkIcon } from "lucide-react";
 import { Input } from "@/ui/input";
 import { Banner } from "@/ui/banner";
+import { focusSelf } from "@/ui/dialog-focus";
 import { Button } from "@/ui/button";
 import {
   Dialog,
@@ -13,8 +15,10 @@ import {
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { latestOnly } from "@/lib/latestOnly";
+import { notify } from "@/ui/notify";
 import type {
   BedrockDraft,
+  ImportProposal,
   Overview,
   ProviderPreview,
   ProviderTestResult,
@@ -57,16 +61,24 @@ import {
   describeModelList,
   fieldRules,
   formFromDraft,
+  formFromImport,
   formFromView,
+  importHosts,
+  importPlainText,
   inScope,
   modelsMissing,
+  newSheetName,
   retarget,
+  sheetMissing,
+  sheetToCreate,
   siteLocked,
   toInput,
   withAuth,
+  withImportedService,
   withManualAdded,
   withSite,
   type AuthMode,
+  type NewSheet,
   type UpstreamForm,
 } from "./upstreamForm";
 
@@ -93,8 +105,11 @@ const CREATE_SECTIONS: Section[] = ["service", "connection", "models", "billing"
 const ACCOUNT_SECTIONS: Section[] = ["account", "models", "billing"];
 
 export type UpstreamDialogMode =
-  /** `draft`：按客户端原来直连 Bedrock 时的设置预填（接管确认框里的「新建 Bedrock 上游」） */
-  | { kind: "create"; draft?: BedrockDraft }
+  /**
+   * `draft`：按客户端原来直连 Bedrock 时的设置预填（接管确认框里的「新建 Bedrock 上游」）。
+   * `imported`：按一条导入链接预填（`import_link.rs` 校验过的那一份）
+   */
+  | { kind: "create"; draft?: BedrockDraft; imported?: ImportProposal }
   | { kind: "edit"; name: string; section?: Section };
 
 /** 登录账号建出来的上游：登录时选的服务类型和站点（之后表单换成了那个上游的定义）、登上的账号 */
@@ -123,6 +138,12 @@ interface SignedIn {
  * 写进配置，直接进「模型」，顶上写登的是哪个账号；之后的「模型」「计费」两步改的就是这个
  * 上游，走编辑那条路，最后一步「完成」只在有改动时写一次。登录之后回不到第一步：上游已经
  * 建好了。
+ *
+ * **导入链接打开的**（`imported`）：服务类型、认证方式是链接选的，直接落在第二步，第一步算
+ * 走过（可以退回去换一种）；每一步顶上一句说明请求和密钥发往哪台主机。和别的新建一样，按
+ * 「下一步」检测连接、或者开始登录之前，不写配置、不向任何主机发请求（只问本机 core 自动识别
+ * 的结果）。链接带的模型规格在上游建好之后逐个写，不在最终模型清单里的不写；链接带的新价目表
+ * 在「创建」时先建，上游用它。只新建：不改、不替换已有的上游
  */
 export function UpstreamDialog({
   mode,
@@ -153,12 +174,16 @@ export function UpstreamDialog({
   const editing: ProviderView | null =
     mode.kind === "edit" ? (ov.providers.find((p) => p.name === mode.name) ?? null) : null;
   const taken = ov.providers.map((p) => p.name);
+  /** 导入链接带来的那一份 */
+  const imported = mode.kind === "create" ? (mode.imported ?? null) : null;
   const [form, setForm] = useState<UpstreamForm>(() =>
     editing
       ? formFromView(editing)
-      : mode.kind === "create" && mode.draft
-        ? formFromDraft(mode.draft, taken)
-        : blankForm(),
+      : imported
+        ? formFromImport(imported, taken)
+        : mode.kind === "create" && mode.draft
+          ? formFromDraft(mode.draft, taken)
+          : blankForm(),
   );
   /**
    * 保存时带的版本号：**表单填进来的那一版**，不是保存那一刻的。
@@ -202,8 +227,8 @@ export function UpstreamDialog({
     id,
     label: id === "connection" && accountStep ? t.sections.account : t.sections[id],
   }));
-  // 按客户端原来的 Bedrock 设置新建：类型已经定了，直接落到「连接」
-  const drafted = mode.kind === "create" && mode.draft != null;
+  // 按客户端原来的 Bedrock 设置、按导入链接新建：类型已经定了，直接落到第二步
+  const drafted = mode.kind === "create" && (mode.draft != null || imported != null);
   const [section, setSection] = useState<Section>(() => {
     if (mode.kind !== "edit") return drafted ? "connection" : "service";
     const own = account ? ACCOUNT_SECTIONS : SECTIONS;
@@ -219,6 +244,21 @@ export function UpstreamDialog({
   const [visited, setVisited] = useState<Set<Section>>(
     () => new Set<Section>(drafted ? ["service", "connection"] : ["service"]),
   );
+  /**
+   * 导入的对话框顶上那一句占的高度（连同它和步骤条之间的间距）。**加在对话框的高度上，不从
+   * 中间那一块里扣**：没有它时放得下的每一步，有它时照样放得下
+   */
+  // 对话框画在 portal 里，挂上得晚一步：等那一句真的挂上了再量
+  const [noteEl, setNoteEl] = useState<HTMLDivElement | null>(null);
+  const [noteHeight, setNoteHeight] = useState(0);
+  useLayoutEffect(() => {
+    if (!noteEl) return;
+    const measure = () => setNoteHeight(noteEl.offsetHeight + NOTE_GAP);
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(noteEl);
+    return () => ro.disconnect();
+  }, [noteEl]);
   /** 第一步的搜索框。放在这里：它画在步骤条右边，不在那一节里 */
   const [query, setQuery] = useState("");
 
@@ -236,6 +276,8 @@ export function UpstreamDialog({
     | { kind: "proxy" }
     /** `name` 空 = 新建；`add` = 打开后为这几个模型各加一条覆盖 */
     | { kind: "sheet"; name: string | null; add?: string[] }
+    /** 导入链接带来的新价目表：改的是草稿，不写配置 */
+    | { kind: "draft-sheet"; add?: string[] }
   >(null);
 
   /**
@@ -246,7 +288,8 @@ export function UpstreamDialog({
     if (!signedIn || adoptedFrom === signedIn.provider) return;
     const p = ov.providers.find((x) => x.name === signedIn.provider);
     if (!p) return;
-    setForm(formFromView(p));
+    // 导入链接写的模型、计费两步的值留着：「完成」时写进这个上游
+    setForm((f) => (imported ? withModelsAndBilling(formFromView(p), f) : formFromView(p)));
     setBase(ov.config_version);
     setCatalogLoading(true);
     setAdoptedFrom(p.name);
@@ -340,15 +383,21 @@ export function UpstreamDialog({
     return { rest: r.rest, problem: r.problem, patch };
   });
 
-  // 按所选价目表查价。**界面不自己算** —— 覆盖、倍率、跨平台估算都在 core
-  const sheetKey = form.pricing;
+  // 按所选价目表查价。**界面不自己算** —— 覆盖、倍率、跨平台估算都在 core。导入链接带来的
+  // 新价目表还没建：拿草稿去问
+  const draftSheet = sheetToCreate(form);
+  const sheetKey = draftSheet ? JSON.stringify(draftSheet) : form.pricing;
   const modelsKey = models.join("\n");
   useEffect(() => {
     if (models.length === 0) {
       setPrices({});
       return;
     }
-    const sheet: SheetRef = sheetKey ? { kind: "named", name: sheetKey } : { kind: "default" };
+    const sheet: SheetRef = draftSheet
+      ? { kind: "draft", sheet: draftSheet }
+      : sheetKey
+        ? { kind: "named", name: sheetKey }
+        : { kind: "default" };
     let alive = true;
     const t = setTimeout(() => {
       api
@@ -435,9 +484,15 @@ export function UpstreamDialog({
     }
   }
 
-  /** 第一步选了一种服务类型：预设填进表单，进到下一步 */
+  /**
+   * 第一步选了一种服务类型：预设填进表单，进到下一步。导入的对话框里退回来换了一种：链接里
+   * 新的这种服务也收的几项留着（`withImportedService`）
+   */
   function pickService(id: string) {
-    setForm((f) => applyPreset(f, id, taken));
+    setForm((f) => {
+      const next = applyPreset(f, id, taken);
+      return imported ? withImportedService(f, next, imported) : next;
+    });
     enter("connection");
   }
 
@@ -451,8 +506,19 @@ export function UpstreamDialog({
         : connectionMissing(form, original, taken)
       : section === "models"
         ? modelsMissing(form)
-        : null;
-  const blocking = connectionMissing(form, original, taken) ?? modelsMissing(form);
+        : section === "billing"
+          ? sheetMissing(form, ov.price_sheets)
+          : null;
+  const blocking =
+    connectionMissing(form, original, taken) ?? modelsMissing(form) ?? sheetMissing(form, ov.price_sheets);
+
+  /**
+   * 导入链接带的模型规格：最终的模型清单（上游列出的接上手动添加的）里有的才写，别的不写，
+   * 「模型」一步说明是哪几个
+   */
+  const linkSpecs = imported?.specs ?? [];
+  const specsKept = linkSpecs.filter((s) => models.includes(s.model));
+  const specsSkipped = linkSpecs.filter((s) => !models.includes(s.model)).map((s) => s.model);
 
   async function save() {
     // 手动添加的输入框里还有没按回车的：先加上；写错了就不存，回到「模型」一节，毛病在那里说
@@ -462,26 +528,65 @@ export function UpstreamDialog({
       return;
     }
     const f = added ? { ...form, ...added.patch } : form;
+    const sheet = sheetToCreate(f);
+    // 规格按保存时的清单挑：输入框里刚加上的也算
+    const final = new Set(unionModels(listed ?? [], f.manualModels).map((m) => m.id));
+    const specs = linkSpecs.filter((s) => final.has(s.model));
     // 登录建出的上游：「模型」「计费」两步没改过什么就不再写一次
-    if (signedIn && saved && !editing && JSON.stringify(toInput(f)) === JSON.stringify(toInput(formFromView(saved)))) {
+    if (
+      signedIn &&
+      saved &&
+      !editing &&
+      !sheet &&
+      specs.length === 0 &&
+      JSON.stringify(toInput(f)) === JSON.stringify(toInput(formFromView(saved)))
+    ) {
       onSaved(saved.name);
       return;
     }
     setSaving(true);
     setError(null);
+    let version = base;
+    /** 这一次建出来的新价目表：上游没建成时删掉，不留一张没人用的 */
+    let createdSheet: string | null = null;
     try {
+      if (sheet) {
+        version = (await api.createPriceSheet({ sheet, base_version: version })).version;
+        createdSheet = sheet.name;
+      }
       const save = {
-        provider: toInput(f),
-        base_version: base,
+        provider: { ...toInput(f), ...(sheet ? { pricing: sheet.name } : {}) },
+        base_version: version,
       };
-      if (saved) await api.updateProvider(saved.name, save);
-      else await api.createProvider(save);
-      onSaved(f.name);
+      version = (saved ? await api.updateProvider(saved.name, save) : await api.createProvider(save)).version;
     } catch (e) {
+      if (createdSheet) await api.deletePriceSheet(createdSheet, version).catch(() => {});
       setError(errorText(e));
-    } finally {
       setSaving(false);
+      return;
     }
+    // 上游建好了：链接带的规格逐个写。写不进去的说一声，上游照样在
+    const failed: string[] = [];
+    for (const s of specs) {
+      try {
+        version = (
+          await api.setModelSpec({
+            provider: f.name,
+            model: s.model,
+            context_window: s.context_window,
+            max_output_tokens: s.max_output_tokens,
+            reasoning: s.reasoning,
+            image_input: s.image_input,
+            base_version: version,
+          })
+        ).version;
+      } catch {
+        failed.push(s.model);
+      }
+    }
+    setSaving(false);
+    if (failed.length > 0) notify.error(t.specsFailed(failed));
+    onSaved(f.name);
   }
 
   /** 到某一步，记成走过 */
@@ -578,7 +683,10 @@ export function UpstreamDialog({
       */}
       <DialogContent
         className="flex h-[min(88vh,760px)] flex-col gap-4 sm:max-w-[900px]"
+        style={noteHeight > 0 ? { height: `calc(min(88vh, 760px) + ${noteHeight}px)` } : undefined}
         onInteractOutside={(e) => e.preventDefault()}
+        // 导入链接打开的不是点出来的：焦点放在对话框上，不落到第一个按钮上画一圈焦点框
+        onOpenAutoFocus={imported ? focusSelf : undefined}
       >
         <DialogHeader className="flex-row items-center gap-3">
           {/* 新建：第一步还没选，标题旁没有标志；选定之后每一步都带着 */}
@@ -646,6 +754,14 @@ export function UpstreamDialog({
           )}
         </div>
 
+        {imported && (
+          <ImportNote
+            ref={setNoteEl}
+            hosts={importHosts(signedIn ? signedInForm(form, signedIn) : form)}
+            plain={!signedIn && importPlainText(form)}
+          />
+        )}
+
         <div data-slot="upstream-dialog-body" className="-mx-4 flex min-h-0 flex-1 flex-col overflow-y-auto px-4 pb-1">
           {section === "account" && editing && (
             <ChatgptAccountSection
@@ -680,6 +796,7 @@ export function UpstreamDialog({
                   set={set}
                   ov={ov}
                   login={login}
+                  replaceable={!imported}
                   frozen={login.waiting || signedIn != null}
                   family={signedIn?.family ?? form.zaiFamily}
                   onNewProxy={() => setNested({ kind: "proxy" })}
@@ -711,9 +828,18 @@ export function UpstreamDialog({
           {section === "models" && (
             <ModelsSection
               head={modelsHead}
+              note={
+                linkSpecs.length > 0 ? (
+                  <>
+                    {specsKept.length > 0 && t.specsKept(specsKept.length)}
+                    {specsKept.length > 0 && specsSkipped.length > 0 && " "}
+                    {specsSkipped.length > 0 && t.specsSkipped(specsSkipped)}
+                  </>
+                ) : undefined
+              }
               form={form}
               set={set}
-              catalog={catalog}
+              catalog={catalog && linkSpecs.length > 0 ? withLinkContext(catalog, linkSpecs) : catalog}
               entry={entry}
               prices={prices}
               perToken={form.billing === "per-token"}
@@ -733,8 +859,11 @@ export function UpstreamDialog({
               prices={prices}
               onNewSheet={() => setNested({ kind: "sheet", name: null })}
               onEditSheet={(name) => setNested({ kind: "sheet", name })}
+              onEditNewSheet={() => setNested({ kind: "draft-sheet" })}
               onPriceModels={(models) =>
-                setNested({ kind: "sheet", name: form.pricing || null, add: models })
+                draftSheet
+                  ? setNested({ kind: "draft-sheet", add: models })
+                  : setNested({ kind: "sheet", name: form.pricing || null, add: models })
               }
             />
           )}
@@ -857,7 +986,7 @@ export function UpstreamDialog({
             onClose={() => setNested(null)}
             onSaved={(name, version) => {
               setNested(null);
-              set({ pricing: name });
+              set({ pricing: name, newSheet: form.newSheet && { ...form.newSheet, chosen: false } });
               setBase(version);
               onChanged();
             }}
@@ -871,9 +1000,103 @@ export function UpstreamDialog({
             }}
           />
         )}
+        {nested?.kind === "draft-sheet" && form.newSheet && (
+          <PriceSheetDialog
+            mode={{
+              kind: "draft",
+              sheet: { name: newSheetName(form), multiplier: form.newSheet.multiplier, models: form.newSheet.models },
+              add: nested.add,
+            }}
+            ov={ov}
+            configVersion={base}
+            context={{ models: enabledModels, protocol: form.protocol || preview?.protocol || null }}
+            onClose={() => setNested(null)}
+            onSaved={() => setNested(null)}
+            onDraft={(sheet) => {
+              setNested(null);
+              const was = form.newSheet;
+              // 名称没改：照旧跟着上游的名称
+              const name = was?.name == null && sheet.name.trim() === newSheetName(form) ? null : sheet.name.trim();
+              const next: NewSheet = { name, multiplier: sheet.multiplier, models: sheet.models, chosen: true };
+              set({ newSheet: next });
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );
+}
+
+/** 那一句和步骤条之间的间距：对话框各块之间是 16px，它往上提了 8px（`-mt-2`） */
+const NOTE_GAP = 8;
+
+/**
+ * 导入的对话框每一步顶上那一句：来自导入链接，请求和密钥发往哪台主机（OAuth 的 Token 端点在
+ * 别的主机上时两台都写）。主机名是 ASCII，IDN 已转成 punycode。只陈述，不是警告。
+ *
+ * `plain`：地址是内网的明文 `http://`，下面再一行说不加密
+ */
+function ImportNote({ hosts, plain, ref }: { hosts: string[]; plain: boolean; ref?: Ref<HTMLDivElement> }) {
+  const t = useText(upstreamDialogText);
+  return (
+    <div
+      ref={ref}
+      data-testid="import-note"
+      className="-mt-2 flex shrink-0 flex-col gap-0.5 tw-label text-muted-foreground"
+    >
+      <p className="flex items-center gap-1.5">
+        <LinkIcon className="size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">
+          {t.importFrom}
+          {hosts.length > 0 && (
+            <>
+              {t.importSendsTo}
+              {hosts.map((h, i) => (
+                <span key={h}>
+                  {i > 0 && t.importAnd}
+                  <span className="font-mono text-foreground select-text">{h}</span>
+                </span>
+              ))}
+              {t.importEnd}
+            </>
+          )}
+        </span>
+      </p>
+      {plain && <p className="pl-5">{t.importPlain}</p>}
+    </div>
+  );
+}
+
+/** 登录之后表单换成了那个上游的定义：顶上那一句和认证方式那一行照登录时的样子说 */
+function signedInForm(form: UpstreamForm, s: SignedIn): UpstreamForm {
+  return {
+    ...form,
+    preset: s.preset,
+    authMode: "account",
+    zaiFamily: s.family,
+    baseUrl: ZAI_ENDPOINTS[s.family],
+    saved: null,
+  };
+}
+
+/** 登录建出的上游换进表单时，导入链接写的「模型」「计费」两步的值留着 */
+function withModelsAndBilling(adopted: UpstreamForm, f: UpstreamForm): UpstreamForm {
+  return {
+    ...adopted,
+    manualModels: f.manualModels,
+    scope: f.scope,
+    scopeList: f.scopeList,
+    billing: f.billing,
+    newSheet: f.newSheet,
+  };
+}
+
+/** 链接写的上下文窗口在模型表里先显示出来（创建后写进规格）。core 记着手写的照旧优先 */
+function withLinkContext(c: ModelCatalog, specs: ImportProposal["specs"]): ModelCatalog {
+  const fromLink = Object.fromEntries(
+    specs.flatMap((s) => (s.context_window != null ? [[s.model, s.context_window]] : [])),
+  );
+  return { ...c, manualContext: { ...fromLink, ...c.manualContext } };
 }
 
 /**
@@ -897,16 +1120,7 @@ function ConnectionHead({
   onSite: (family: ZaiFamily) => void;
 }) {
   // 登录之后表单换成了那个上游的定义：这一行照登录时的样子画
-  const shown: UpstreamForm = signedIn
-    ? {
-        ...form,
-        preset: signedIn.preset,
-        authMode: "account",
-        zaiFamily: signedIn.family,
-        baseUrl: ZAI_ENDPOINTS[signedIn.family],
-        saved: null,
-      }
-    : form;
+  const shown: UpstreamForm = signedIn ? signedInForm(form, signedIn) : form;
   const rules = fieldRules(shown);
   const auth = rules.auth.length > 1;
   if (!auth && !rules.site) return null;
@@ -936,11 +1150,17 @@ function AccountStep({
   signedIn,
   account,
   onRelogin,
+  replaceable,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
   ov: Overview;
   login: AccountLogin;
+  /**
+   * 同名、同一站点的 Z.ai / BigModel 上游可以换一把密钥。导入链接打开的不可以：链接只新建，
+   * 不改已有的上游，同名的要换一个名称
+   */
+  replaceable: boolean;
   frozen: boolean;
   family: ZaiFamily;
   onNewProxy: () => void;
@@ -952,6 +1172,7 @@ function AccountStep({
   const name = form.name.trim();
   const existing = login.phase.at === "idle" && !signedIn ? ov.providers.find((p) => p.name === name) : undefined;
   const replaces =
+    replaceable &&
     login.kind === "zai" &&
     existing != null &&
     existing.base_url.replace(/\/+$/, "") === ZAI_ENDPOINTS[family].replace(/\/+$/, "");

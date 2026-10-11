@@ -2,18 +2,17 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { SearchIcon } from "lucide-react";
 import { subscribe } from "@/lib/tauriEvent";
-import { useLang, textOf, useText } from "@/i18n";
+import { useLang, useText } from "@/i18n";
 import { appText } from "@/App.i18n";
 import { EMPTY_FILTER } from "@/requestTable";
 import type { ConfigFocus } from "@/configLocate";
-import { importDialogText } from "@/import/ImportDialog.i18n";
-import { notify } from "@/ui/notify";
+import { IMPORT_EVENT, releaseImportLink, takeImportLink } from "@/import/link";
 import type { LogFocus } from "@/security/SecurityPage";
 import { useTrafficView } from "@/traffic/view";
 import { Notices } from "@/Notices";
 import { Tip, TooltipRoot } from "@/ui/tip";
 import { isMac, isMod } from "@/platform";
-import type { ImportProposal } from "@/types";
+import type { ImportLink, ImportProposal } from "@/types";
 import { Button } from "@/ui/button";
 import { Toaster } from "@/ui/sonner";
 import { trouble } from "@/launch/trouble";
@@ -33,13 +32,15 @@ import { SourceList, drag } from "./SourceList";
 import type { CoreLink } from "./useCoreLink";
 
 /*
-  只在打开时才用得到的几块：命令面板（cmdk）、配置文件和版本历史、导入链接的确认框。
+  只在打开时才用得到的几块：命令面板（cmdk）、配置文件和版本历史、导入链接的「无法导入」。
   **用到时才载入**，交接之后空闲下来时预先载入（见下面 `warmUp`）。
 */
 const Palette = lazyPart(() => import("@/palette/Palette").then((m) => m.Palette));
 const ConfigFileDialog = lazyPart(() => import("@/ConfigDialogs").then((m) => m.ConfigFileDialog));
 const VersionHistoryDialog = lazyPart(() => import("@/ConfigDialogs").then((m) => m.VersionHistoryDialog));
-const ImportDialog = lazyPart(() => import("@/import/ImportDialog").then((m) => m.ImportDialog));
+const CannotImportDialog = lazyPart(() =>
+  import("@/import/CannotImportDialog").then((m) => m.CannotImportDialog),
+);
 
 /** 交接之后等这么久再预先载入其余各块：先让眼前这一页画完、取完数 */
 const WARM_UP_MS = 1_500;
@@ -47,7 +48,7 @@ const WARM_UP_MS = 1_500;
 /** 其余各块一块接一块地载入，不挤在同一刻：每一块的求值各占一小段，不卡住界面 */
 async function warmUp(alive: () => boolean) {
   preloadPages();
-  for (const part of [Palette, ConfigFileDialog, ImportDialog]) {
+  for (const part of [Palette, ConfigFileDialog, CannotImportDialog]) {
     if (!alive()) return;
     await part.preload().catch(() => {});
   }
@@ -176,29 +177,35 @@ export default memo(function Workspace({
   openRef.current = open;
 
   /*
-    导入链接（`thinkwatch://import?…`）：Rust 那边校验过、一次只留一份，这里取走、弹确认框。
-    和落页一样，窗口可能是为它新建的，所以挂上时先取一次。**挂上时先报「关了」**：网页
-    重新加载过的话，之前开着的那个对话框已经不在了，不报的话之后的链接一直进不来
+    导入链接（`thinkwatch://import?…`）：Rust 那边校验过、一次只留一条，这里取走。和落页一样，
+    窗口可能是为它新建的，所以挂上时先取一次。**挂上时先报「关了」**：网页重新加载过的话，
+    之前开着的那个对话框已经不在了，不报的话之后的链接一直进不来。
+
+    · 一份提议：等连上 core、拿到概览，打开上游页的新建对话框（和接管确认框里「新建 Bedrock
+      上游」同一条路，见 `UpstreamsPage`）。**开着对话框时不打开**：新建、编辑上游的表单，
+      或者别的页上填了一半的表单，换页就没了 —— 这一条丢掉，放下一条进来。
+    · 「无法导入」：一个小对话框，不换页，什么都不替换。
   */
   const [importing, setImporting] = useState<ImportProposal | null>(null);
+  const [unsupported, setUnsupported] = useState<{ param: string | null } | null>(null);
   useEffect(() => {
+    const got = (l: ImportLink | null) => {
+      if (l?.kind === "proposal") setImporting((cur) => cur ?? l.proposal);
+      else if (l?.kind === "unsupported") setUnsupported((cur) => cur ?? { param: l.param });
+    };
     const take = () =>
-      invoke<ImportProposal | null>("take_import_link")
-        .then((p) => {
-          if (p) setImporting((cur) => cur ?? p);
-        })
+      takeImportLink()
+        .then(got)
         .catch(() => {});
-    void invoke("import_link_closed")
-      .catch(() => {})
-      .then(take);
-    const un = subscribe("import-link", () => void take());
+    void releaseImportLink().then(take);
+    const un = subscribe(IMPORT_EVENT, () => void take());
     return () => {
       un();
     };
   }, []);
-  const closeImport = useCallback(() => {
-    setImporting(null);
-    void invoke("import_link_closed").catch(() => {});
+  const closeUnsupported = useCallback(() => {
+    setUnsupported(null);
+    void releaseImportLink();
   }, []);
 
   /*
@@ -342,8 +349,23 @@ export default memo(function Workspace({
   // 几个浮层：开着才载入那一块，载入完当场画（载入的那一下什么都不画）
   const ConfigFileView = usePart(ConfigFileDialog, configFile !== null);
   const HistoryView = usePart(VersionHistoryDialog, historyOpen);
-  const importReady = importing !== null && ov !== null && !remoteLost;
-  const ImportView = usePart(ImportDialog, importReady);
+  const CannotImportView = usePart(CannotImportDialog, unsupported !== null);
+  /*
+    提议交给上游页：连上了、概览到了、配置能用（不是安全模式）才交。交出去之后对话框归那一页，
+    关掉时由它报「关了」
+  */
+  const importReady = importing !== null && linked && ov !== null && !remoteLost && broken === null;
+  useEffect(() => {
+    if (!importReady || !importing) return;
+    setImporting(null);
+    if (modalOpen()) {
+      void releaseImportLink();
+      return;
+    }
+    setPalette(false);
+    setShortcuts(false);
+    open("upstreams", { create: "upstream", imported: importing });
+  }, [importReady, importing, open]);
 
   const openConfigFile = useCallback((focus: ConfigFocus | null) => setConfigFile({ focus }), []);
   const openHistory = useCallback(() => setHistoryOpen(true), []);
@@ -540,19 +562,8 @@ export default memo(function Workspace({
               }}
             />
           )}
-          {/* 等连上 core、拿到概览再弹：名称是否重名、保存基于哪一版都要它 */}
-          {importReady && importing && ov && ImportView && (
-            <ImportView
-              proposal={importing}
-              ov={ov}
-              onClose={closeImport}
-              onCreated={(name) => {
-                closeImport();
-                notify.success(textOf(importDialogText).created(name));
-                changed();
-                open("upstreams", { upstream: name });
-              }}
-            />
+          {unsupported && CannotImportView && (
+            <CannotImportView param={unsupported.param} onClose={closeUnsupported} />
           )}
           {PaletteView && (
             <PaletteView

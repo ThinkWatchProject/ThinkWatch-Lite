@@ -14,7 +14,7 @@ import type { Adopted, ConnView, Tested } from "@/connection/api";
 import type { AppInfo, LanguageView, MenubarStyle, NoticeMode, ThemeView } from "@/settings/api";
 import type { Offer, UpdateView } from "@/updateFlow";
 import type { UpstreamStats } from "@/upstreams/api";
-import type { ClientsResponse, CoreStatus, Dashboard, KeyUsage, McpTargetView, PlanView, ScanReport } from "@/types";
+import type { ClientsResponse, CoreStatus, Dashboard, ImportLink, KeyUsage, McpTargetView, PlanView, ScanReport } from "@/types";
 import { CORE, CHATGPT_WINDOWS } from "./core";
 import { LOCAL_GATEWAY, status } from "./config";
 import { IN_FLIGHT, costBucketsBy, costBy, dashboard, upstreamLatency, upstreamTokenRate } from "./traffic";
@@ -45,7 +45,7 @@ interface Commands {
   core_state: [void, string];
   core_status: [void, CoreStatus];
   take_pending_view: [void, string | null];
-  take_import_link: [void, null];
+  take_import_link: [void, ImportLink | null];
   import_link_closed: [void, null];
   connections: [void, ConnView];
   test_connection: [void, Tested];

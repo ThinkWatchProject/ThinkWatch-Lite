@@ -365,7 +365,15 @@ describe("编辑时认出是哪一种服务", () => {
   it("编辑表单按认出来的服务问：官方地址、标准写法时只剩密钥", () => {
     const f = formFromView(view({ base_url: "https://api.anthropic.com", protocol: "anthropic", protocol_explicit: false, headers: [] }));
     expect(f.preset).toBe("anthropic");
-    expect(fieldRules(f)).toEqual({ auth: ["key"], site: false, url: true, protocols: null, key: true, clientIdentity: false });
+    expect(fieldRules(f)).toEqual({
+      auth: ["key"],
+      site: false,
+      url: true,
+      protocols: null,
+      key: true,
+      clientIdentity: false,
+      balance: false,
+    });
     // OpenAI 编辑时没有「登录账号」：ChatGPT 账号是另一个上游
     const o = formFromView(view({ base_url: "https://api.openai.com", protocol: "openai-chat", protocol_explicit: true }));
     expect(fieldRules(o).auth).toEqual(["key"]);

@@ -2,7 +2,8 @@
 //!
 //! - `tw-api.ts`：控制面契约，由钉着的那版 tw-api 生成；
 //! - `lite-api.ts`：不经过 core 的那几样（`src/wire.rs`：客户端接管、MCP、扫描、
-//!   这台机器上的事件），由这里生成。
+//!   这台机器上的事件），由这里生成；
+//! - `import-services.json`：导入链接按服务类型收哪几项（`src/import_link.rs`）。
 //!
 //! **生成的文件和源头对得上。**改了类型没重新生成的话，前端照着旧的形状写、
 //! 类型检查照样通过 —— 这条测试在那个 PR 上拦住它。
@@ -39,6 +40,16 @@ fn the_committed_bindings_match_the_pinned_core() {
 #[test]
 fn the_committed_bindings_match_the_apps_own_types() {
     check("lite-api.ts", &lite_typescript());
+}
+
+/// 导入链接按服务类型收哪几项（`import_link::SERVICES`）。界面那边的测试拿它和新建对话框的
+/// 服务类型、`fieldRules` 核对：两边说的不一样，那个 PR 就过不了
+#[test]
+fn the_committed_import_table_matches_the_parser() {
+    check(
+        "import-services.json",
+        &thinkwatch_lite_lib::import_link::table_json(),
+    );
 }
 
 /// 和 `tw_api::ts` 同一套导出规则：64 位整数是 `number`，文档注释带过去。
@@ -128,7 +139,7 @@ fn lite_typescript() -> String {
     c.root::<wire::LocationChange>();
     c.root::<wire::LocalEvent>();
     c.root::<wire::UninstallStep>();
-    c.root::<wire::ImportProposal>();
+    c.root::<wire::ImportLink>();
     c.root::<wire::PluginInstallRequest>();
     c.root::<wire::PluginSaveRequest>();
     c.root::<wire::PluginApproveRequest>();

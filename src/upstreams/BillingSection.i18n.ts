@@ -17,6 +17,11 @@ export const billingSectionText = messages(
     estimated: "（估算）",
     unpriced: (n: number) => `${n} 个模型无法计价，这些模型的请求无法计算费用。`,
     setPrices: "设置价格…",
+    /** 导入链接带来的新价目表，在下拉里 */
+    linkSheet: (name: string) => `新价目表「${name}」`,
+    unnamed: "未命名",
+    linkSheetDetail: (multiplier: number, overrides: number) =>
+      `随上游一起创建 · 倍率 ×${multiplier} · ${overrides} 个模型单独定价`,
   },
   {
     newUpstream: "(new upstream)",
@@ -37,5 +42,9 @@ export const billingSectionText = messages(
         ? "1 model is unpriced; the cost of its requests cannot be calculated."
         : `${n} models are unpriced; the cost of their requests cannot be calculated.`,
     setPrices: "Set prices…",
+    linkSheet: (name: string) => `New price sheet “${name}”`,
+    unnamed: "untitled",
+    linkSheetDetail: (multiplier: number, overrides: number) =>
+      `Created with the upstream · multiplier ×${multiplier} · ${overrides === 1 ? "1 model" : `${overrides} models`} priced separately`,
   },
 );

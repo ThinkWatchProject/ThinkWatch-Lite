@@ -822,25 +822,140 @@ pub struct LiveClosed {
 
 // ---------------------------------------------------------- 导入链接
 
-/// 一条导入链接（`thinkwatch://import?…`）提议新建的上游。**已经在 Rust 侧逐项校验过**
-/// （`import_link::parse`），界面只负责给人确认；确认之前不写配置、不发任何请求。
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
+/// 一条导入链接（`thinkwatch://import?…`）走到界面的结果（`take_import_link`）：一份提议，
+/// 或者链接里有这一版不认识的参数。写坏了的、值不合规矩的链接到不了这里（Rust 侧丢掉，
+/// 只记原因）
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ImportLink {
+    /// 新建上游对话框按它预填
+    Proposal { proposal: Box<ImportProposal> },
+    /// 链接里有这一版不认识的参数：界面说「无法导入」，有新版本时给更新。`param` 只在
+    /// 参数名是 `^[a-z0-9_]{1,32}$` 时给，别的写法不拿给人看
+    Unsupported { param: Option<String> },
+}
+
+/// 导入链接能选的服务类型：新建对话框第一步的那几格（`src/upstreams/presets.ts`，顺序也
+/// 一样）。线上是那一格的 ID
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum ImportService {
+    Anthropic,
+    Openai,
+    Gemini,
+    Deepseek,
+    Zai,
+    Bedrock,
+    Openrouter,
+    Thinkwatch,
+    Sub2api,
+    Newapi,
+    Ollama,
+    Custom,
+}
+
+/// 导入链接能选的认证方式。AWS profile 不在里面：它让应用读这台机器上的凭证文件
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ImportAuth {
+    Key,
+    Oauth,
+    /// 登录账号（ChatGPT、Z.ai / BigModel）。链接里没有凭据，登录在对话框里做
+    Account,
+    AwsKeys,
+}
+
+/// OAuth 凭据（`auth=oauth`）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ImportOAuth {
+    /// Token 端点，规范化之后（主机名是 ASCII）
+    pub endpoint: String,
+    pub refresh: String,
+    pub client_id: Option<String>,
+    pub client_secret: Option<String>,
+}
+
+/// Bedrock 的访问密钥（`auth=aws-keys`）
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ImportAwsKeys {
+    pub access_key_id: String,
+    pub secret_access_key: String,
+    pub session_token: Option<String>,
+}
+
+/// 一行请求头
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ImportHeader {
+    pub name: String,
+    pub value: String,
+}
+
+/// 一个模型的规格。空着的一项不写（用价目表的）；至少有一项
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct ImportSpec {
+    pub model: String,
+    pub context_window: Option<u32>,
+    pub max_output_tokens: Option<u32>,
+    pub reasoning: Option<bool>,
+    pub image_input: Option<bool>,
+}
+
+/// 新价目表里一个模型的覆盖价，美元 / 百万 tokens。链接里没写的缓存价已经按输入价补上
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ImportPrice {
+    pub model: String,
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_write_5m: f64,
+    pub cache_write_1h: f64,
+}
+
+/// 链接带来的新价目表：和上游一起创建，名称跟着上游
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+pub struct ImportSheet {
+    /// 作用于默认价目表的倍率。链接没写是 1
+    pub multiplier: f64,
+    pub prices: Vec<ImportPrice>,
+}
+
+/// 一条导入链接提议新建的上游。**已经在 Rust 侧逐项校验过**（`import_link::parse`）：
+/// 每一项都是这种服务、这种认证方式的新建对话框里显示的一栏，值合规矩，不含 `$`、`{`、`}`
+/// （不会被当成 `${变量名}` 展开）。界面拿它预填新建对话框；之后由人决定，按「下一步」
+/// 或开始登录之前不写配置、不发任何请求。没给的一项是 null（或空的），由对话框照常填
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
 pub struct ImportProposal {
-    /// 链接给的名称。没给是空，界面按地址起一个
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub service: ImportService,
+    pub auth: ImportAuth,
+    /// Z.ai / BigModel 的站点：链接写的，或者从地址认出来的，都没有是 BigModel。别的服务是 null
+    pub site: Option<tw_api::ZaiFamily>,
     pub name: Option<String>,
-    /// 规范化之后的接口地址：主机名是 ASCII（IDN 转成 punycode），末尾没有 `/`
-    pub base_url: String,
-    /// 请求和密钥会发往的主机（带端口时带上端口），ASCII
-    pub host: String,
-    /// 没给就是自动识别
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// 规范化之后的接口地址：主机名是 ASCII（IDN 转成 punycode），末尾没有 `/`。null = 用这种
+    /// 服务自己的地址（Bedrock 按区域生成，Ollama 是本机的默认地址）
+    pub base_url: Option<String>,
     pub protocol: Option<tw_api::Protocol>,
-    /// API 密钥，原样。保证不含 `$`、`{`、`}`：不会被当成 `${变量名}` 展开
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// API 密钥，原样（Bedrock 是 Bedrock API Key）
     pub key: Option<String>,
-    /// 服务不提供模型列表时的手动清单
+    pub oauth: Option<ImportOAuth>,
+    /// Bedrock 的区域
+    pub region: Option<String>,
+    pub aws: Option<ImportAwsKeys>,
+    pub headers: Vec<ImportHeader>,
+    /// 转发客户端身份
+    pub client_identity: bool,
+    /// 并发上限，1 到 1000
+    pub concurrency: Option<u32>,
+    /// 余额从哪里读（只有「自定义」）
+    pub balance: Option<tw_api::BalanceSetting>,
+    /// 手动添加的模型
     pub models: Vec<String>,
+    /// 启用范围：指定这几项（模型 ID 或通配规则）。null = 全部模型
+    pub models_only: Option<Vec<String>>,
+    /// 上游建好之后再写的模型规格
+    pub specs: Vec<ImportSpec>,
+    pub billing: Option<tw_api::Billing>,
+    /// 新价目表。链接里有 `price_multiplier` 或 `prices` 时才有
+    pub price_sheet: Option<ImportSheet>,
 }
 
 // ---------------------------------------------------------- 插件：在系统的确认框里点头的几步

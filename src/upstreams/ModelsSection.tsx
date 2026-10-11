@@ -94,6 +94,7 @@ export function modelCount(hasList: boolean, listed: number, added: number): str
  */
 export function ModelsSection({
   head,
+  note: extra,
   form,
   set,
   catalog,
@@ -107,6 +108,8 @@ export function ModelsSection({
 }: {
   /** 顶上那一行：新建时检测通过的结果，或者登录的账号。不给就写清单的来历 */
   head?: ReactNode;
+  /** 顶上那一行下面的一句说明（导入链接带的模型规格） */
+  note?: ReactNode;
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
   catalog: ModelCatalog | null;
@@ -217,6 +220,7 @@ export function ModelsSection({
         </div>
       )}
 
+      {extra && <Note>{extra}</Note>}
       {note && <Note tone={note.tone}>{note.text}</Note>}
       {!catalog && !loading && <Note>{t.notFetched}</Note>}
 

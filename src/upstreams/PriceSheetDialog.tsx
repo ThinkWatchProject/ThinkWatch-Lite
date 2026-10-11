@@ -54,7 +54,12 @@ export type PriceSheetDialogMode =
   | { kind: "edit"; name: string; add?: string[] }
   | { kind: "duplicate"; from: string }
   /** 默认价目表只能看，不能改 */
-  | { kind: "default" };
+  | { kind: "default" }
+  /**
+   * 导入链接带来的新价目表（上游对话框里的草稿）：改完交回 `onDraft`，不写配置 —— 它和上游
+   * 一起创建。`add`：打开后为这几个模型各加一条覆盖
+   */
+  | { kind: "draft"; sheet: PriceSheetInput; add?: string[] };
 
 type Filter = "related" | "overridden" | "all";
 
@@ -92,6 +97,7 @@ export function PriceSheetDialog({
   onClose,
   onSaved,
   onDeleted,
+  onDraft,
 }: {
   mode: PriceSheetDialogMode;
   ov: Overview;
@@ -107,10 +113,13 @@ export function PriceSheetDialog({
   onSaved: (name: string, version: string) => void;
   /** 删掉了。`version`：删完之后的配置版本（从上游对话框里删的，那边接着用它） */
   onDeleted?: (version: string) => void;
+  /** 草稿改完了（`draft`） */
+  onDraft?: (sheet: PriceSheetInput) => void;
 }) {
   const t = useText(priceSheetDialogText);
   const common = useText(commonText);
   const readOnly = mode.kind === "default";
+  const drafting = mode.kind === "draft";
   /**
    * 保存时带的版本号：打开那一刻的（见 UpstreamDialog 的 `base`）。编辑时价目表的内容
    * 是打开之后才读的：中间要是改过，那也是一次冲突，不会被旧的覆盖
@@ -118,9 +127,9 @@ export function PriceSheetDialog({
   const [base] = useState(configVersion);
   const original =
     mode.kind === "edit" ? (ov.price_sheets.find((s) => s.name === mode.name) ?? null) : null;
-  const [name, setName] = useState("");
-  const [multiplier, setMultiplier] = useState("1.00");
-  const [overrides, setOverrides] = useState<Record<string, PriceFields>>({});
+  const [name, setName] = useState(mode.kind === "draft" ? mode.sheet.name : "");
+  const [multiplier, setMultiplier] = useState(mode.kind === "draft" ? multiplierText(mode.sheet.multiplier) : "1.00");
+  const [overrides, setOverrides] = useState<Record<string, PriceFields>>(mode.kind === "draft" ? mode.sheet.models : {});
   const [ratios, setRatios] = useState<Record<string, Ratios>>({});
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [usedBy, setUsedBy] = useState<string[]>(() =>
@@ -171,8 +180,9 @@ export function PriceSheetDialog({
 
   // 从「无法计价」进来：那几个模型先各加一条覆盖
   useEffect(() => {
-    if (mode.kind !== "create" || !mode.prefill) return;
-    for (const m of mode.prefill.models) void addOverride(m, null);
+    const add = mode.kind === "create" ? mode.prefill?.models : mode.kind === "draft" ? mode.add : undefined;
+    if (!add?.length) return;
+    for (const m of add) void addOverride(m, null);
     setFilter("overridden");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -311,9 +321,16 @@ export function PriceSheetDialog({
       ? t.enterName
       : !(Number.isFinite(mult) && mult > 0)
         ? t.multiplierPositive
-        : null;
+        : // 草稿和上游一起创建：名称被占用要先改一个（别的几种由 core 说）
+          drafting && ov.price_sheets.some((s) => s.name === name.trim())
+          ? t.nameTaken(name.trim())
+          : null;
 
   async function save() {
+    if (drafting) {
+      onDraft?.({ name: name.trim(), multiplier: mult, models: overrides });
+      return;
+    }
     setSaving(true);
     setError(null);
     try {
@@ -354,7 +371,9 @@ export function PriceSheetDialog({
         ? t.editTitle
         : mode.kind === "duplicate"
           ? t.duplicateTitle
-          : t.createTitle;
+          : drafting
+            ? t.draftTitle
+            : t.createTitle;
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -624,7 +643,10 @@ export function PriceSheetDialog({
 
             <div className="flex flex-col gap-2">
               <span className="tw-body font-medium">{t.usedByTitle}</span>
-              {readOnly ? (
+              {drafting ? (
+                // 和上游一起创建：用它的只有正在新建的这一个
+                <Note>{t.draftUsedBy}</Note>
+              ) : readOnly ? (
                 // 和价目表列表「使用上游」那一列一样：名字带标志
                 <UpstreamChips names={usedBy} providers={ov.providers} empty={t.notUsed} />
               ) : perTokenProviders.length === 0 ? (
@@ -692,7 +714,7 @@ export function PriceSheetDialog({
                 {common.cancel}
               </Button>
               <Button onClick={save} pending={saving} disabled={missing != null}>
-                {mode.kind === "edit" ? common.save : t.create}
+                {mode.kind === "edit" ? common.save : drafting ? t.done : t.create}
               </Button>
             </>
           )}
@@ -743,6 +765,12 @@ function PriceInput({
       }}
     />
   );
+}
+
+/** 倍率写进格子：两位小数写得下就写两位（1.20），写不下的照它真实的精度（1.055） */
+function multiplierText(m: number): string {
+  const two = m.toFixed(2);
+  return Math.abs(Number(two) - m) < 1e-9 ? two : String(m);
 }
 
 function round(v: number): number {

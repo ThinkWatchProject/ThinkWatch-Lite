@@ -1,5 +1,18 @@
 import { messages } from "@/i18n";
 
+/** 至多列出这么多个模型名，多出来的说一共几个 */
+const LISTED = 3;
+
+function modelsZh(models: string[]): string {
+  const head = models.slice(0, LISTED).join("、");
+  return models.length > LISTED ? `${head} 等 ${models.length} 个模型` : head;
+}
+
+function modelsEn(models: string[]): string {
+  const head = models.slice(0, LISTED).join(", ");
+  return models.length > LISTED ? `${head} and ${models.length - LISTED} more` : head;
+}
+
 export const upstreamDialogText = messages(
   {
     sections: {
@@ -31,6 +44,15 @@ export const upstreamDialogText = messages(
     name: "名称",
     nameTaken: "这个名称已被占用",
     nameReplaces: "将替换该上游的密钥",
+    /** 导入链接打开的对话框，每一步顶上那一句：「来自导入链接。请求和密钥将发往 a 和 b。」 */
+    importFrom: "来自导入链接。",
+    importSendsTo: "请求和密钥将发往 ",
+    importAnd: " 和 ",
+    importEnd: "。",
+    importPlain: "这个地址不加密，密钥和请求内容以明文传输。",
+    specsKept: (n: number) => `${n} 个模型的规格来自导入链接，随上游一起保存。`,
+    specsSkipped: (models: string[]) => `${modelsZh(models)} 不在模型列表中，其规格不保存。`,
+    specsFailed: (models: string[]) => `${modelsZh(models)} 的规格未能保存`,
   },
   {
     sections: {
@@ -59,5 +81,19 @@ export const upstreamDialogText = messages(
     name: "Name",
     nameTaken: "This name is already in use",
     nameReplaces: "The key of that upstream will be replaced",
+    importFrom: "From an import link. ",
+    importSendsTo: "Requests and keys will be sent to ",
+    importAnd: " and ",
+    importEnd: ".",
+    importPlain: "This address is not encrypted; the key and request content travel in plain text.",
+    specsKept: (n: number) =>
+      n === 1
+        ? "The specs of 1 model come from the import link and are saved with the upstream."
+        : `The specs of ${n} models come from the import link and are saved with the upstream.`,
+    specsSkipped: (models: string[]) =>
+      models.length === 1
+        ? `${modelsEn(models)} is not on the model list; its specs are not saved.`
+        : `${modelsEn(models)} are not on the model list; their specs are not saved.`,
+    specsFailed: (models: string[]) => `The specs of ${modelsEn(models)} could not be saved`,
   },
 );

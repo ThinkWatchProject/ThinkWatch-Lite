@@ -18,9 +18,12 @@ import type {
   BedrockDraft,
   Billing,
   HeaderInput,
+  ImportProposal,
   ModelList,
   OAuthChange,
   OnProxyFail,
+  PriceFields,
+  PriceSheetInput,
   Protocol,
   ProviderInput,
   ProviderView,
@@ -29,6 +32,7 @@ import type {
 import { globMatch } from "./glob";
 import { bedrockRegionOf, bedrockUrl } from "./labels";
 import {
+  CHATGPT_HOST,
   CUSTOM,
   ZAI_ENDPOINTS,
   nameFromUrl,
@@ -82,6 +86,24 @@ export interface SavedTraits {
    * 都不是（别的服务、别的地址）是 null —— core 只在同名、同一边的标准地址上换密钥
    */
   site: ZaiFamily | null;
+  /**
+   * 打开时认成「自定义」：「余额来源」那一栏一直在。改成 Sub2API 这类来源之后会认成那一种
+   * 服务（`retarget`），那一栏不能跟着消失
+   */
+  balance: boolean;
+}
+
+/**
+ * 导入链接带来的新价目表（`ImportSheet`）：计费一步里预先选着，「创建」时先建它、上游用它。
+ * 在对话框里改的只是这一份草稿，创建之前不写配置
+ */
+export interface NewSheet {
+  /** 价目表名称。null = 跟着上游的名称 */
+  name: string | null;
+  multiplier: number;
+  models: Record<string, PriceFields>;
+  /** 计费一步里选的是它（而不是默认价目表或已有的一张） */
+  chosen: boolean;
 }
 
 export interface UpstreamForm {
@@ -142,6 +164,8 @@ export interface UpstreamForm {
   balance: BalanceSetting | null;
   /** 编辑时打开那一刻写着的几样；新建是 null */
   saved: SavedTraits | null;
+  /** 导入链接带来的新价目表。没有是 null */
+  newSheet: NewSheet | null;
 }
 
 /**
@@ -196,6 +220,8 @@ export function applyPreset(form: UpstreamForm, id: string, taken: string[]): Up
     protocol: next.protocol,
     billing: next.billing ?? "per-token",
     authMode: next.auth.includes(form.authMode) ? form.authMode : next.auth[0]!,
+    // 余额从哪里读只有「自定义」由人选，别的服务按这一格定（`toInput`）
+    balance: next.id === CUSTOM.id ? form.balance : null,
   };
   return { ...out, name: renamed(form, out, taken) };
 }
@@ -283,6 +309,8 @@ export interface FieldRules {
   key: boolean;
   /** 「转发客户端身份」 */
   clientIdentity: boolean;
+  /** 「余额来源」：只有「自定义」（编辑时打开那一刻是「自定义」的也算） */
+  balance: boolean;
 }
 
 /**
@@ -328,6 +356,7 @@ export function fieldRules(f: UpstreamForm): FieldRules {
     protocols,
     key: authModeOf(f) === "key" && (p.key !== "none" || !!s?.key),
     clientIdentity: !!p.clientIdentity || !!s?.clientIdentity,
+    balance: p.id === CUSTOM.id || !!s?.balance,
   };
 }
 
@@ -380,6 +409,7 @@ export function blankForm(): UpstreamForm {
     disabled: false,
     balance: null,
     saved: null,
+    newSheet: null,
   };
 }
 
@@ -475,8 +505,143 @@ export function formFromView(p: ProviderView): UpstreamForm {
       otherUrl: zaiSiteOf(p.base_url) === null,
       signedIn: p.signed_in,
       site: service.preset === "zai" ? (p.signed_in ?? zaiSiteOf(p.base_url)) : null,
+      balance: service.preset === CUSTOM.id,
     },
+    newSheet: null,
   };
+}
+
+/**
+ * 按一条导入链接（`ImportProposal`，Rust 侧逐项校验过）新建：服务类型、认证方式、站点是链接
+ * 选的，别的照链接填，链接没给的照这种服务新建时的样子填（地址、协议、计费方式、名称）。
+ *
+ * 名称没给时和新建时一样起：有固定名字的服务用它（登录 ChatGPT 账号是 `chatgpt`，Z.ai /
+ * BigModel 按站点），没有的跟着地址猜，被占用就加序号。**链接给的名称被占用时照样填**：
+ * 由人改一个，和手填一样
+ */
+export function formFromImport(p: ImportProposal, taken: string[]): UpstreamForm {
+  const preset = presetById(p.service);
+  const zaiFamily: ZaiFamily = p.site ?? "bigmodel";
+  const baseUrl =
+    p.base_url ??
+    (p.service === "zai" ? ZAI_ENDPOINTS[zaiFamily] : p.service === "bedrock" && p.region ? bedrockUrl(p.region) : preset.baseUrl);
+  const form: UpstreamForm = {
+    ...blankForm(),
+    preset: preset.id,
+    zaiFamily,
+    baseUrl,
+    protocol: p.protocol ?? preset.protocol,
+    authMode: p.auth,
+    key: p.key ?? "",
+    headers: p.headers.map((h) => headerRow(h.name, h.value)),
+    oauthRefresh: p.oauth?.refresh ?? "",
+    oauthEndpoint: p.oauth?.endpoint ?? "",
+    oauthClientId: p.oauth?.client_id ?? "",
+    oauthClientSecret: p.oauth?.client_secret ?? "",
+    awsKeyId: p.aws?.access_key_id ?? "",
+    awsSecret: p.aws?.secret_access_key ?? "",
+    awsToken: p.aws?.session_token ?? "",
+    // 标准地址的区域就在地址里；VPC 端点、代理这类地址签名用的区域另写
+    awsRegion: p.region && bedrockRegionOf(baseUrl) === null ? p.region : "",
+    forwardClientIdentity: p.client_identity,
+    maxConcurrent: p.concurrency != null ? String(p.concurrency) : "",
+    manualModels: p.models,
+    scope: p.models_only ? "some" : "all",
+    scopeList: p.models_only ?? [],
+    billing: p.billing ?? preset.billing ?? "per-token",
+    balance: p.balance,
+    newSheet: p.price_sheet
+      ? {
+          name: null,
+          multiplier: p.price_sheet.multiplier,
+          models: Object.fromEntries(
+            p.price_sheet.prices.map(({ model, ...price }) => [model, price satisfies PriceFields]),
+          ),
+          chosen: true,
+        }
+      : null,
+  };
+  return { ...form, name: p.name ?? freeName(defaultName(form) || nameFromUrl(baseUrl), taken) };
+}
+
+/**
+ * 导入的对话框里第一步换了一种服务：预设照常填进来（`applyPreset`），链接里新的这种服务也收的
+ * 几项留着 —— 没有固定地址时的地址、它能选的协议、链接写明的计费方式。余额从哪里读只有
+ * 「自定义」收。别的（密钥、请求头、模型、价目表……）本来就留在表单里，这种服务不显示的那几栏
+ * 不交给 core（`toInput`）
+ */
+export function withImportedService(prev: UpstreamForm, next: UpstreamForm, p: ImportProposal): UpstreamForm {
+  const preset = presetById(next.preset);
+  const protocols = preset.protocols;
+  const protocolOk =
+    prev.protocol !== "" && (protocols === "all" || (Array.isArray(protocols) && protocols.includes(prev.protocol)));
+  return {
+    ...next,
+    baseUrl: preset.baseUrl === "" && prev.baseUrl.trim() !== "" ? prev.baseUrl : next.baseUrl,
+    protocol: protocolOk ? prev.protocol : next.protocol,
+    billing: p.billing ?? next.billing,
+  };
+}
+
+/**
+ * 导入的对话框顶上那一句说的主机：请求和密钥发往哪里（ASCII，IDN 是 punycode），OAuth 的
+ * Token 端点在别的主机上时也写上。登录账号时是登录之后请求发往的那一边
+ */
+export function importHosts(f: UpstreamForm): string[] {
+  const host = (u: string) => {
+    try {
+      return new URL(u.trim()).host;
+    } catch {
+      return "";
+    }
+  };
+  const mode = authModeOf(f);
+  const main =
+    mode === "account" ? (f.preset === "openai" ? CHATGPT_HOST : host(ZAI_ENDPOINTS[f.zaiFamily])) : host(f.baseUrl);
+  const out = main ? [main] : [];
+  const token = mode === "oauth" ? host(f.oauthEndpoint) : "";
+  if (token && !out.includes(token)) out.push(token);
+  return out;
+}
+
+/**
+ * 导入的对话框里，请求或者 OAuth 的 Token 端点走的是明文的 `http://`、又不是这台机器（链接
+ * 只能给内网的这种地址，`import_link.rs` 的 `plain_http_ok`）：顶上那一句下面再说一句不加密
+ */
+export function importPlainText(f: UpstreamForm): boolean {
+  const plain = (u: string) => {
+    try {
+      const x = new URL(u.trim());
+      return x.protocol === "http:" && !["localhost", "127.0.0.1", "[::1]"].includes(x.hostname);
+    } catch {
+      return false;
+    }
+  };
+  const mode = authModeOf(f);
+  if (mode === "account") return false;
+  return plain(f.baseUrl) || (mode === "oauth" && plain(f.oauthEndpoint));
+}
+
+/** 新价目表此刻叫什么：写过名称用它，没写跟着上游的名称 */
+export function newSheetName(f: Pick<UpstreamForm, "newSheet" | "name">): string {
+  return (f.newSheet?.name ?? f.name).trim();
+}
+
+/** 「创建」时要先建的那张新价目表：选着它、按量计费时才有 */
+export function sheetToCreate(f: UpstreamForm): PriceSheetInput | null {
+  const s = f.newSheet;
+  if (!s?.chosen || f.billing !== "per-token") return null;
+  return { name: newSheetName(f), multiplier: s.multiplier, models: s.models };
+}
+
+/** 新价目表缺什么：名称空着，或者已被占用（由人改一个，和上游重名一样） */
+export function sheetMissing(f: UpstreamForm, sheets: readonly { name: string }[]): string | null {
+  const s = sheetToCreate(f);
+  if (!s) return null;
+  const t = textOf(upstreamFormText);
+  if (s.name === "") return t.sheetName;
+  if (sheets.some((x) => x.name === s.name)) return t.sheetTaken(s.name);
+  return null;
 }
 
 /**
@@ -544,9 +709,9 @@ function awsInput(f: UpstreamForm): AwsKeys | undefined {
 }
 
 /**
- * 交给 core 的定义。**余额从哪里读，界面上没有地方选**：编辑时是配置里原来写的那个，
- * 原样交回；新建时由第一步选的服务类型定（Sub2API、New API、ThinkWatch 企业网关），
- * 别的不给，就是自动。
+ * 交给 core 的定义。**余额从哪里读**：「自定义」在高级设置里选（「余额来源」）；别的服务
+ * 编辑时是配置里原来写的那个，原样交回，新建时由第一步选的服务类型定（Sub2API、New API、
+ * ThinkWatch 企业网关），别的不给，就是自动。
  *
  * 编辑时认证方式是账号登录：密钥那一栏不显示，配置里的那把**原样交回** —— core 见密钥
  * 没变，就还记着它是登录换来的；不交就是把密钥删了
@@ -563,7 +728,8 @@ export function toInput(f: UpstreamForm): ProviderInput {
     oauth: oauthChange(f),
     aws: awsInput(f),
     protocol: f.protocol || undefined,
-    forward_client_identity: f.forwardClientIdentity,
+    // 这种服务不给开的不交：第一步换了服务类型，之前打开的那一项不跟过去
+    forward_client_identity: f.forwardClientIdentity && fieldRules(f).clientIdentity,
     proxy: f.proxy,
     on_proxy_fail: f.onProxyFail,
     models: f.manualModels,
@@ -577,17 +743,17 @@ export function toInput(f: UpstreamForm): ProviderInput {
 
 /**
  * 「高级设置」里的几项有没有不是默认值的：写了请求头、打开了转发客户端身份、代理不可用时
- * 改为直连、写了并发上限。**有就自动展开** —— 收着的一节里藏着一项在起作用的设置，
- * 和没写一样看不见。只有名称或只有值的请求头也算：那一行正等着补全，保存按不下去
+ * 改为直连、写了并发上限、「自定义」的余额来源不是自动识别。**有就自动展开** —— 收着的一节里
+ * 藏着一项在起作用的设置，和没写一样看不见。只有名称或只有值的请求头也算：那一行正等着补全，
+ * 保存按不下去
  */
-export function advancedNonDefault(
-  f: Pick<UpstreamForm, "headers" | "forwardClientIdentity" | "onProxyFail" | "maxConcurrent">,
-): boolean {
+export function advancedNonDefault(f: UpstreamForm): boolean {
   return (
     f.headers.some((h) => h.name.trim() !== "" || h.value.trim() !== "") ||
     f.forwardClientIdentity ||
     f.onProxyFail !== "fail" ||
-    f.maxConcurrent.trim() !== ""
+    f.maxConcurrent.trim() !== "" ||
+    (fieldRules(f).balance && (f.balance ?? "auto") !== "auto")
   );
 }
 
