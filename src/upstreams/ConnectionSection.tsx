@@ -129,7 +129,7 @@ export interface ZaiAccount {
 }
 
 /**
- * 连接：名称和出站代理一行，地址（整行，下面一句说明），协议和区域一行（只在有得选时出现），
+ * 连接：名称和出站代理一行，地址和协议、区域一行（协议、区域只在有得选时出现，地址下面一句说明），
  * 凭据，最后是收起的「高级设置」（请求头、转发客户端身份、代理不可用时、并发上限）。新建和
  * 编辑是同一张表单；新建时第一步选的服务类型已经定了的几项（地址、协议、要不要密钥）不再问，
  * 见 `presets.ts`。
@@ -203,31 +203,43 @@ export function ConnectionSection({
         <ProxyField ov={ov} value={form.proxy} onChange={(proxy) => set({ proxy })} onNewProxy={onNewProxy} />
       </div>
 
-      {/* 地址由这一格定了的（Z.ai 按站点）不显示 */}
-      {rules.url && (
-        <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
-          <Input
-            id="up-url"
-            className="font-mono"
-            value={form.baseUrl}
-            placeholder={preset.id === "thinkwatch" ? "https://gateway.example.com" : "https://api.example.com"}
-            onChange={(e) =>
-              set({
-                baseUrl: e.target.value,
-                // 新建时名称跟着地址猜，直到用户自己填了
-                name:
-                  !editing && (form.name === "" || form.name === freeName(nameFromUrl(form.baseUrl), taken))
-                    ? freeName(nameFromUrl(e.target.value), taken)
-                    : form.name,
-              })
-            }
-          />
-        </FormItem>
-      )}
-
-      {/* 协议只在真有得选时给选：只说一种接口的服务，选了那一格就定了 */}
-      {(rules.protocols || showRegion) && (
-        <div className="grid grid-cols-2 gap-4">
+      {/*
+        地址、协议、区域排成一行：地址占两份，协议、区域各占一份（协议只在真有得选时给选，只说
+        一种接口的服务选了那一格就定了）。地址由这一格定了的（Z.ai 按站点）不显示，剩下的各占一半
+      */}
+      {(rules.url || rules.protocols || showRegion) && (
+        <div
+          className={cn(
+            "grid items-start gap-4",
+            !rules.url
+              ? "grid-cols-2"
+              : rules.protocols && showRegion
+                ? "grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)]"
+                : rules.protocols || showRegion
+                  ? "grid-cols-[minmax(0,2fr)_minmax(0,1fr)]"
+                  : "grid-cols-1",
+          )}
+        >
+          {rules.url && (
+            <FormItem label={t.baseUrl} htmlFor="up-url" desc={t.baseUrlDesc}>
+              <Input
+                id="up-url"
+                className="font-mono"
+                value={form.baseUrl}
+                placeholder={preset.id === "thinkwatch" ? "https://gateway.example.com" : "https://api.example.com"}
+                onChange={(e) =>
+                  set({
+                    baseUrl: e.target.value,
+                    // 新建时名称跟着地址猜，直到用户自己填了
+                    name:
+                      !editing && (form.name === "" || form.name === freeName(nameFromUrl(form.baseUrl), taken))
+                        ? freeName(nameFromUrl(e.target.value), taken)
+                        : form.name,
+                  })
+                }
+              />
+            </FormItem>
+          )}
           {rules.protocols && (
             <FormItem label={t.protocol} htmlFor="up-protocol">
               <ProtocolSelect form={form} set={set} options={rules.protocols} auto={autoProtocol} />

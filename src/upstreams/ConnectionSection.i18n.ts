@@ -72,7 +72,7 @@ export const connectionSectionText = messages(
   {
     auto: "Auto-detect",
     autoDetected: (protocol: string) => `Auto-detect (${protocol})`,
-    autoUndetected: "Auto-detect (not detected, forwarded as is)",
+    autoUndetected: "Auto-detect (pass-through)",
     protocol: "Protocol",
     name: "Name",
     namePlaceholder: "e.g. relay-hk",
