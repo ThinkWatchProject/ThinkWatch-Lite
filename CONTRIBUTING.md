@@ -12,6 +12,25 @@ pre-fills a new PR's base with the repo's default branch, which is
 opened against `main`, click *Edit* next to the PR title and change the
 base — the commits and the discussion carry over. A bot will remind you.
 
+## Sign the Contributor License Agreement once
+
+Your first pull request to this repository gets a comment from a bot
+asking you to sign the [Contributor License Agreement](CLA.md)
+([Chinese translation](CLA.zh-CN.md)). Read it, then reply on the pull
+request with exactly:
+
+```text
+I have read the CLA Document and I hereby sign the CLA
+```
+
+That is the only time. The signature is recorded in this repository and
+covers all your later pull requests here. If the check stays red after
+you sign, comment `recheck`.
+
+You keep the copyright in your contribution; the agreement grants the
+project the right to license it under any terms, including commercial
+ones.
+
 ## Layout
 
 ```
