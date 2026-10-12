@@ -199,6 +199,7 @@ function RuleText({ e }: { e: SecurityEventView }) {
           <>
             <Badge variant="outline">{lt.custom}</Badge>
             {mode && <span className="text-muted-foreground">· {lt.matching[mode]}</span>}
+            {s.case_sensitive && <span className="text-muted-foreground">· {lt.caseSensitive}</span>}
           </>
         )}
       </span>

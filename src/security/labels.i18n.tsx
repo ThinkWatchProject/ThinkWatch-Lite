@@ -99,6 +99,7 @@ export const securityLabelsText = messages(
       regex: "正则",
       codepoints: "码位",
     },
+    caseSensitive: "区分大小写",
     /** 日志按天分组时，一天的标题 */
     day: {
       today: "今天",
@@ -163,8 +164,18 @@ export const securityLabelsText = messages(
           中国大陆手机号：{code("1")} 开头的 11 位数字，第二位为 3 到 9，前后不紧挨其他数字
         </>
       ),
-      regex: (code: Code, pattern: string) => <>正则 {code(pattern)}</>,
-      contains: (code: Code, text: string) => <>包含 {code(text)}，不区分大小写</>,
+      // 正则一般区分大小写，不区分的才说；包含两种都说
+      regex: (code: Code, pattern: string, cased: boolean) => (
+        <>
+          正则 {code(pattern)}
+          {!cased && "，不区分大小写"}
+        </>
+      ),
+      contains: (code: Code, text: string, cased: boolean) => (
+        <>
+          包含 {code(text)}，{cased ? "区分大小写" : "不区分大小写"}
+        </>
+      ),
       codepoints: (code: Code, ranges: string[]) => <>码位 {or(ranges.map(code), "、", "、")}</>,
     },
   },
@@ -240,6 +251,7 @@ export const securityLabelsText = messages(
       regex: "Regex",
       codepoints: "Code points",
     },
+    caseSensitive: "Matching case",
     day: {
       today: "Today",
       yesterday: "Yesterday",
@@ -341,8 +353,17 @@ export const securityLabelsText = messages(
           Chinese mainland mobile numbers: 11 digits starting with {code("1")}, the second 3 to 9, not run together with other digits
         </>
       ),
-      regex: (code: Code, pattern: string) => <>Regex {code(pattern)}</>,
-      contains: (code: Code, text: string) => <>Contains {code(text)}, ignoring case</>,
+      regex: (code: Code, pattern: string, cased: boolean) => (
+        <>
+          Regex {code(pattern)}
+          {!cased && ", ignoring case"}
+        </>
+      ),
+      contains: (code: Code, text: string, cased: boolean) => (
+        <>
+          Contains {code(text)}, {cased ? "matching case" : "ignoring case"}
+        </>
+      ),
       codepoints: (code: Code, ranges: string[]) => <>Code points {or(ranges.map(code), ", ", " and ")}</>,
     },
   },

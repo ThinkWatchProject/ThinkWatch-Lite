@@ -219,9 +219,9 @@ export function MatcherText({ m }: { m: Matcher }) {
     case "builtin":
       return <>{t.builtin[m.check] ?? t.builtinOther}</>;
     case "regex":
-      return t.regex(code, m.pattern);
+      return t.regex(code, m.pattern, m.case_sensitive ?? false);
     case "contains":
-      return t.contains(code, m.text);
+      return t.contains(code, m.text, m.case_sensitive ?? false);
     case "codepoints":
       return t.codepoints(code, m.ranges);
   }

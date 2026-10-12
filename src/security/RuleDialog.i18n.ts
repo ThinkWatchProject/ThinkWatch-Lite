@@ -36,10 +36,14 @@ export const ruleDialogText = messages(
       regex: "匹配（正则表达式）",
       codepoints: "码位",
     },
-    patternHint: {
-      redact: "匹配到的整段内容按凭据处理。",
-      inspect_tools: "按工具调用的参数匹配。",
+    toolHint: "按工具调用的参数匹配。",
+    /** 出站脱敏的自定义规则：怎么找、分不分大小写 */
+    redactHint: {
+      contains: (cased: boolean) =>
+        `在整个请求中按原样查找这段文字，. * 等字符没有特殊含义；${cased ? "区分" : "不区分"}大小写。找到的内容按凭据替换。`,
+      regex: (cased: boolean) => `按正则表达式匹配，${cased ? "区分" : "不区分"}大小写。匹配到的整段内容按凭据替换。`,
     },
+    caseSensitive: "区分大小写",
     contentHint: {
       contains: "在用户消息和工具结果中查找这段文字，不区分大小写，首尾空格也参与匹配。",
       regex: "在用户消息和工具结果中匹配，不区分大小写。",
@@ -146,10 +150,14 @@ export const ruleDialogText = messages(
       regex: "Match (regular expression)",
       codepoints: "Code points",
     },
-    patternHint: {
-      redact: "Everything the pattern matches is treated as a credential.",
-      inspect_tools: "Matched against the arguments of each tool call.",
+    toolHint: "Matched against the arguments of each tool call.",
+    redactHint: {
+      contains: (cased: boolean) =>
+        `Looked for as written anywhere in the request; characters such as . and * have no special meaning. ${cased ? "Case must match" : "Case is ignored"}. What is found is replaced like a credential.`,
+      regex: (cased: boolean) =>
+        `A regular expression; ${cased ? "case must match" : "case is ignored"}. Everything it matches is replaced like a credential.`,
     },
+    caseSensitive: "Match case",
     contentHint: {
       contains:
         "Searched for in user messages and tool results, ignoring case. Leading and trailing spaces count.",

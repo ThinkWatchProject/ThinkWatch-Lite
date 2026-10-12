@@ -15,6 +15,16 @@ import type {
   SecurityEventsQuery,
 } from "@/types";
 
+/** 只试哪一条，见 `api.test` */
+export interface TrialOnly {
+  pattern?: string;
+  match?: ContentMatch;
+  case_sensitive?: boolean;
+  rule?: string;
+  label?: string;
+  action?: RuleAction;
+}
+
 /** 自定义规则保存时带的内容。版本号由页面在写的那一刻补上 */
 export type RuleSave = Omit<CustomRuleSave, "base_version">;
 
@@ -45,14 +55,14 @@ export const api = {
   deleteRule: (guard: Guard, name: string, baseVersion: string) =>
     call("DeleteCustomRule", { base_version: baseVersion }, guard, name),
   /**
-   * 拿一段文本试一试。给了 `pattern` 就只试这一条（内容过滤按 `match` 认，出站脱敏按
-   * `label` 写占位符），给了 `rule` 就只试这一条内置规则（停用着的也能试），都不给就按
+   * 拿一段文本试一试。给了 `pattern` 就只试这一条（按 `match` 认，出站脱敏按
+   * `case_sensitive` 分不分大小写、按 `label` 写占位符），给了 `rule` 就只试这一条内置规则（停用着的也能试），都不给就按
    * 现在启用的全部规则。`action` 是对话框里选着、还没保存的处置：发出去的样子和会不会
    * 被拒按它算
    */
   test: (
     guard: Guard,
     sample: string,
-    only: { pattern?: string; match?: ContentMatch; rule?: string; label?: string; action?: RuleAction } = {},
+    only: TrialOnly = {},
   ) => call("TestSecurity", { sample, ...only }, guard),
 };

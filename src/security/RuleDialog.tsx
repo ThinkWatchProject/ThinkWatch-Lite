@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CopyIcon } from "lucide-react";
+import { CaseSensitiveIcon, CopyIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -27,6 +27,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
 import { Textarea } from "@/ui/textarea";
+import { Toggle } from "@/ui/toggle";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -46,23 +47,26 @@ const ACTIONS: Record<ActionGuard, readonly RuleAction[]> = {
   content: ["block", "strip", "record"],
 };
 
-/** 内容规则的三种写法 */
-const MATCHES: readonly ContentMatch[] = ["contains", "regex", "codepoints"];
+/** 自定义规则能选的写法：内容规则三种，出站脱敏不认码位。工具调用审查只有正则，不选 */
+const MATCHES: Record<"redact" | "content", readonly ContentMatch[]> = {
+  redact: ["contains", "regex"],
+  content: ["contains", "regex", "codepoints"],
+};
 
 /**
- * 一条规则写的是什么，以及怎么认。码位写成一行，和输入框里的写法一样。
+ * 一条规则写的是什么，以及怎么认、分不分大小写。码位写成一行，和输入框里的写法一样。
  *
  * **写不出来的是 `null`**：出站脱敏那几种（前缀、PEM、身份证号…）和代码里做的检查
  * （`builtin`）没有一条能填进自定义规则的写法，所以也没有「复制为自定义规则」。
  */
-export function patternOf(r: SecurityRuleView): { pattern: string; match: ContentMatch } | null {
+export function patternOf(r: SecurityRuleView): { pattern: string; match: ContentMatch; cased: boolean } | null {
   switch (r.matcher.kind) {
     case "regex":
-      return { pattern: r.matcher.pattern, match: "regex" };
+      return { pattern: r.matcher.pattern, match: "regex", cased: r.matcher.case_sensitive ?? false };
     case "contains":
-      return { pattern: r.matcher.text, match: "contains" };
+      return { pattern: r.matcher.text, match: "contains", cased: r.matcher.case_sensitive ?? false };
     case "codepoints":
-      return { pattern: r.matcher.ranges.join(", "), match: "codepoints" };
+      return { pattern: r.matcher.ranges.join(", "), match: "codepoints", cased: false };
     default:
       return null;
   }
@@ -250,8 +254,11 @@ export function RuleDialog({
   const redact = guard === "redact";
   const [name, setName] = useState(editing?.id ?? seed?.name ?? "");
   const [pattern, setPattern] = useState(was?.pattern ?? seed?.pattern ?? "");
-  // 只有内容过滤能选；别的两项的自定义规则都是正则
-  const [match, setMatch] = useState<ContentMatch>(content ? (was?.match ?? seed?.match ?? "contains") : "regex");
+  // 内容过滤和出站脱敏能选，默认按原样找；工具调用审查的自定义规则都是正则
+  const choosable = content ? "content" : redact ? "redact" : null;
+  const [match, setMatch] = useState<ContentMatch>(choosable ? (was?.match ?? seed?.match ?? "contains") : "regex");
+  // 出站脱敏：分不分大小写，默认不分
+  const [cased, setCased] = useState(was?.cased ?? false);
   // 新建的规则默认是最重的那一种：专门写一条规则，多半就是要拦它
   const acts = hasAction(guard) ? guard : null;
   const [action, setAction] = useState<RuleAction>(
@@ -273,7 +280,8 @@ export function RuleDialog({
     sample,
     {
       pattern,
-      match: content ? match : undefined,
+      match: choosable ? match : undefined,
+      case_sensitive: redact ? cased : undefined,
       label: redact && labelValid ? label : undefined,
       action: acts ? action : undefined,
     },
@@ -300,7 +308,8 @@ export function RuleDialog({
         name: name.trim(),
         pattern,
         action: acts ? action : undefined,
-        match: content ? match : undefined,
+        match: choosable ? match : undefined,
+        case_sensitive: redact ? cased : undefined,
         label: redact ? label : undefined,
         enabled: editing?.enabled ?? true,
       });
@@ -331,24 +340,46 @@ export function RuleDialog({
             />
           </Field>
 
-          {content && (
+          {choosable && (
             <Field label={t.matchKind}>
-              <Segmented<ContentMatch>
-                label={t.matchKind}
-                value={match}
-                options={MATCHES.map((m) => ({ id: m, label: t.matchKinds[m] }))}
-                onChange={(m) => {
-                  setError(null);
-                  setMatch(m);
-                }}
-              />
+              <div className="flex items-center gap-2">
+                <Segmented<ContentMatch>
+                  label={t.matchKind}
+                  value={match}
+                  options={MATCHES[choosable].map((m) => ({ id: m, label: t.matchKinds[m] }))}
+                  onChange={(m) => {
+                    setError(null);
+                    setMatch(m);
+                  }}
+                />
+                {redact && (
+                  <Toggle
+                    variant="outline"
+                    size="sm"
+                    pressed={cased}
+                    onPressedChange={(on) => {
+                      setError(null);
+                      setCased(on);
+                    }}
+                  >
+                    <CaseSensitiveIcon />
+                    {t.caseSensitive}
+                  </Toggle>
+                )}
+              </div>
             </Field>
           )}
 
           <Field
             label={t.patternLabel[match]}
             htmlFor="rule-pattern"
-            hint={content ? t.contentHint[match] : t.patternHint[guard === "redact" ? "redact" : "inspect_tools"]}
+            hint={
+              content
+                ? t.contentHint[match]
+                : redact
+                  ? t.redactHint[match === "regex" ? "regex" : "contains"](cased)
+                  : t.toolHint
+            }
             error={codepointsError(t, cpProblem)}
           >
             <Input
