@@ -11,7 +11,7 @@ import type {
   SecurityEventView,
   SecurityOutcome,
   SecurityRuleView,
-} from "./contract-types";
+} from "@/types";
 import { securityLabelsText } from "./labels.i18n";
 
 /**

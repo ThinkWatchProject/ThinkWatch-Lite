@@ -48,15 +48,26 @@ describe("历史记录的安全徽标", () => {
     expect(marksFromEvents([ev({ action: "replaced" })]).secrets?.replaced).toBe(true);
   });
 
-  it("内容过滤：只有删过文字的挂「已删除」", () => {
+  it("拦截档下有「仅记录」的规则：不算全部替换，每一项各记换没换", () => {
+    const m = marksFromEvents([ev({ action: "replaced" }), ev({ id: 2, rule: "email", action: "recorded" })]);
+    expect(m.secrets?.replaced).toBe(false);
+    expect(m.secrets?.items.map((i) => [i.rule, i.replaced])).toEqual([
+      ["anthropic-api-key", true],
+      ["email", false],
+    ]);
+  });
+
+  it("内容过滤：只有删过、换过文字的挂「已删除」「已替换」", () => {
     const m = marksFromEvents([
       ev({ guard: "content", rule: "unicode-tags", action: "stripped", tool: "tool_result", excerpt: "a‹U+E0049 ×74›b", count: 74 }),
       ev({ id: 2, guard: "content", rule: "act-as", action: "recorded", excerpt: "act as", count: 1 }),
       ev({ id: 3, guard: "content", rule: "项目代号", custom: true, action: "stripped", excerpt: "project falcon", count: 2 }),
+      ev({ id: 4, guard: "content", rule: "北极星", custom: true, action: "replaced", direction: "response", count: 3 }),
     ]);
     expect(m.stripped).toEqual([
-      { rule: "unicode-tags", custom: false, count: 74 },
-      { rule: "项目代号", custom: true, count: 2 },
+      { rule: "unicode-tags", custom: false, count: 74, replaced: false },
+      { rule: "项目代号", custom: true, count: 2, replaced: false },
+      { rule: "北极星", custom: true, count: 3, replaced: true },
     ]);
     expect(m.secrets).toBeUndefined();
     expect(marksFromEvents([ev({ guard: "content", rule: "jailbreak", action: "blocked" })]).stripped).toBeUndefined();

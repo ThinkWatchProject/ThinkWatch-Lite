@@ -210,9 +210,9 @@ function touches(ev: CoreEvent): number | null {
     case "tool_call_flagged":
     case "translated":
       return ev.id;
-    // 内容过滤只有删过文字的那一条会改这一行（「已删除」徽标）
+    // 内容过滤只有删过、换过文字的那一条会改这一行（「已删除」「已替换」徽标）
     case "content_matched":
-      return ev.outcome === "stripped" ? ev.id : null;
+      return ev.outcome === "stripped" || ev.outcome === "replaced" ? ev.id : null;
     default:
       return null;
   }

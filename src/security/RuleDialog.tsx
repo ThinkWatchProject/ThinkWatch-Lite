@@ -34,28 +34,28 @@ import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
 import { ACTIONS, type RuleSave } from "./api";
 import { checkCodepoints, DEFAULT_LABEL, labelOk, MAX_CODEPOINT_ITEMS, placeholderOf, type CodepointsProblem } from "./check";
-import {
-  actionOf,
-  DEFAULT_REPLACEMENT,
-  scopeOf,
-  type ContentMatch,
-  type Guard,
-  type GuardMode,
-  type RuleAction,
-  type RuleScope,
-  type SecurityRuleView,
-  type SecurityTestHit,
-} from "./contract-types";
+import type {
+  ContentMatch,
+  ContentScope,
+  Guard,
+  GuardMode,
+  RuleAction,
+  SecurityRuleView,
+  SecurityTestHit,
+} from "@/types";
 import { Highlight, lineOf, type Mark } from "./Highlight";
 import { MatcherText, modeName, ruleName, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import {
   actionAllowed,
+  actionOf,
   adjustForScope,
   coversAnswer,
+  DEFAULT_REPLACEMENT,
   matchAllowed,
   scopeChoice,
+  scopeOf,
   scopeOfChoice,
   type ScopeChoice,
 } from "./rules";
@@ -223,10 +223,10 @@ function SampleField({
   guard: Guard;
   sample: string;
   onSample: (s: string) => void;
-  side: RuleScope;
-  onSide: (s: RuleScope) => void;
+  side: ContentScope;
+  onSide: (s: ContentScope) => void;
   /** 规则查的那几边。不给（测试全部规则、非内容规则）就两边都能选 */
-  sides?: readonly RuleScope[];
+  sides?: readonly ContentScope[];
   children: React.ReactNode;
 }) {
   const t = useText(ruleDialogText);
@@ -234,7 +234,7 @@ function SampleField({
   return (
     <Field label={t.sample} htmlFor={id}>
       {content && (
-        <Segmented<RuleScope>
+        <Segmented<ContentScope>
           label={t.sample}
           value={side}
           options={(["request", "response"] as const).map((s) => ({
@@ -259,7 +259,7 @@ function SampleField({
 }
 
 /** 测试那一边：规则查的那几边里，原来选的还在就留着，否则换成它查的第一边 */
-function sideWithin(side: RuleScope, sides: readonly RuleScope[]): RuleScope {
+function sideWithin(side: ContentScope, sides: readonly ContentScope[]): ContentScope {
   return sides.includes(side) ? side : (sides[0] ?? "request");
 }
 
@@ -387,7 +387,7 @@ export function RuleDialog({
   // 密钥与隐私：占位符名称。缺省值显式填在框里，不留空
   const [label, setLabel] = useState(editing?.label ?? DEFAULT_LABEL);
   const [sample, setSample] = useState("");
-  const [side, setSide] = useState<RuleScope>(scope === "response" ? "response" : "request");
+  const [side, setSide] = useState<ContentScope>(scope === "response" ? "response" : "request");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -469,7 +469,7 @@ export function RuleDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>{t.title[guard][editing ? "edit" : "create"]}</DialogTitle>
         </DialogHeader>
@@ -708,7 +708,7 @@ export function BuiltinRuleDialog({
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             {viewName(guard, rule)}
@@ -814,14 +814,14 @@ export function TestDialog({ guard, onClose }: { guard: Guard; onClose: () => vo
   const lt = useText(securityLabelsText);
   const common = useText(commonText);
   const [sample, setSample] = useState("");
-  const [side, setSide] = useState<RuleScope>("request");
+  const [side, setSide] = useState<ContentScope>("request");
   const content = guard === "content";
   const trial = useTrial(guard, sample, { scope: content ? side : undefined });
   const hits = trial.state === "done" ? trial.hits : [];
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="sm:max-w-2xl">
+      <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>{t.testTitle[guard]}</DialogTitle>
           <DialogDescription>{t.testDesc}</DialogDescription>

@@ -199,6 +199,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   SetSecurityMode: refuse,
   ToggleBuiltinRule: refuse,
   SetBuiltinRuleAction: refuse,
+  SetRulesEnabled: refuse,
   CreateCustomRule: refuse,
   UpdateCustomRule: refuse,
   DeleteCustomRule: refuse,

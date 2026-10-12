@@ -18,21 +18,22 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { ACTIONS } from "./api";
-import {
-  actionOf,
-  DEFAULT_REPLACEMENT,
-  scopeOf,
-  type Guard,
-  type GuardDetail,
-  type GuardMode,
-  type RuleAction,
-  type SecurityRuleView,
-} from "./contract-types";
+import type { Guard, GuardDetail, GuardMode, RuleAction, SecurityRuleView } from "@/types";
 import { MatcherText, modeName, modeTone, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { guardTabText, nowText } from "./GuardTab.i18n";
 import { patternOf } from "./RuleDialog";
-import { actionAllowed, groupChecked, groupRules, groupTarget, ruleMatches, scopeChoice } from "./rules";
+import {
+  actionAllowed,
+  actionOf,
+  DEFAULT_REPLACEMENT,
+  groupChecked,
+  groupRules,
+  groupTarget,
+  ruleMatches,
+  scopeChoice,
+  scopeOf,
+} from "./rules";
 import { ROW_FOCUS, rowNav, stop } from "./rows";
 
 /** 状态的先后，和规格的示意一致：开启、监控、关闭 */

@@ -394,6 +394,23 @@ function useSizers(items: Item[], t: Text, ts: (typeof sessionsText)["zh"], toda
 }
 
 /**
+ * 脱敏徽标说什么：每一项都换成了占位符是「已脱敏」（全部的次数）；有原样发出的（观察档，
+ * 或者动作是「仅记录」的规则）是「含凭据」，只算、只列原样发出的那几项
+ */
+function secretsMark(s: NonNullable<RequestRow["secrets"]>) {
+  const items = s.replaced ? s.items : s.items.filter((x) => !x.replaced);
+  return { replaced: s.replaced, items, count: items.reduce((a, x) => a + x.count, 0) };
+}
+
+/** 内容过滤改过的文字按「删除」「替换」分开，各一个徽标 */
+function contentEdits(hits: RequestRow["stripped"]) {
+  return {
+    stripped: (hits ?? []).filter((x) => !x.replaced),
+    replaced: (hits ?? []).filter((x) => x.replaced),
+  };
+}
+
+/**
  * 请求行各列大约多宽：和 `requestCell` 写的是同样的字；图标、徽标的边距按一两个字宽算。
  * 名字按画出来的宽度封顶（`capped`，上限见 `NAME_PX`）
  */
@@ -409,9 +426,10 @@ function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | n
   const badges = [
     ...(mark ? [textWidth(t.pinned) + 1] : []),
     ...(r.secrets && r.secrets.items.length > 0
-      ? [textWidth((r.secrets.replaced ? t.redacted : t.withSecrets)(r.secrets.items.reduce((a, x) => a + x.count, 0))) + 2]
+      ? [textWidth((r.secrets.replaced ? t.redacted : t.withSecrets)(secretsMark(r.secrets).count)) + 2]
       : []),
-    ...(r.stripped && r.stripped.length > 0 ? [textWidth(t.stripped) + 2] : []),
+    ...(contentEdits(r.stripped).stripped.length > 0 ? [textWidth(t.stripped) + 2] : []),
+    ...(contentEdits(r.stripped).replaced.length > 0 ? [textWidth(t.contentReplaced) + 2] : []),
     ...(r.translated
       ? [textWidth(r.translated.dropped.length > 0 ? t.convertedDropped(r.translated.dropped.length) : t.converted) + 2]
       : []),
@@ -1177,6 +1195,8 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
   const t = useText(trafficText);
   const sent = notSent(r);
   const mark = rowMark(r, via);
+  const secrets = r.secrets && r.secrets.items.length > 0 ? secretsMark(r.secrets) : null;
+  const edits = contentEdits(r.stripped);
   return (
     <div className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
       {/*
@@ -1230,22 +1250,30 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
       )}
       {/* **看不见的安全功能会被用户关掉**，因为他们会怀疑是脱敏搞坏了功能。
           所以脱敏发生了就要在列表这一层看得见，而不是藏在详情里 */}
-      {r.secrets && r.secrets.items.length > 0 && (
+      {secrets && (
         <Mark
           // 换掉了是灰的；原样发出去的要看得出来
-          variant={r.secrets.replaced ? "secondary" : "warning"}
-          tip={(r.secrets.replaced ? t.redactedTip : t.secretsTip)(
-            r.secrets.items.map((x) => `${ruleName("redact", x.rule, x.custom)} ×${x.count}`),
+          variant={secrets.replaced ? "secondary" : "warning"}
+          tip={(secrets.replaced ? t.redactedTip : t.secretsTip)(
+            secrets.items.map((x) => `${ruleName("redact", x.rule, x.custom)} ×${x.count}`),
           )}
         >
-          {(r.secrets.replaced ? t.redacted : t.withSecrets)(r.secrets.items.reduce((a, x) => a + x.count, 0))}
+          {(secrets.replaced ? t.redacted : t.withSecrets)(secrets.count)}
         </Mark>
       )}
-      {/* 内容过滤删掉过命中的文字：和脱敏一样，改了请求就要在列表这一层看得见。灰的 ——
-          防护在起作用，请求照常发出 */}
-      {r.stripped && r.stripped.length > 0 && (
-        <Mark variant="secondary" tip={t.strippedTip(r.stripped.map((x) => ruleName("content", x.rule, x.custom)))}>
+      {/* 内容过滤删掉、替换过命中的文字：和脱敏一样，改了请求或回答就要在列表这一层看得见。
+          灰的 —— 防护在起作用，请求照常发出 */}
+      {edits.stripped.length > 0 && (
+        <Mark variant="secondary" tip={t.strippedTip(edits.stripped.map((x) => ruleName("content", x.rule, x.custom)))}>
           {t.stripped}
+        </Mark>
+      )}
+      {edits.replaced.length > 0 && (
+        <Mark
+          variant="secondary"
+          tip={t.contentReplacedTip(edits.replaced.map((x) => ruleName("content", x.rule, x.custom)))}
+        >
+          {t.contentReplaced}
         </Mark>
       )}
       {/* 格式转换。**转了就要看得见，丢了字段更要看得见** —— 「扩展思考开了却

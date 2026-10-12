@@ -904,6 +904,7 @@ fn content_hit(provider: &str, rule: &str, custom: bool, recorded: bool) -> tw_a
     tw_api::Event::ContentMatched {
         id: 2,
         provider: provider.into(),
+        direction: tw_api::SecurityDirection::Response,
         rule: rule.into(),
         custom,
         matching: tw_api::ContentMatch::Contains,
@@ -945,6 +946,7 @@ fn secrets(provider: &str, items: &[(&str, bool)]) -> tw_api::Event {
                 kind: tw_api::SecretKind::Personal,
                 masked: "z…@example.com".into(),
                 count: 1,
+                replaced: !*recorded,
                 detail: hit_detail(
                     tw_api::SecurityDirection::Request,
                     rule,

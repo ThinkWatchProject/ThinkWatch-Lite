@@ -150,9 +150,11 @@ export const trafficText = messages(
     redacted: (n: number) => `已脱敏 ${n}`,
     secretsTip: (items: string[]) => `请求中含有凭据，已原样发出：${items.join("、")}`,
     withSecrets: (n: number) => `含凭据 ${n}`,
-    /** 内容过滤删掉过命中的文字。悬停列出是哪几条规则 */
+    /** 内容过滤删掉、替换过命中的文字（请求或回答）。悬停列出是哪几条规则 */
     stripped: "已删除",
-    strippedTip: (rules: string[]) => `发送前已删除命中以下内容规则的文字：${rules.join("、")}`,
+    strippedTip: (rules: string[]) => `已删除命中以下内容规则的文字：${rules.join("、")}`,
+    contentReplaced: "已替换",
+    contentReplacedTip: (rules: string[]) => `已替换命中以下内容规则的文字：${rules.join("、")}`,
     sentConverted: (formats: string) => `请求已转换格式后发送：${formats}。`,
     droppedFields: (fields: string[]) => `\n\n目标格式不支持、已丢弃的字段：${fields.join("、")}`,
     noneDropped: "\n未丢弃任何字段。",
@@ -295,7 +297,9 @@ export const trafficText = messages(
     secretsTip: (items: string[]) => `Sent as is, with credentials in it: ${items.join(", ")}`,
     withSecrets: (n: number) => `Credentials ${n}`,
     stripped: "Deleted",
-    strippedTip: (rules: string[]) => `Text matching these content rules was deleted before sending: ${rules.join(", ")}`,
+    strippedTip: (rules: string[]) => `Text matching these content rules was deleted: ${rules.join(", ")}`,
+    contentReplaced: "Replaced",
+    contentReplacedTip: (rules: string[]) => `Text matching these content rules was replaced: ${rules.join(", ")}`,
     sentConverted: (formats: string) => `Sent after format conversion: ${formats}.`,
     droppedFields: (fields: string[]) =>
       `\n\nFields dropped because the target format does not support them: ${fields.join(", ")}`,

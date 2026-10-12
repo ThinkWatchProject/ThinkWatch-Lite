@@ -2,7 +2,7 @@
  * 规则表和规则对话框里不画东西的那部分：分组、检索、组标题复选框的状态、内容规则
  * 「检查对象」和「动作」「匹配方式」的联动。拆出来是为了能单独测。
  */
-import type { ContentMatch, Guard, RuleAction, RuleScope, SecurityRuleView } from "./contract-types";
+import type { ContentMatch, ContentScope, Guard, OutcomeDetail, RuleAction, SecurityRuleView } from "@/types";
 
 /** 规则表里的一组：内置规则按类别各一组，自定义规则在最后一组 */
 export interface RuleGroup<T> {
@@ -79,18 +79,44 @@ export function ruleMatches(r: SecurityRuleView, shownName: string, query: strin
   return [shownName, r.name, r.id, patternText(r)].some((s) => s.toLowerCase().includes(q));
 }
 
+// ------------------------------------------------------------------ 缺省值
+
+/** 内容规则「替换」的缺省文字 */
+export const DEFAULT_REPLACEMENT = "***";
+
+/** 一条规则查哪一边。core 不给（内置规则、别的防护）就是只查请求 */
+export function scopeOf(r: Pick<SecurityRuleView, "scope">): ContentScope[] {
+  return r.scope && r.scope.length > 0 ? r.scope : ["request"];
+}
+
+/** 一条规则在「开启」档下做什么。不给时：密钥与隐私是替换为占位符，其余是仅记录 */
+export function actionOf(guard: Guard, r: Pick<SecurityRuleView, "action">): RuleAction {
+  return r.action ?? (guard === "redact" ? "placeholder" : "record");
+}
+
+/**
+ * 「已替换」具体换成了什么：密钥与隐私是一组占位符，内容过滤是几处换成同一段文字
+ * （带着 `replacement` 的是内容过滤）
+ */
+export function replacedOf(
+  d: Extract<OutcomeDetail, { action: "replaced" }>,
+): { kind: "placeholders"; placeholders: string[] } | { kind: "text"; segments: number; replacement: string } {
+  if (d.replacement != null) return { kind: "text", segments: d.segments ?? 1, replacement: d.replacement };
+  return { kind: "placeholders", placeholders: d.placeholders };
+}
+
 // ------------------------------------------------------------------ 内容规则对话框的联动
 
 /** 检查对象的三个选项 */
 export type ScopeChoice = "request" | "response" | "both";
 
-export function scopeChoice(scope: readonly RuleScope[]): ScopeChoice {
+export function scopeChoice(scope: readonly ContentScope[]): ScopeChoice {
   const req = scope.includes("request");
   const res = scope.includes("response");
   return req && res ? "both" : res ? "response" : "request";
 }
 
-export function scopeOfChoice(c: ScopeChoice): RuleScope[] {
+export function scopeOfChoice(c: ScopeChoice): ContentScope[] {
   return c === "both" ? ["request", "response"] : [c];
 }
 

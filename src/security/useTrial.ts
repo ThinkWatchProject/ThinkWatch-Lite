@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { errorText } from "@/i18n/core.i18n";
-import type { Guard, SecurityTestResult } from "./contract-types";
+import type { Guard, SecurityTestResult } from "@/types";
 import { api, type TrialOnly } from "./api";
 
 export type Trial =

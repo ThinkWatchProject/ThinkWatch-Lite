@@ -2,7 +2,7 @@ import { useRef } from "react";
 import { useResource, type Resource } from "@/lib/resource";
 import { usePending } from "@/ui/notify";
 import { windowStart, type Range } from "@/ui/range";
-import type { SecurityEventsPage } from "./contract-types";
+import type { SecurityEventsPage } from "@/types";
 import { api } from "./api";
 
 /** 一次读多少条。**一屏半** —— 再多就是替用户翻他不会看的那几页 */

@@ -657,6 +657,7 @@ export function summary(from: number, to = Infinity): Summary {
       content: count("content"),
       content_blocked: count("content", ["blocked"]),
       content_stripped: count("content", ["stripped"]),
+      content_replaced: count("content", ["replaced"]),
     },
     pricing_date: AS_OF,
   };

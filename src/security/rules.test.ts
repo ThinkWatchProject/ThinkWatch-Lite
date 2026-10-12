@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
-import type { SecurityRuleView } from "./contract-types";
-import { actionOf, scopeOf } from "./contract-types";
+import type { SecurityRuleView } from "@/types";
 import {
   actionAllowed,
+  actionOf,
   adjustForScope,
   groupChecked,
   groupRules,
@@ -11,6 +11,7 @@ import {
   patternText,
   ruleMatches,
   scopeChoice,
+  scopeOf,
   scopeOfChoice,
 } from "./rules";
 

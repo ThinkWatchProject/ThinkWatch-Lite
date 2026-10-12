@@ -9,14 +9,14 @@
  */
 import { textOf } from "@/i18n";
 import { appLabel } from "@/labels";
-import {
-  replacedOf,
-  type HitLocation,
-  type OutcomeDetail,
-  type SecurityEventView,
-  type SecurityEventsPage,
-  type SecurityEventsQuery,
-} from "./contract-types";
+import type {
+  HitLocation,
+  OutcomeDetail,
+  SecurityEventView,
+  SecurityEventsPage,
+  SecurityEventsQuery,
+} from "@/types";
+import { replacedOf } from "./rules";
 import { exportText } from "./export.i18n";
 import { matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";

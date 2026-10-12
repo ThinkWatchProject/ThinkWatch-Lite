@@ -46,6 +46,7 @@ function summary(over: Partial<Summary> = {}): Summary {
       content: 0,
       content_blocked: 0,
       content_stripped: 0,
+      content_replaced: 0,
     },
     pricing_date: "2026-09-20",
     ...over,

@@ -148,6 +148,7 @@ webview_endpoints![
     SetSecurityMode,
     ToggleBuiltinRule,
     SetBuiltinRuleAction,
+    SetRulesEnabled,
     CreateCustomRule,
     UpdateCustomRule,
     DeleteCustomRule,

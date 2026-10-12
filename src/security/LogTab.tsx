@@ -18,7 +18,7 @@ import { useText } from "@/i18n";
 import { useNav } from "@/nav";
 import RequestDrawer from "@/traffic/drawer/RequestDrawer";
 import { GUARDS } from "@/types";
-import type { Guard, SecurityDetail, SecurityEventView } from "./contract-types";
+import type { Guard, SecurityDetail, SecurityEventView } from "@/types";
 import { api } from "./api";
 import { fetchAll, fileName, toCsv, toJson, type ExportFormat } from "./export";
 import { HitDetail } from "./HitDetail";

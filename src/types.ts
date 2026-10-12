@@ -57,11 +57,16 @@ export interface FlaggedCall {
   blocked: boolean;
 }
 
-/** 内容过滤从这次请求里删掉了命中的文字：哪条规则、几处（码位规则是几个字符） */
+/**
+ * 内容过滤删掉或替换了这次请求（或它的回答）里命中的文字：哪条规则、几处（码位规则是
+ * 几个字符），以及是换成了替换文字还是删掉
+ */
 export interface StrippedHit {
   rule: string;
   custom: boolean;
   count: number;
+  /** 换成了替换文字（「替换」）；`false` 是删掉了（「删除」） */
+  replaced: boolean;
 }
 
 /** 一行请求，由四类事件缝出来。 */
@@ -148,7 +153,8 @@ export interface RequestRow {
    * 是在画的时候才定的，存成句子的话换了语言它不会跟着换 */
   error?: Msg;
   /**
-   * 出站脱敏在这次请求里找到的东西（已打码），以及换没换。
+   * 出站脱敏在这次请求里找到的东西（已打码），以及换没换。`replaced` 是**每一项都换成了
+   * 占位符**：拦截档下也有动作是「仅记录」的规则，它们的值原样发出（`items[].replaced`）。
    *
    * **不带类别。**翻历史时是从安全日志拼回来的，日志里没有类别；徽标也只用
    * 规则名和次数
@@ -161,8 +167,8 @@ export interface RequestRow {
   /** 插件改写过这次请求或回答（库里那一行的 `plugin_changed`）。只来自历史：实时事件里没有它 */
   pluginChanged?: boolean;
   /**
-   * 内容过滤删掉过命中的文字（第三档下「删除」规则命中）。**只记删过的** —— 拒绝的那一行
-   * 本来就标成失败，只记录的照常发出，没有要在列表上说的
+   * 内容过滤删掉或替换过命中的文字（第三档下「删除」「替换」规则命中，请求和回答都算）。
+   * **只记改过的** —— 拒绝的那一行本来就标成失败，只记录的照常发出，没有要在列表上说的
    */
   stripped?: StrippedHit[];
   /**
@@ -292,16 +298,21 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       // 而这张表装的是「刚才发生过什么」。App 单独接。
       break;
     case "content_matched": {
-      // 只有删过文字的进列表（「已删除」徽标）。拒绝的请求随后有一条失败事件，那一行
-      // 照常标成失败；只记录的在安全日志和请求详情里
+      // 只有删过、换过文字的进列表（「已删除」「已替换」徽标）。拒绝的请求随后有一条失败
+      // 事件，那一行照常标成失败；只记录的在安全日志和请求详情里
       const r = rows.get(ev.id);
-      if (r && ev.outcome === "stripped")
-        r.stripped = [...(r.stripped ?? []), { rule: ev.rule, custom: ev.custom, count: ev.count }];
+      if (r && (ev.outcome === "stripped" || ev.outcome === "replaced"))
+        r.stripped = [
+          ...(r.stripped ?? []),
+          { rule: ev.rule, custom: ev.custom, count: ev.count, replaced: ev.outcome === "replaced" },
+        ];
       break;
     }
     case "secrets_found": {
       const r = rows.get(ev.id);
-      if (r) r.secrets = { replaced: ev.replaced, items: ev.items };
+      // 事件上的 `replaced` 只说是不是拦截档；动作是「仅记录」的规则在拦截档下也原样发出，
+      // 要按每一项算
+      if (r) r.secrets = { replaced: ev.items.every((x) => x.replaced), items: ev.items };
       break;
     }
     case "tool_call_flagged": {

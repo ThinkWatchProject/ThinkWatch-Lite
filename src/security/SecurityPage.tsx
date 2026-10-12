@@ -11,16 +11,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { GUARDS } from "@/types";
 import { api, type RuleSave } from "./api";
-import {
-  actionOf,
-  scopeOf,
-  type ConfigWritten,
-  type Guard,
-  type GuardMode,
-  type RuleAction,
-  type SecurityDetail,
-  type SecurityRuleView,
-} from "./contract-types";
+import type { ConfigWritten, Guard, GuardMode, RuleAction, SecurityDetail, SecurityRuleView } from "@/types";
+import { actionOf, scopeOf } from "./rules";
 import { GuardSkeleton, GuardTab, type RuleActions } from "./GuardTab";
 import { modeName, modeTone, OUTCOMES, outcomeTone, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
