@@ -1,4 +1,6 @@
 import { messages } from "@/i18n";
+// 密钥与隐私的规则名和 core 消息的中文是同一张表（Rust 写系统通知时也读它）
+import CORE_ZH from "@/i18n/core.zh.json";
 
 /** `labels.ts` 里那些名称表和说法 */
 export const labelsText = messages(
@@ -114,38 +116,8 @@ export const labelsText = messages(
     },
 
     // ------------------------------------------------------------ 安全
-    secrets: {
-      "anthropic-api-key": "Anthropic API 密钥",
-      "openai-api-key": "OpenAI API 密钥",
-      "openai-project-key": "OpenAI 项目密钥",
-      "github-personal-token": "GitHub 个人令牌",
-      "github-oauth-token": "GitHub OAuth 令牌",
-      "github-server-token": "GitHub 服务器令牌",
-      "github-user-token": "GitHub 用户令牌",
-      "github-fine-grained-token": "GitHub 细粒度令牌",
-      "slack-bot-token": "Slack 机器人令牌",
-      "slack-user-token": "Slack 用户令牌",
-      "slack-app-token": "Slack 应用令牌",
-      "aws-access-key-id": "AWS 访问密钥 ID",
-      "aws-temporary-key-id": "AWS 临时访问密钥 ID",
-      "google-api-key": "Google API 密钥",
-      "google-oauth-token": "Google OAuth 令牌",
-      "gitlab-token": "GitLab 令牌",
-      "stripe-live-key": "Stripe 生产密钥",
-      "stripe-restricted-key": "Stripe 受限密钥",
-      "npm-token": "npm 令牌",
-      "digitalocean-token": "DigitalOcean 令牌",
-      "sendgrid-key": "SendGrid 密钥",
-      "private-key": "私钥",
-      jwt: "JWT",
-      "conn-string-password": "连接串口令",
-      "cn-resident-id": "居民身份证号",
-      "bank-card": "银行卡号",
-      email: "邮箱地址",
-      "cn-mobile-phone": "中国大陆手机号",
-      "internal-ip": "内网地址",
-      "internal-domain": "内部域名",
-    },
+    /** 密钥与隐私的内置规则名。和系统通知（Rust）共用 core.zh.json 里的同一张表 */
+    secrets: CORE_ZH.tables.secret_rule as Record<string, string>,
 
     // ------------------------------------------------------------ 客户端接管
     takesEffect: {

@@ -72,26 +72,15 @@ describe("状态的颜色", () => {
   });
 });
 
-/**
- * 第三档按各项做的事命名：出站脱敏「替换」、工具调用审查「切断」、内容过滤「处置」。
- * 前两档各项一样。
- */
-describe("档位的名字", () => {
-  it("第三档各项各叫各的", () => {
-    expect(modeName("redact", "enforce")).toBe("替换");
-    expect(modeName("inspect_tools", "enforce")).toBe("切断");
-    expect(modeName("content", "enforce")).toBe("处置");
-    expect(modeName("content", "observe")).toBe("观察");
-    expect(modeName("redact", "off")).toBe("关闭");
+/** 三种状态各项一样：开启、监控、关闭 */
+describe("状态的名字", () => {
+  it("中文", () => {
+    expect((["enforce", "observe", "off"] as const).map(modeName)).toEqual(["开启", "监控", "关闭"]);
   });
 
   it("英文", () => {
     setLang("en");
-    expect(["redact", "inspect_tools", "content"].map((g) => modeName(g as "redact", "enforce"))).toEqual([
-      "Replace",
-      "Cut off",
-      "Enforce",
-    ]);
+    expect((["enforce", "observe", "off"] as const).map(modeName)).toEqual(["On", "Monitor", "Off"]);
   });
 });
 

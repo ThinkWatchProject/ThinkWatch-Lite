@@ -1,8 +1,11 @@
-import { Fragment } from "react";
-import { FlaskConicalIcon, PlusIcon } from "lucide-react";
+import { Fragment, useMemo, useState } from "react";
+import { FlaskConicalIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
+import { Checkbox } from "@/ui/checkbox";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { rowMotion, usePresentList } from "@/ui/motion";
-import { PageSection } from "@/ui/page";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
@@ -14,25 +17,40 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { Guard, GuardDetail, GuardMode, SecurityRuleView } from "@/types";
-import { hasAction, type ActionGuard } from "./api";
-import { Code, MatcherText, modeName, modeTone, ruleWhy, viewName } from "./labels";
+import { ACTIONS } from "./api";
+import {
+  actionOf,
+  DEFAULT_REPLACEMENT,
+  scopeOf,
+  type Guard,
+  type GuardDetail,
+  type GuardMode,
+  type RuleAction,
+  type SecurityRuleView,
+} from "./contract-types";
+import { MatcherText, modeName, modeTone, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
-import { guardTabText } from "./GuardTab.i18n";
+import { guardTabText, nowText } from "./GuardTab.i18n";
 import { patternOf } from "./RuleDialog";
-import { GroupRow, ROW_FOCUS, rowNav, stop } from "./rows";
+import { actionAllowed, groupChecked, groupRules, groupTarget, ruleMatches, scopeChoice } from "./rules";
+import { ROW_FOCUS, rowNav, stop } from "./rows";
 
-const MODES: readonly GuardMode[] = ["off", "observe", "enforce"];
+/** 状态的先后，和规格的示意一致：开启、监控、关闭 */
+const MODES: readonly GuardMode[] = ["enforce", "observe", "off"];
 
 /** 规则表上能做的事。**都由页面接住** —— 它们要写配置、要开对话框 */
 export interface RuleActions {
   mode: (mode: GuardMode) => void;
   toggle: (r: SecurityRuleView, enabled: boolean) => void;
-  /** 这条规则的开关正在写 */
+  /** 一组规则一起启用或停用（组标题的复选框） */
+  bulk: (rules: SecurityRuleView[], enabled: boolean) => void;
+  /** 行内改一条规则的动作 */
+  setAction: (r: SecurityRuleView, action: RuleAction) => void;
+  /** 这条规则正在写（开关、动作） */
   pending: (r: SecurityRuleView) => boolean;
-  /** 内置规则：只读查看；自定义规则：编辑 */
+  /** 打开对话框：内置规则改动作、试；自定义规则编辑 */
   open: (r: SecurityRuleView) => void;
-  /** 复制成自定义规则。只有写得出等价写法的那几项有，而且只给写得出来的规则（见 `patternOf`） */
+  /** 复制成自定义规则。只给写得出等价写法的规则（见 `patternOf`） */
   copy?: (r: SecurityRuleView) => void;
   remove: (r: SecurityRuleView) => void;
   create: () => void;
@@ -43,98 +61,77 @@ export interface RuleActions {
 const keyOf = (r: SecurityRuleView) => `${r.custom ? "c" : "b"}:${r.id}`;
 
 /**
- * 一项防护的档位：名字、一句它做什么，右边三档；下面一行是现在的样子（状态点
- * 和页头、标签上的同色），再下面把切到第三档的代价说在切之前。
- *
- * **第三档按这一项做的事命名**（替换、切断、处置），见 `modeName`。
+ * 一项防护的状态：开启、监控、关闭，右边一句当前状态下命中之后怎样，以及启用了几条规则。
+ * 圆点和页签上的同色。
  */
-export function ModeCard({
+export function ModeBar({
   guard,
   mode,
+  on,
+  all,
   pending,
   onMode,
 }: {
   guard: Guard;
   mode: GuardMode;
-  /** 档位正在写 */
+  /** 启用的规则条数 */
+  on: number;
+  all: number;
+  /** 状态正在写 */
   pending: boolean;
   onMode: (mode: GuardMode) => void;
 }) {
   const t = useText(guardTabText);
   const lt = useText(securityLabelsText);
-  const copy = t[guard];
   return (
-    <section data-slot="mode-card" className="rounded-lg border border-border bg-surface/40 px-4 py-3.5">
-      <div className="flex flex-wrap items-start gap-x-4 gap-y-2.5">
-        <div className="min-w-0 flex-1">
-          <h2 className="tw-head text-foreground">{lt.guards[guard]}</h2>
-          <p className="mt-0.5 tw-body text-muted-foreground">{copy.lead}</p>
-        </div>
-        <div className="flex items-center gap-2">
-          {pending && <Spinner className="size-3.5 text-muted-foreground" aria-hidden />}
-          <Segmented<GuardMode>
-            label={t.modeFor(lt.guards[guard])}
-            value={mode}
-            options={MODES.map((m) => ({ id: m, label: modeName(guard, m) }))}
-            onChange={(v) => v !== mode && onMode(v)}
-          />
-        </div>
-      </div>
-      <div className="mt-3 border-t border-border/70 pt-3">
-        <p className="flex items-start gap-2 tw-body text-foreground">
-          <StatusDot tone={modeTone(mode)} className="mt-[7px]" />
-          <span key={mode} className="motion-fade">
-            {copy.now[mode]}
-          </span>
-        </p>
-        <p className="mt-1 pl-3.5 tw-label text-muted-foreground">
-          {mode === "enforce" ? copy.risk : t.ifEnforced(modeName(guard, "enforce"), copy.effect, copy.risk)}
-        </p>
-      </div>
+    <section data-slot="mode-bar" className="flex flex-wrap items-center gap-x-3 gap-y-2">
+      <Segmented<GuardMode>
+        label={t.modeFor(lt.guards[guard])}
+        value={mode}
+        options={MODES.map((m) => ({ id: m, label: modeName(m) }))}
+        onChange={(v) => v !== mode && onMode(v)}
+      />
+      {pending && <Spinner className="size-3.5 text-muted-foreground" aria-hidden />}
+      <p className="flex min-w-0 flex-1 items-start gap-2 tw-body">
+        <StatusDot tone={modeTone(mode)} className="mt-[7px]" />
+        <span key={mode} className="min-w-0 motion-fade">
+          <span className="text-foreground">{nowText(t, guard, mode)}</span>{" "}
+          <span className="text-muted-foreground">{t.ruleCount(on, all)}</span>
+        </span>
+      </p>
     </section>
   );
 }
 
-/** 档位那一块和规则表还没读到时的样子：和读到之后同一个形状，不跳 */
+/** 状态那一行和规则表还没读到时的样子：和读到之后同一个形状，不跳 */
 export function GuardSkeleton() {
   return (
     <div className="flex flex-col" role="status" aria-busy="true">
-      <div className="rounded-lg border border-border bg-surface/40 px-4 py-3.5">
-        <div className="flex items-start gap-4">
-          <div className="flex flex-1 flex-col gap-2 pt-0.5">
-            <Skeleton className="h-3.5 w-28 rounded-sm" />
-            <Skeleton className="h-3 w-64 max-w-full rounded-sm" />
-          </div>
-          <Skeleton className="h-7 w-40 rounded-lg" />
-        </div>
-        <div className="mt-3 flex flex-col gap-2 border-t border-border/70 pt-3">
-          <Skeleton className="h-3 w-3/5 rounded-sm" />
-          <Skeleton className="h-2.5 w-4/5 rounded-sm opacity-70" />
-        </div>
+      <div className="flex items-center gap-3">
+        <Skeleton className="h-7 w-36 rounded-lg" />
+        <Skeleton className="h-3 w-80 max-w-full rounded-sm" />
       </div>
-      <div className="mt-8">
-        <div className="mb-3 flex items-end justify-between">
-          <div className="flex flex-col gap-2">
-            <Skeleton className="h-3.5 w-12 rounded-sm" />
-            <Skeleton className="h-3 w-32 rounded-sm opacity-70" />
-          </div>
+      <div className="mt-5">
+        <div className="mb-3 flex items-center justify-between">
+          <Skeleton className="h-7 w-56 rounded-lg" />
           <Skeleton className="h-7 w-44 rounded-lg" />
         </div>
-        <TableSkeleton rows={6} cols={3} />
+        <TableSkeleton rows={6} cols={4} />
       </div>
     </div>
   );
 }
 
 /**
- * 一项防护：上面是档位，下面是全部规则。
+ * 一项防护：上面是状态，下面是全部规则。
  *
- * **档位和规则都是全局的**，对所有上游、所有密钥一样。这一页没有「按上游」
- * 的任何设置 —— 同一个请求走哪家，不该决定它里面的密钥会不会被换掉。
+ * **状态和规则都是全局的**，对所有上游、所有密钥一样。
  *
- * 内置规则可以启停；工具调用和内容规则还能改第三档下的处置，改写法要先复制成
- * 自定义规则。自定义规则在对话框里改。每次改动由 core 写成一个配置版本。点一行
- * 打开它（内置的查看或改处置，自定义的编辑）。
+ * 规则的实际处理按这个顺序定（规格 §4.3）：防护关闭不检查；规则停用不检查；防护处于
+ * 「监控」时一律仅记录（动作列照写用户设的动作，后面标「监控中」）；其余按规则的动作。
+ *
+ * 内置规则按类别分组，组标题上的复选框一次启用或停用这一组（部分启用时半选）；自定义
+ * 规则在最后一组。检索框按名字和写法筛。每一行的开关、动作就地改；点一行打开它的对话框。
  */
 export function GuardTab({
   guard,
@@ -148,40 +145,52 @@ export function GuardTab({
   actions: RuleActions;
 }) {
   const t = useText(guardTabText);
+  const [query, setQuery] = useState("");
   const on = detail.rules.filter((r) => r.enabled).length;
 
   return (
     <div className="flex flex-col">
-      <ModeCard guard={guard} mode={detail.mode} pending={modePending} onMode={actions.mode} />
+      <ModeBar
+        guard={guard}
+        mode={detail.mode}
+        on={on}
+        all={detail.rules.length}
+        pending={modePending}
+        onMode={actions.mode}
+      />
 
-      <PageSection
-        title={t.rules}
-        description={t.ruleCount(on, detail.rules.length)}
-        actions={
-          <>
-            <Button variant="outline" size="sm" onClick={actions.test}>
-              <FlaskConicalIcon />
-              {t.test}
-            </Button>
-            <Button size="sm" onClick={actions.create}>
-              <PlusIcon />
-              {t.newRule}
-            </Button>
-          </>
-        }
-      >
-        {guard === "redact" ? (
-          <RedactRules rules={detail.rules} actions={actions} />
-        ) : (
-          <ActionRules guard={guard} rules={detail.rules} actions={actions} />
-        )}
-      </PageSection>
+      <div className="mt-5 mb-3 flex flex-wrap items-center gap-2">
+        <InputGroup className="h-7 w-64 rounded-[min(var(--radius-md),10px)]">
+          <InputGroupAddon align="inline-start">
+            <SearchIcon />
+          </InputGroupAddon>
+          <InputGroupInput
+            className="h-full py-0.5"
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder={t.search}
+            aria-label={t.search}
+            spellCheck={false}
+          />
+        </InputGroup>
+        <span className="flex-1" />
+        <Button variant="outline" size="sm" onClick={actions.test}>
+          <FlaskConicalIcon />
+          {t.test}
+        </Button>
+        <Button size="sm" onClick={actions.create}>
+          <PlusIcon />
+          {t.newRule}
+        </Button>
+      </div>
+
+      <RuleTable guard={guard} mode={detail.mode} rules={detail.rules} query={query} actions={actions} />
     </div>
   );
 }
 
-/** 行菜单：内置的查看或编辑、复制；自定义的编辑、删除 */
-function useMenu(guard: Guard, actions: RuleActions) {
+/** 行菜单：内置的编辑、启停、复制；自定义的编辑、启停、删除 */
+function useMenu(actions: RuleActions) {
   const t = useText(guardTabText);
   const common = useText(commonText);
   return (r: SecurityRuleView): MenuItems => {
@@ -198,12 +207,10 @@ function useMenu(guard: Guard, actions: RuleActions) {
         { kind: "sep" },
         { kind: "item", label: common.delete, onSelect: () => actions.remove(r), danger: true },
       ];
-    // 出站脱敏的内置规则只能启停，也写不出等价的自定义规则
-    if (!hasAction(guard)) return [{ kind: "item", label: t.view, onSelect: () => actions.open(r) }, toggle];
-    // 代码里做的检查没有写法可抄
+    // 写不出等价写法的（出站的凭据种类、代码里做的检查）没有可抄的
     const copy = patternOf(r) ? actions.copy : undefined;
     return [
-      // 内置的工具调用和内容规则能改第三档下的处置，所以是「编辑」不是「查看」
+      // 内置规则能改动作，所以是「编辑」不是「查看」
       { kind: "item", label: common.edit, onSelect: () => actions.open(r) },
       toggle,
       ...(copy ? [{ kind: "sep" as const }, { kind: "item" as const, label: t.copyAsCustom, onSelect: () => copy(r) }] : []),
@@ -211,45 +218,161 @@ function useMenu(guard: Guard, actions: RuleActions) {
   };
 }
 
-/** 按顺序把规则分成几段，每段一个标题。core 给的顺序就是界面的顺序 */
-function groups<K extends string, T extends { item: SecurityRuleView }>(rows: T[], key: (r: SecurityRuleView) => K) {
-  const out: { key: K; rows: T[] }[] = [];
-  for (const row of rows) {
-    const k = key(row.item);
-    const last = out[out.length - 1];
-    if (last && last.key === k) last.rows.push(row);
-    else out.push({ key: k, rows: [row] });
-  }
-  return out;
+/**
+ * 全部规则，一张表：启用、规则、匹配内容、（内容过滤：检查对象）、动作。
+ *
+ * **动作一列三种颜色**：拒绝、切断是红的（请求或回答的结局变了），删除、替换、替换为占位符
+ * 是正文色（改了内容照常发出），仅记录是次要色。
+ */
+function RuleTable({
+  guard,
+  mode,
+  rules,
+  query,
+  actions,
+}: {
+  guard: Guard;
+  mode: GuardMode;
+  rules: SecurityRuleView[];
+  query: string;
+  actions: RuleActions;
+}) {
+  const t = useText(guardTabText);
+  const lt = useText(securityLabelsText);
+  const menu = useMenu(actions);
+  const content = guard === "content";
+  const span = content ? 6 : 5;
+  // 淡入淡出按全部规则算：检索筛掉的行直接不画，不播淡出
+  const present = usePresentList(rules, keyOf);
+  const groups = useMemo(() => {
+    const shown = present.filter(
+      ({ item: r, presence }) => presence === "exit" || ruleMatches(r, viewName(guard, r), query),
+    );
+    return groupRules(shown, (p) => p.item);
+  }, [present, guard, query]);
+
+  return (
+    <Table className={cn("table-fixed", content ? "min-w-[760px]" : "min-w-[660px]")}>
+      <colgroup>
+        <col className="w-12" />
+        <col className="w-[220px]" />
+        <col />
+        {content && <col className="w-[104px]" />}
+        <col className="w-[196px]" />
+        <col className="w-9" />
+      </colgroup>
+      <TableHeader>
+        <TableRow>
+          <TableHead>{t.enabled}</TableHead>
+          <TableHead>{t.rule}</TableHead>
+          <TableHead>{t.match}</TableHead>
+          {content && <TableHead>{t.scope}</TableHead>}
+          <TableHead>{t.action}</TableHead>
+          <TableHead />
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {groups.length === 0 && (
+          <TableRow className="hover:bg-transparent">
+            <TableCell colSpan={span} className="h-16 text-center text-muted-foreground">
+              {t.noMatch}
+            </TableCell>
+          </TableRow>
+        )}
+        {groups.map((g) => {
+          const live = g.rows.filter((p) => p.presence !== "exit").map((p) => p.item);
+          const title = (g.custom ? lt.kinds.custom : lt.kinds[g.key]) ?? g.key;
+          return (
+            <Fragment key={g.key}>
+              <GroupHead
+                span={span}
+                title={title}
+                builtin={!g.custom && g.key !== "command"}
+                rules={live}
+                pending={live.some(actions.pending)}
+                onToggle={(enabled) => actions.bulk(live, enabled)}
+              />
+              {g.rows.map(({ item: r, key, presence }) => (
+                <RuleRow
+                  key={key}
+                  guard={guard}
+                  mode={mode}
+                  r={r}
+                  presence={presence}
+                  items={menu(r)}
+                  actions={actions}
+                />
+              ))}
+            </Fragment>
+          );
+        })}
+      </TableBody>
+    </Table>
+  );
 }
 
-function RuleSwitch({ r, name, actions }: { r: SecurityRuleView; name: string; actions: RuleActions }) {
+/**
+ * 一组的标题行：复选框一次启用或停用组内（检索筛出来的）全部规则，部分启用时半选；后面是
+ * 「隐藏字符 · 内置 · 已启用 2 条，共 3 条」。**复选框只是批量操作的入口**，组本身没有开关
+ */
+function GroupHead({
+  span,
+  title,
+  builtin,
+  rules,
+  pending,
+  onToggle,
+}: {
+  span: number;
+  title: string;
+  /** 标题后面写「内置」（工具调用的内置组本来就叫「内置」，不重复） */
+  builtin: boolean;
+  rules: SecurityRuleView[];
+  pending: boolean;
+  onToggle: (enabled: boolean) => void;
+}) {
   const t = useText(guardTabText);
+  const on = rules.filter((r) => r.enabled).length;
   return (
-    <Switch
-      size="sm"
-      checked={r.enabled}
-      pending={actions.pending(r)}
-      aria-label={t.toggleFor(name)}
-      onCheckedChange={(v) => actions.toggle(r, v)}
-    />
+    <TableRow className="hover:bg-transparent" data-slot="rule-group">
+      <TableCell className="h-8 bg-surface/70 py-0">
+        <Checkbox
+          checked={groupChecked(rules)}
+          disabled={pending || rules.length === 0}
+          aria-label={t.groupToggle(title)}
+          onCheckedChange={() => onToggle(groupTarget(rules))}
+        />
+      </TableCell>
+      <TableCell colSpan={span - 1} className="h-8 bg-surface/70 py-0 tw-label text-muted-foreground">
+        <span className="font-medium text-foreground/80">{title}</span>
+        {builtin && ` · ${t.builtin}`}
+        {` · ${t.groupCount(on, rules.length)}`}
+      </TableCell>
+    </TableRow>
   );
 }
 
 /** 一行规则：点它、按 Enter 打开，右键和行尾是同一份菜单 */
 function RuleRow({
+  guard,
+  mode,
   r,
   presence,
   items,
   actions,
-  children,
 }: {
+  guard: Guard;
+  mode: GuardMode;
   r: SecurityRuleView;
   presence: Parameters<typeof rowMotion>[0];
   items: MenuItems;
   actions: RuleActions;
-  children: React.ReactNode;
 }) {
+  const t = useText(guardTabText);
+  const lt = useText(securityLabelsText);
+  const name = viewName(guard, r);
+  const why = ruleWhy(guard, r);
+  const pattern = r.matcher.kind === "regex" ? r.matcher.pattern : "";
   return (
     <RowMenu items={items}>
       <TableRow
@@ -257,166 +380,107 @@ function RuleRow({
         onClick={() => actions.open(r)}
         {...rowNav(() => actions.open(r))}
       >
-        {children}
+        <TableCell {...stop}>
+          <Switch
+            size="sm"
+            checked={r.enabled}
+            pending={actions.pending(r)}
+            aria-label={t.toggleFor(name)}
+            onCheckedChange={(v) => actions.toggle(r, v)}
+          />
+        </TableCell>
+        <TableCell className="py-2">
+          <div className={cn("truncate", r.enabled ? "text-foreground" : "text-muted-foreground")}>{name}</div>
+          {why && (
+            <div className="truncate tw-label text-muted-foreground" title={why}>
+              {why}
+            </div>
+          )}
+        </TableCell>
+        {guard === "inspect_tools" && r.matcher.kind === "regex" ? (
+          // 工具调用的正则又长又密：照写，悬停看全
+          <TableCell className="truncate font-mono tw-label text-muted-foreground" title={pattern}>
+            {pattern}
+          </TableCell>
+        ) : (
+          <TableCell className="truncate text-muted-foreground">
+            <MatcherText m={r.matcher} />
+          </TableCell>
+        )}
+        {guard === "content" && (
+          <TableCell>
+            <span className="flex gap-1">
+              {scopeOf(r).map((s) => (
+                <Badge key={s} variant="outline">
+                  {lt.directions[s]}
+                </Badge>
+              ))}
+            </span>
+          </TableCell>
+        )}
+        <TableCell {...stop}>
+          <ActionCell guard={guard} mode={mode} r={r} name={name} actions={actions} />
+        </TableCell>
+        <TableCell className="text-right" {...stop}>
+          <RowMenuButton items={items} label={t.actionsFor(name)} />
+        </TableCell>
       </TableRow>
     </RowMenu>
   );
 }
 
-/** 启用开关和行尾菜单那两格 */
-function RuleTail({ r, name, items, actions }: { r: SecurityRuleView; name: string; items: MenuItems; actions: RuleActions }) {
-  const t = useText(guardTabText);
-  return (
-    <>
-      <TableCell className="text-right" {...stop}>
-        <RuleSwitch r={r} name={name} actions={actions} />
-      </TableCell>
-      <TableCell className="text-right" {...stop}>
-        <RowMenuButton items={items} label={t.actionsFor(name)} />
-      </TableCell>
-    </>
-  );
-}
-
-function RuleName({ r, name, why }: { r: SecurityRuleView; name: string; why?: string }) {
-  return (
-    <>
-      <div className={cn("truncate", r.enabled ? "text-foreground" : "text-muted-foreground")}>{name}</div>
-      {why && (
-        <div className="truncate tw-label text-muted-foreground" title={why}>
-          {why}
-        </div>
-      )}
-    </>
-  );
-}
-
-function RedactRules({ rules, actions }: { rules: SecurityRuleView[]; actions: RuleActions }) {
-  const t = useText(guardTabText);
-  const lt = useText(securityLabelsText);
-  const menu = useMenu("redact", actions);
-  const shown = usePresentList(rules, keyOf);
-  return (
-    <Table className="table-fixed min-w-[560px]">
-      <colgroup>
-        <col className="w-[210px]" />
-        <col />
-        <col className="w-14" />
-        <col className="w-9" />
-      </colgroup>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{t.rule}</TableHead>
-          <TableHead>{t.match}</TableHead>
-          <TableHead className="text-right">{t.enabled}</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {groups(shown, (r) => r.kind).map((g) => (
-          <Fragment key={g.key}>
-            <GroupRow span={4} title={lt.kinds[g.key] ?? g.key} count={g.rows.length > 1 ? g.rows.length : undefined} />
-            {g.rows.map(({ item: r, key, presence }) => {
-              const items = menu(r);
-              const name = viewName("redact", r);
-              return (
-                <RuleRow key={key} r={r} presence={presence} items={items} actions={actions}>
-                  <TableCell>
-                    <RuleName r={r} name={name} />
-                  </TableCell>
-                  <TableCell className="truncate text-muted-foreground">
-                    <MatcherText m={r.matcher} />
-                  </TableCell>
-                  <RuleTail r={r} name={name} items={items} actions={actions} />
-                </RuleRow>
-              );
-            })}
-          </Fragment>
-        ))}
-      </TableBody>
-    </Table>
-  );
-}
-
 /**
- * 工具调用审查、内容过滤：规则、写法、第三档下做什么。
- *
- * 工具调用的内置规则一组；内容规则按 core 给的类别分组（隐藏字符、指令覆盖、
- * 身份与提示词、中文说法），自定义的在最后。「匹配」一列：工具调用的正则照写，代码里
- * 做的检查（凭据发往陌生主机这类）说一句它查什么；码位规则写出码位范围。
- *
- * **处置一列三种颜色**：拒绝、切断是红的（请求或回答的结局变了），删除是正文色（改了
- * 内容照常发出），仅记录是次要色。
+ * 动作那一格：就地改的选择。**防护处于「监控」时照写用户设的动作**，后面淡色标「监控中」 ——
+ * 实际只记录，切回「开启」就按这里的动作处理。查回答的内容规则不能选「拒绝」（选项置灰）
  */
-function ActionRules({ guard, rules, actions }: { guard: ActionGuard; rules: SecurityRuleView[]; actions: RuleActions }) {
+function ActionCell({
+  guard,
+  mode,
+  r,
+  name,
+  actions,
+}: {
+  guard: Guard;
+  mode: GuardMode;
+  r: SecurityRuleView;
+  name: string;
+  actions: RuleActions;
+}) {
   const t = useText(guardTabText);
   const lt = useText(securityLabelsText);
-  const menu = useMenu(guard, actions);
-  const content = guard === "content";
-  const key = (r: SecurityRuleView) => (r.custom ? "custom" : content ? r.kind : "builtin");
-  const shown = usePresentList(rules, keyOf);
+  const action = actionOf(guard, r);
+  const scope = scopeChoice(scopeOf(r));
+  const hard = action === "cut" || action === "block";
+  const soft = action === "record";
+  const label = (a: RuleAction) =>
+    a === "replace" ? t.replaceWith(clipped(r.replacement ?? DEFAULT_REPLACEMENT)) : (lt.ruleActions[a] ?? a);
   return (
-    <Table className="table-fixed min-w-[640px]">
-      <colgroup>
-        <col className="w-[230px]" />
-        <col />
-        <col className="w-[84px]" />
-        <col className="w-14" />
-        <col className="w-9" />
-      </colgroup>
-      <TableHeader>
-        <TableRow>
-          <TableHead>{t.rule}</TableHead>
-          <TableHead>{t.match}</TableHead>
-          <TableHead>{t.action}</TableHead>
-          <TableHead className="text-right">{t.enabled}</TableHead>
-          <TableHead />
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {groups(shown, key).map((g) => (
-          <Fragment key={g.key}>
-            <GroupRow
-              span={5}
-              title={g.key === "builtin" ? t.builtinGroup : (lt.kinds[g.key] ?? g.key)}
-              count={g.rows.length > 1 ? g.rows.length : undefined}
-            />
-            {g.rows.map(({ item: r, key: k, presence }) => {
-              const items = menu(r);
-              const name = viewName(guard, r);
-              const pattern = r.matcher.kind === "regex" ? r.matcher.pattern : "";
-              const hard = r.action === "cut" || r.action === "block";
-              const soft = r.action === "record" || r.action == null;
-              return (
-                <RuleRow key={k} r={r} presence={presence} items={items} actions={actions}>
-                  <TableCell className="py-2">
-                    <RuleName r={r} name={name} why={ruleWhy(guard, r)} />
-                  </TableCell>
-                  {content ? (
-                    <TableCell className="truncate text-muted-foreground">
-                      {/* 表里只写那段文字；「不区分大小写」对每一条都一样，在对话框里说 */}
-                      {r.matcher.kind === "contains" ? <Code>{r.matcher.text}</Code> : <MatcherText m={r.matcher} />}
-                    </TableCell>
-                  ) : r.matcher.kind === "regex" ? (
-                    <TableCell className="truncate font-mono tw-label text-muted-foreground" title={pattern}>
-                      {pattern}
-                    </TableCell>
-                  ) : (
-                    // 代码里做的检查：说它查什么
-                    <TableCell className="truncate text-muted-foreground">
-                      <MatcherText m={r.matcher} />
-                    </TableCell>
-                  )}
-                  <TableCell className={hard ? "text-destructive" : soft ? "text-muted-foreground" : "text-foreground"}>
-                    {lt.ruleActions[r.action ?? "record"] ?? r.action}
-                  </TableCell>
-                  <RuleTail r={r} name={name} items={items} actions={actions} />
-                </RuleRow>
-              );
-            })}
-          </Fragment>
+    <span className="flex min-w-0 items-center gap-1.5">
+      <NativeSelect
+        size="inline"
+        className={cn(
+          "min-w-0 shrink",
+          hard ? "text-destructive" : soft ? "text-muted-foreground" : "text-foreground",
+        )}
+        value={action}
+        disabled={actions.pending(r)}
+        aria-label={t.actionFor(name)}
+        onChange={(e) => actions.setAction(r, e.target.value as RuleAction)}
+      >
+        {ACTIONS[guard].map((a) => (
+          <NativeSelectOption key={a} value={a} disabled={!actionAllowed(guard, a, scope)}>
+            {label(a)}
+          </NativeSelectOption>
         ))}
-      </TableBody>
-    </Table>
+      </NativeSelect>
+      {mode === "observe" && (
+        <span className="shrink-0 tw-label text-muted-foreground">{lt.monitoring}</span>
+      )}
+    </span>
   );
+}
+
+/** 行内选项里的替换文字：太长的截一截，全文在对话框里 */
+function clipped(s: string): string {
+  return [...s].length > 12 ? `${[...s].slice(0, 12).join("")}…` : s;
 }

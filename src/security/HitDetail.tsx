@@ -5,7 +5,7 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { prettyJson } from "@/prettyJson";
 import { clip } from "@/traffic/transcript";
-import type { HitLocation, OutcomeDetail, SecurityEventView } from "@/types";
+import { replacedOf, type HitLocation, type OutcomeDetail, type SecurityEventView } from "./contract-types";
 import { Highlight, toneOf, type Mark } from "./Highlight";
 import { Code, matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -214,15 +214,24 @@ function OutcomeText({ d, direction }: { d: OutcomeDetail; direction: SecurityEv
   switch (d.action) {
     case "recorded":
       return <span className="text-muted-foreground">{t.recorded[direction]}</span>;
-    case "replaced":
+    case "replaced": {
+      const r = replacedOf(d);
+      // 内容过滤的「替换」：几处换成了同一段文字，不可还原
+      if (r.kind === "text")
+        return (
+          <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1 text-muted-foreground">
+            {t.replacedText[direction](r.segments, <Code key="r">{r.replacement}</Code>)}
+          </span>
+        );
       return (
         <span className="flex flex-wrap items-center gap-x-1.5 gap-y-1">
           <span className="text-muted-foreground">{t.replacedWith}</span>
-          {d.placeholders.map((p) => (
+          {r.placeholders.map((p) => (
             <Code key={p}>{p}</Code>
           ))}
         </span>
       );
+    }
     case "cut":
       return (
         <>
@@ -242,7 +251,7 @@ function OutcomeText({ d, direction }: { d: OutcomeDetail; direction: SecurityEv
         </>
       );
     case "stripped":
-      return <span className="text-muted-foreground">{t.stripped(d.segments)}</span>;
+      return <span className="text-muted-foreground">{t.stripped[direction](d.segments)}</span>;
   }
 }
 

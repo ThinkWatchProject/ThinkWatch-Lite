@@ -94,7 +94,7 @@ describe("命中的位置", () => {
     expect(partLabel(loc({ part: "tool_result", tool: "Bash", role: "user" }))).toBe("工具结果 · Bash");
     expect(partLabel(loc({ part: "tool_call", tool: null }))).toBe("工具调用");
     expect(partLabel(loc({ part: "system", message_index: null, role: null }))).toBe("系统提示");
-    expect(partLabel(loc({ part: "response_text", message_index: null, role: null }))).toBe("回答正文");
+    expect(partLabel(loc({ part: "response_text", message_index: null, role: null }))).toBe("回答 · 正文");
     expect(partLabel(loc({ role: "critic" }))).toBe("第 4 条消息 · critic");
     setLang("en");
     expect(partLabel(loc({ role: "developer", message_index: 0 }))).toBe("Message 1 · Developer");
@@ -145,7 +145,7 @@ describe("导出的文件", () => {
     expect(csv.charCodeAt(0)).toBe(0xfeff);
     const lines = csv.slice(1).split("\r\n");
     expect(lines[0]?.startsWith("时间,处置,类型,规则,规则 ID,规则来源,")).toBe(true);
-    expect(lines[1]).toContain("2026-10-10 16:42:07,已替换,出站脱敏,Anthropic API 密钥,anthropic-api-key,内置,,,0.68.0,");
+    expect(lines[1]).toContain("2026-10-10 16:42:07,已替换,密钥与隐私,Anthropic API 密钥,anthropic-api-key,内置,,,0.68.0,");
     expect(csv).toContain('"第 4 条消息 · 用户 (messages[3].content[0].text): deploy with «sk-ant-api03-…Q3xA» then\n工具结果 · Read (messages[5].content[0].content): deploy with «sk-ant-api03-…Q3xA» then\n另有 2 处未列出"');
     expect(lines[1]).toContain(",48123,s012,claude-code,tw-9Wm…b1Qs,anthropic,claude-sonnet-5,claude-sonnet-5,Claude Code,");
     expect(lines.at(-1)).toBe("");

@@ -11,27 +11,23 @@ import type {
   SecurityEventView,
   SecurityOutcome,
   SecurityRuleView,
-} from "@/types";
+} from "./contract-types";
 import { securityLabelsText } from "./labels.i18n";
 
 /**
- * 一项防护的档位，画成状态点的语气。
+ * 一项防护的状态，画成状态点的语气。
  *
- * **第三档是绿的**（防护在起作用），**观察是琥珀的**（命中照常放行，只记下来 ——
+ * **开启是绿的**（防护在起作用），**监控是琥珀的**（命中照常放行，只记录并通知 ——
  * 要留意，但它在工作），**关闭是灰的**（没有在工作，也不是故障）。页头、标签、
- * 档位那一块用同一套，一眼对得上。
+ * 状态那一块用同一套，一眼对得上。
  */
 export function modeTone(mode: GuardMode): StatusTone {
   return mode === "enforce" ? "ok" : mode === "observe" ? "warn" : "idle";
 }
 
-/**
- * 一项防护的一档叫什么。前两档各项一样（关闭、观察）；**第三档按这一项做的事命名**：
- * 出站脱敏「替换」、工具调用审查「切断」、内容过滤「处置」（规则各自拒绝或删除）。
- */
-export function modeName(guard: Guard, mode: GuardMode): string {
-  const t = textOf(securityLabelsText);
-  return mode === "enforce" ? t.enforce[guard] : t.modes[mode];
+/** 一项防护的状态叫什么：开启、监控、关闭，各项一样 */
+export function modeName(mode: GuardMode): string {
+  return textOf(securityLabelsText).modes[mode];
 }
 
 /**
@@ -99,10 +95,12 @@ export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
   return rest.charAt(0).toUpperCase() + rest.slice(1);
 }
 
-/** 命中在哪儿：工具调用审查是哪个工具，内容过滤是「工具结果」 */
+/** 命中在哪儿：危险命令是哪个工具；内容过滤是「工具结果」，或者「回答」（查的是回答正文） */
 export function whereOf(e: SecurityEventView): string | null {
+  const t = textOf(securityLabelsText);
+  if (e.guard === "content" && e.direction === "response") return t.directions.response;
   if (!e.tool) return null;
-  return e.tool === "tool_result" ? textOf(securityLabelsText).toolResult : e.tool;
+  return e.tool === "tool_result" ? t.toolResult : e.tool;
 }
 
 /**

@@ -57,7 +57,7 @@ const LISTEN_SETTINGS: &str = "settings:listen";
 pub fn default_view(key: &str) -> &'static str {
     match key.split(':').next().unwrap_or(key) {
         "upstream" | "quota" | "credential" | "auth" | "writeback" | "proxy" => UPSTREAMS,
-        "toolwall" => SECURITY,
+        "toolwall" | "secwatch" => SECURITY,
         // 客户端配置里的可疑内容在 MCP 页：服务器、技能、钩子和扫描发现都在那儿
         "scan" => MCP,
         "plugin" => PLUGINS,
@@ -80,6 +80,7 @@ pub fn suppresses(key: &str) -> &'static [&'static str] {
             "auth:",
             "proxy:",
             "toolwall:",
+            "secwatch:",
             "writeback:",
         ],
         _ => &[],
@@ -352,8 +353,8 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 .now(),
             ]
         }
-        // 客户端此刻正在弹批准提示，**这一条要立刻说**。只说处置为「切断」的
-        // 那些规则：「仅记录」的那一类本来就是用户说了不必打断的。
+        // 客户端此刻正在弹批准提示，**这一条要立刻说**。只说真的切断了的：防护处于「监控」时
+        // 命中「切断」规则、或者规则本来就是「仅记录」的，走下面「只记录」那一类。
         //
         // **每拦下一次都是一件新的事**（`event`）：用户看过上一次之后再拦下，照样要说；
         // 同一家接连拦下的，由冷却合成一条，不刷屏
@@ -362,34 +363,18 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             tool,
             rule,
             action,
-            blocked,
+            blocked: true,
             ..
         } if action == "cut" => {
-            let title = if *blocked {
-                tr!(
-                    format!("已拦截 {provider} 返回的 {tool} 调用"),
-                    format!("Blocked {tool} Call from “{provider}”")
-                )
-            } else {
-                tr!(
-                    format!("{provider} 返回了可疑的 {tool} 调用"),
-                    format!("Suspicious {tool} Call from “{provider}”")
-                )
-            };
+            let title = tr!(
+                format!("已拦截 {provider} 返回的 {tool} 调用"),
+                format!("Blocked {tool} Call from “{provider}”")
+            );
             let name = tool_rule_name(rule);
-            let body = if *blocked {
-                tr!(
-                    format!("命中规则「{name}」，响应已切断。"),
-                    format!("It matched the rule “{name}”, so the response was cut off.")
-                )
-            } else {
-                tr!(
-                    format!("命中规则「{name}」。建议在客户端拒绝此调用。"),
-                    format!(
-                        "It matched the rule “{name}”. Rejecting this call in the client is recommended."
-                    )
-                )
-            };
+            let body = tr!(
+                format!("命中规则「{name}」，响应已切断。"),
+                format!("It matched the rule “{name}”, so the response was cut off.")
+            );
             // **正文不带调用内容**：系统通知在锁屏上也看得见
             vec![
                 Signal::raised(format!("toolwall:{provider}"), Level::Warning, title)
@@ -398,6 +383,31 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     .event(),
             ]
         }
+        Event::ToolCallFlagged {
+            provider,
+            rule,
+            custom,
+            detail,
+            ..
+        } => watched("inspect_tools", provider, rule, *custom, detail)
+            .into_iter()
+            .collect(),
+        Event::ContentMatched {
+            provider,
+            rule,
+            custom,
+            detail,
+            ..
+        } => watched("content", provider, rule, *custom, detail)
+            .into_iter()
+            .collect(),
+        // 一次请求里找到的每个值各一项；同一条规则找到几个值，就是同一条规则命中了几次
+        Event::SecretsFound {
+            provider, items, ..
+        } => items
+            .iter()
+            .filter_map(|i| watched("redact", provider, &i.rule, i.custom, &i.detail))
+            .collect(),
         Event::KeyLimitAlert { .. } => key_limit(ev),
         Event::PluginFailed {
             plugin_id,
@@ -786,6 +796,96 @@ pub fn from_snapshot(s: &Snapshot<'_>, now_ms: u64) -> Vec<Signal> {
         .flat_map(from_event)
         .filter(|sig| sig.change == Change::Raised)
         .collect()
+}
+
+/// 「仅记录」的命中：规则的动作就是仅记录，或者防护处于「监控」（那时每条规则都按仅记录
+/// 处理）。**只认 core 说的结局**（`outcome_detail` 是 `recorded`），不自己按档位和动作推。
+///
+/// 规格（安全页重整 §3）：仅记录 = 记入安全日志并发出系统通知。正文**只有规则名和上游**，
+/// 不带命中的原文（锁屏上也看得见）。键按规则分（`secwatch:<防护>:<b|c>:<规则>`），所以
+/// **同一条规则 5 分钟里至多弹一次**（[`Signal::event`] 的冷却）；同时命中的几条规则由总线
+/// 合成一条通知（[`Signal::merged`]，那一行是这条规则在合成通知里的样子）。
+fn watched(
+    guard: &'static str,
+    provider: &str,
+    rule: &str,
+    custom: bool,
+    detail: &tw_api::SecurityHitDetail,
+) -> Option<Signal> {
+    if !matches!(detail.outcome_detail, tw_api::OutcomeDetail::Recorded {}) {
+        return None;
+    }
+    let name = guard_rule_name(guard, rule, custom, &detail.rule_snapshot.name);
+    let what = guard_name(guard);
+    let answer = detail.direction == tw_api::SecurityDirection::Response;
+    let body = match (answer, crate::i18n::current()) {
+        (false, crate::i18n::Lang::Zh) => {
+            format!("{what}：经上游「{provider}」的请求命中此规则，已记入安全日志。")
+        }
+        (true, crate::i18n::Lang::Zh) => {
+            format!("{what}：上游「{provider}」的回答命中此规则，已记入安全日志。")
+        }
+        (false, crate::i18n::Lang::En) => format!(
+            "{what}: a request through upstream “{provider}” matched this rule. It was recorded in the security log."
+        ),
+        (true, crate::i18n::Lang::En) => format!(
+            "{what}: an answer from upstream “{provider}” matched this rule. It was recorded in the security log."
+        ),
+    };
+    let kind = if custom { "c" } else { "b" };
+    Some(
+        Signal::raised(
+            format!("secwatch:{guard}:{kind}:{rule}"),
+            Level::Warning,
+            tr!(
+                format!("安全规则「{name}」命中"),
+                format!("Security Rule “{name}” Matched")
+            ),
+        )
+        .body(body)
+        .view(SECURITY)
+        .event()
+        .merged(tr!(
+            format!("「{name}」· {provider}"),
+            format!("“{name}” · {provider}")
+        )),
+    )
+}
+
+/// 防护的名字，和安全页的页签一样
+fn guard_name(guard: &str) -> String {
+    tr!(
+        crate::core_text::table_zh("guard", guard).unwrap_or_else(|| guard.to_string()),
+        match guard {
+            "redact" => "Secrets & privacy",
+            "inspect_tools" => "Dangerous commands",
+            _ => "Content filter",
+        }
+        .to_string()
+    )
+}
+
+/// 规则的名字，和安全页上的一样：自定义规则就是用户起的名字；内置的中文查词表（和界面同一张），
+/// 查不到、或者英文界面，用 core 给的英文名
+fn guard_rule_name(guard: &str, rule: &str, custom: bool, english: &str) -> String {
+    if custom {
+        return rule.to_string();
+    }
+    let english = if english.is_empty() { rule } else { english };
+    match guard {
+        "inspect_tools" => tool_rule_name(rule),
+        _ => {
+            let table = if guard == "redact" {
+                "secret_rule"
+            } else {
+                "content_rule"
+            };
+            tr!(
+                crate::core_text::table_zh(table, rule).unwrap_or_else(|| english.to_string()),
+                english.to_string()
+            )
+        }
+    }
 }
 
 /// 工具调用规则的名字，和安全页上的一样。**只有内置的这些**：自定义规则的

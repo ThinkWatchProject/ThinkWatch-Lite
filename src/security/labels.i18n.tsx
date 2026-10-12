@@ -13,33 +13,30 @@ const or = (xs: ReactNode[], sep: ReactNode, last: ReactNode) =>
   xs.flatMap((x, i) => (i === 0 ? [x] : [i === xs.length - 1 ? last : sep, x]));
 
 /**
- * 各项防护共用的名称：档位、处置、类别、规则名，以及内置规则的匹配判据。
+ * 各项防护共用的名称：状态、动作、类别、规则名，以及内置规则的匹配判据。
  *
  * **规则名只收内置的。**自定义规则的名字就是用户起的，原样显示；表里没有
  * 的，退回 core 给的英文名或 id。
  *
- * **第三档按各项做的事命名**（替换、切断、处置），前两档各项一样。
+ * **三种状态各项一样**：开启、监控、关闭（配置里是 `enforce` / `observe` / `off`）。
  */
 export const securityLabelsText = messages(
   {
     guards: CORE_ZH.tables.guard,
     /** 日志「类型」一栏，短一点 */
     guardShort: {
-      redact: "出站脱敏",
-      inspect_tools: "工具调用",
+      redact: "密钥与隐私",
+      inspect_tools: "危险命令",
       content: "内容过滤",
     },
-    /** 前两档，各项一样 */
+    /** 一项防护的三种状态，各项一样 */
     modes: {
+      enforce: "开启",
+      observe: "监控",
       off: "关闭",
-      observe: "观察",
     },
-    /** 第三档，按这一项做的事命名：命中的换成占位符、调用切断、规则各自拒绝或删除 */
-    enforce: {
-      redact: "替换",
-      inspect_tools: "切断",
-      content: "处置",
-    },
+    /** 防护处于「监控」时，规则的动作后面那一句：实际只记录 */
+    monitoring: "监控中",
     /** 日志里每一条做了什么 */
     actions: {
       recorded: "仅记录",
@@ -48,11 +45,13 @@ export const securityLabelsText = messages(
       stripped: "已删除",
       blocked: "已拒绝",
     } as Record<string, string>,
-    /** 工具调用规则、内容规则在第三档下做什么 */
+    /** 规则在「开启」状态下做什么 */
     ruleActions: {
+      placeholder: "替换为占位符",
       cut: "切断",
       block: "拒绝",
       strip: "删除",
+      replace: "替换",
       record: "仅记录",
     } as Record<string, string>,
     kinds: {
@@ -78,7 +77,7 @@ export const securityLabelsText = messages(
       message: (n: number) => `第 ${n} 条消息`,
       tool_result: "工具结果",
       tool_call: "工具调用",
-      response_text: "回答正文",
+      response_text: "回答 · 正文",
     },
     /** 消息的角色，按客户端写的查；表里没有的照写 */
     roles: {
@@ -181,24 +180,21 @@ export const securityLabelsText = messages(
   },
   {
     guards: {
-      redact: "Outbound redaction",
-      inspect_tools: "Tool-call inspection",
+      redact: "Secrets & privacy",
+      inspect_tools: "Dangerous commands",
       content: "Content filter",
     },
     guardShort: {
-      redact: "Redaction",
-      inspect_tools: "Tool call",
+      redact: "Secrets",
+      inspect_tools: "Commands",
       content: "Content",
     },
     modes: {
+      enforce: "On",
+      observe: "Monitor",
       off: "Off",
-      observe: "Observe",
     },
-    enforce: {
-      redact: "Replace",
-      inspect_tools: "Cut off",
-      content: "Enforce",
-    },
+    monitoring: "Monitoring",
     actions: {
       recorded: "Recorded",
       replaced: "Replaced",
@@ -207,9 +203,11 @@ export const securityLabelsText = messages(
       blocked: "Refused",
     },
     ruleActions: {
+      placeholder: "Replace with placeholder",
       cut: "Cut off",
       block: "Refuse",
       strip: "Delete",
+      replace: "Replace",
       record: "Record only",
     },
     kinds: {
@@ -233,7 +231,7 @@ export const securityLabelsText = messages(
       message: (n: number) => `Message ${n}`,
       tool_result: "Tool result",
       tool_call: "Tool call",
-      response_text: "Answer text",
+      response_text: "Answer · text",
     },
     roles: {
       user: "User",

@@ -9,7 +9,14 @@
  */
 import { textOf } from "@/i18n";
 import { appLabel } from "@/labels";
-import type { HitLocation, OutcomeDetail, SecurityEventView, SecurityEventsPage, SecurityEventsQuery } from "@/types";
+import {
+  replacedOf,
+  type HitLocation,
+  type OutcomeDetail,
+  type SecurityEventView,
+  type SecurityEventsPage,
+  type SecurityEventsQuery,
+} from "./contract-types";
 import { exportText } from "./export.i18n";
 import { matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -62,8 +69,10 @@ export function outcomeLine(d: OutcomeDetail): string {
   switch (d.action) {
     case "recorded":
       return t.recorded;
-    case "replaced":
-      return t.replaced(d.placeholders.join(", "));
+    case "replaced": {
+      const r = replacedOf(d);
+      return r.kind === "text" ? t.replacedText(r.segments, r.replacement) : t.replaced(r.placeholders.join(", "));
+    }
     case "cut":
       return `${t.cut(d.tool, d.arguments, d.truncated)}\n${t.clientNotice(d.client_notice)}`;
     case "blocked":

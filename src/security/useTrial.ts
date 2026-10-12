@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { errorText } from "@/i18n/core.i18n";
-import type { Guard, SecurityTestResult } from "@/types";
+import type { Guard, SecurityTestResult } from "./contract-types";
 import { api, type TrialOnly } from "./api";
 
 export type Trial =
@@ -26,7 +26,7 @@ export function useTrial(
   ready = true,
 ): Trial {
   const [trial, setTrial] = useState<Trial>({ state: "idle" });
-  const { pattern, match, case_sensitive, rule, label, action } = only;
+  const { pattern, match, case_sensitive, rule, label, action, scope, replacement } = only;
   useEffect(() => {
     if (!ready || sample.length === 0) {
       setTrial({ state: "idle" });
@@ -36,7 +36,7 @@ export function useTrial(
     setTrial((t) => (t.state === "done" ? t : { state: "running" }));
     const h = setTimeout(() => {
       api
-        .test(guard, sample, { pattern, match, case_sensitive, rule, label, action })
+        .test(guard, sample, { pattern, match, case_sensitive, rule, label, action, scope, replacement })
         .then((r) => alive && setTrial({ state: "done", ...r }))
         .catch((e) => alive && setTrial({ state: "failed", error: errorText(e) }));
     }, 250);
@@ -44,6 +44,6 @@ export function useTrial(
       alive = false;
       clearTimeout(h);
     };
-  }, [guard, sample, pattern, match, case_sensitive, rule, label, action, ready]);
+  }, [guard, sample, pattern, match, case_sensitive, rule, label, action, scope, replacement, ready]);
   return trial;
 }

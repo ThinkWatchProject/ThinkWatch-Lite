@@ -9,15 +9,18 @@ import { Loadable } from "@/ui/states";
 import { StatusDot } from "@/ui/status-dot";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
+import { GUARDS } from "@/types";
+import { api, type RuleSave } from "./api";
 import {
-  GUARDS,
+  actionOf,
+  scopeOf,
   type ConfigWritten,
   type Guard,
   type GuardMode,
+  type RuleAction,
   type SecurityDetail,
   type SecurityRuleView,
-} from "@/types";
-import { api, hasAction, type RuleSave } from "./api";
+} from "./contract-types";
 import { GuardSkeleton, GuardTab, type RuleActions } from "./GuardTab";
 import { modeName, modeTone, OUTCOMES, outcomeTone, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
@@ -43,15 +46,20 @@ type DialogState =
   | { kind: "test"; guard: Guard }
   | { kind: "delete"; guard: Guard; rule: SecurityRuleView };
 
-/** 自定义规则现在的样子，改一处（启停）时原样带回去 */
-function saveOf(guard: Guard, r: SecurityRuleView, enabled: boolean): RuleSave {
+/** 自定义规则现在的样子，改一处（启停、动作）时其余原样带回去 */
+function saveOf(guard: Guard, r: SecurityRuleView, enabled: boolean, action = actionOf(guard, r)): RuleSave {
   const written = patternOf(r);
+  // 工具调用的自定义规则只有正则一种写法，不带怎么认、分不分大小写
+  const choosable = guard !== "inspect_tools";
   return {
     name: r.id,
     pattern: written?.pattern ?? "",
-    action: r.action ?? undefined,
-    match: guard === "content" ? written?.match : undefined,
+    action,
+    match: choosable ? written?.match : undefined,
+    case_sensitive: choosable && written?.match !== "codepoints" ? written?.cased : undefined,
     label: guard === "redact" ? (r.label ?? undefined) : undefined,
+    scope: guard === "content" ? scopeOf(r) : undefined,
+    replacement: guard === "content" ? (r.replacement ?? undefined) : undefined,
     enabled,
   };
 }
@@ -61,20 +69,20 @@ const same = (a: SecurityRuleView, b: SecurityRuleView) => a.id === b.id && a.cu
 const ruleKey = (guard: Guard, r: SecurityRuleView) => `${guard}/${r.custom ? "c" : "b"}/${r.id}`;
 
 /**
- * 安全页：日志，以及三项防护 —— 出站脱敏、工具调用审查、内容过滤。出站脱敏管
- * 发出去的凭据和个人信息，工具调用审查管回来的工具调用，内容过滤管调用方发来的
- * 正文（隐藏字符是它的一组内置规则）。
+ * 安全页：日志，以及三项防护 —— 密钥与隐私、危险命令、内容过滤。密钥与隐私管
+ * 发出去的凭据和个人信息，危险命令管回答里的工具调用，内容过滤管请求和回答的正文
+ * （每条规则自己定查哪一边；隐藏字符是它的一组内置规则）。
  *
  * **各项防护都是全局的。**档位和规则对所有上游、所有密钥一样，上游、路由、
  * 密钥上没有任何安全设置。MCP 服务器、技能、钩子这些客户端配置的检查在
  * MCP 页，不在这里：这一页只管经过网关的请求。
  *
- * 页头一行是全貌：几项在第三档（各项叫法不同，页头统称「处置」）、几项在观察、
- * 几项关着（状态点和标签上的同色），以及日志那段时间里一共命中了几次、各做了
- * 什么。日志在第一个标签：开着一项防护却不知道它查到了什么，等于没开。
+ * 页头一行是全貌：几项开启、几项监控、几项关闭（状态点和页签上的同色），以及日志
+ * 那段时间里一共命中了几次、各做了什么。日志在第一个页签：开着一项防护却不知道它查到
+ * 了什么，等于没开。
  *
- * **改动先画出来再写**：启停规则、换档都是先改界面，写完给一个带「撤销」的
- * 提示；几处连着改时一个接一个写（每一次写都要带上一次写完的版本号）。
+ * **改动先画出来再写**：启停规则（一条或一组）、改动作、换状态都是先改界面，写完给一个
+ * 带「撤销」的提示；几处连着改时一个接一个写（每一次写都要带上一次写完的版本号）。
  */
 export default function SecurityPage({
   configVersion,
@@ -129,14 +137,21 @@ export default function SecurityPage({
     return p;
   }, []);
 
-  /** 正在写的开关和档位。开关画成「进行中」，档位旁边转一个圈 */
+  /** 正在写的开关、动作和状态。开关画成「进行中」，状态旁边转一个圈。一组一起写时组内每一条都算 */
   const [pending, setPending] = useState<Record<string, number>>({});
-  async function tracked<T>(key: string, run: () => Promise<T>): Promise<T> {
-    setPending((p) => ({ ...p, [key]: (p[key] ?? 0) + 1 }));
+  async function tracked<T>(keys: string | string[], run: () => Promise<T>): Promise<T> {
+    const ks = typeof keys === "string" ? [keys] : keys;
+    const bump = (d: number) =>
+      setPending((p) => {
+        const next = { ...p };
+        for (const k of ks) next[k] = Math.max(0, (next[k] ?? 0) + d);
+        return next;
+      });
+    bump(1);
     try {
       return await run();
     } finally {
-      setPending((p) => ({ ...p, [key]: Math.max(0, (p[key] ?? 0) - 1) }));
+      bump(-1);
     }
   }
   const busy = (key: string) => (pending[key] ?? 0) > 0;
@@ -176,13 +191,72 @@ export default function SecurityPage({
     });
   }
 
-  /** 换档。可撤销：切到第三档会改变请求的结局，切错了要能一下回去 */
+  /**
+   * 一组规则一起启用或停用（组标题的复选框）。只写状态要变的那几条，一次写配置；撤销把
+   * 这几条拨回去
+   */
+  function bulk(guard: Guard, rules: SecurityRuleView[], enabled: boolean) {
+    const targets = rules.filter((r) => r.enabled !== enabled);
+    if (targets.length === 0) return;
+    const hit = (x: SecurityRuleView) => targets.some((r) => same(r, x));
+    const send = (on: boolean) =>
+      tracked(
+        targets.map((r) => ruleKey(guard, r)),
+        () =>
+          write((base) =>
+            api.setEnabled(guard, {
+              builtin: targets.filter((r) => !r.custom).map((r) => r.id),
+              custom: targets.filter((r) => r.custom).map((r) => r.id),
+              enabled: on,
+              base_version: base,
+            }),
+          ),
+      );
+    void undoable({
+      message: enabled ? t.groupOn(targets.length) : t.groupOff(targets.length),
+      apply: () =>
+        detail.mutate((d) => ({
+          ...d!,
+          [guard]: { ...d![guard], rules: d![guard].rules.map((x) => (hit(x) ? { ...x, enabled } : x)) },
+        })),
+      do: () => send(enabled),
+      undo: () => send(!enabled),
+      after: settle,
+    });
+  }
+
+  /** 行内改一条规则的动作。可撤销 */
+  function setAction(guard: Guard, r: SecurityRuleView, action: RuleAction) {
+    const before = actionOf(guard, r);
+    if (before === action) return;
+    const send = (a: RuleAction) =>
+      tracked(ruleKey(guard, r), () =>
+        write((base) =>
+          r.custom
+            ? api.updateRule(guard, r.id, { ...saveOf(guard, r, r.enabled, a), base_version: base })
+            : api.setAction(guard, r.id, a, base),
+        ),
+      );
+    void undoable({
+      message: t.actionSet(viewName(guard, r), lt.ruleActions[action] ?? action),
+      apply: () =>
+        detail.mutate((d) => ({
+          ...d!,
+          [guard]: { ...d![guard], rules: d![guard].rules.map((x) => (same(x, r) ? { ...x, action } : x)) },
+        })),
+      do: () => send(action),
+      undo: () => send(before),
+      after: settle,
+    });
+  }
+
+  /** 换状态。可撤销：切到「开启」会改变请求的结局，切错了要能一下回去 */
   function setMode(guard: Guard, mode: GuardMode) {
     const before = detail.data?.[guard].mode;
     if (!before || before === mode) return;
     const send = (m: GuardMode) => tracked(`mode/${guard}`, () => write((base) => api.setMode(guard, m, base)));
     void undoable({
-      message: t.modeSet(lt.guards[guard], modeName(guard, mode)),
+      message: t.modeSet(lt.guards[guard], modeName(mode)),
       apply: () => detail.mutate((d) => ({ ...d!, [guard]: { ...d![guard], mode } })),
       do: () => send(mode),
       undo: () => send(before),
@@ -193,26 +267,27 @@ export default function SecurityPage({
   const actions = (guard: Guard): RuleActions => ({
     mode: (mode) => setMode(guard, mode),
     toggle: (r, enabled) => toggle(guard, r, enabled),
+    bulk: (rules, enabled) => bulk(guard, rules, enabled),
+    setAction: (r, a) => setAction(guard, r, a),
     pending: (r) => busy(ruleKey(guard, r)),
     open: (r) =>
       setDialog(r.custom ? { kind: "rule", guard, editing: r } : { kind: "builtin", guard, rule: r }),
-    // 内置规则只有工具调用和内容规则写得出等价的自定义规则（内容规则的码位也写得出）
-    copy: hasAction(guard)
-      ? (r) => {
-          const written = patternOf(r);
-          setDialog({
-            kind: "rule",
-            guard,
-            editing: null,
-            seed: {
-              name: viewName(guard, r),
-              pattern: written?.pattern ?? "",
-              match: written?.match,
-              action: r.action ?? undefined,
-            },
-          });
-        }
-      : undefined,
+    // 写得出等价写法的内置规则（工具调用的正则、内容规则的文字和码位）可以复制成自定义规则
+    copy: (r) => {
+      const written = patternOf(r);
+      setDialog({
+        kind: "rule",
+        guard,
+        editing: null,
+        seed: {
+          name: viewName(guard, r),
+          pattern: written?.pattern ?? "",
+          match: written?.match,
+          cased: written?.cased,
+          action: r.action ?? undefined,
+        },
+      });
+    },
     remove: (r) => setDialog({ kind: "delete", guard, rule: r }),
     create: () => setDialog({ kind: "rule", guard, editing: null }),
     test: () => setDialog({ kind: "test", guard }),
@@ -263,15 +338,16 @@ export default function SecurityPage({
               <TabsTrigger value="log">{t.log}</TabsTrigger>
               {GUARDS.map((g) => (
                 <TabsTrigger key={g} value={g}>
-                  {t.tabs[g]}
-                  {d && <StatusDot tone={modeTone(d[g].mode)} label={modeName(g, d[g].mode)} />}
+                  {/* 名字前面的圆点是这一项的状态：开启绿、监控黄、关闭灰 */}
+                  {d && <StatusDot tone={modeTone(d[g].mode)} label={modeName(d[g].mode)} />}
+                  {lt.guards[g]}
                 </TabsTrigger>
               ))}
             </TabsList>
           }
         />
 
-        {/* 有防护停在「观察」：说一句确认没有误报之后可以切到第三档 */}
+        {/* 有防护处于「监控」：说一句确认没有误报之后可以开启 */}
         <ObserveHint count={d ? GUARDS.filter((g) => d[g].mode === "observe").length : 0} className="mt-4" />
 
         <TabsContent value="log" className="pt-4">
@@ -294,6 +370,7 @@ export default function SecurityPage({
           guard={dialog.guard}
           editing={dialog.editing}
           seed={dialog.seed}
+          mode={d?.[dialog.guard].mode ?? "observe"}
           taken={(d?.[dialog.guard].rules ?? [])
             .filter((r) => r.custom && r.id !== dialog.editing?.id)
             .map((r) => r.id)}
@@ -307,9 +384,9 @@ export default function SecurityPage({
           rule={dialog.rule}
           onClose={() => setDialog(null)}
           onCopy={copyOf(dialog.guard, dialog.rule)}
+          mode={d?.[dialog.guard].mode ?? "observe"}
           onSaveAction={async (a) => {
             const g = dialog.guard;
-            if (!hasAction(g)) return;
             await write((base) => api.setAction(g, dialog.rule.id, a, base));
             setDialog(null);
             settle();

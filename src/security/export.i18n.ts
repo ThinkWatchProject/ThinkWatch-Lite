@@ -40,6 +40,7 @@ export const exportText = messages(
     outcome: {
       recorded: "仅记录",
       replaced: (placeholders: string) => `替换为 ${placeholders}`,
+      replacedText: (n: number, text: string) => `替换 ${n} 处，替换为 ${text}`,
       cut: (tool: string, args: string, truncated: boolean) => `切断 ${tool} 调用，参数${truncated ? "（仅开头）" : ""}：${args}`,
       clientNotice: (text: string) => `客户端收到：${text}`,
       blocked: "请求未发往上游",
@@ -81,6 +82,8 @@ export const exportText = messages(
     outcome: {
       recorded: "Recorded only",
       replaced: (placeholders: string) => `Replaced with ${placeholders}`,
+      replacedText: (n: number, text: string) =>
+        n === 1 ? `Replaced 1 segment with ${text}` : `Replaced ${n} segments with ${text}`,
       cut: (tool: string, args: string, truncated: boolean) =>
         `Cut off the ${tool} call; arguments${truncated ? " (beginning only)" : ""}: ${args}`,
       clientNotice: (text: string) => `Client received: ${text}`,

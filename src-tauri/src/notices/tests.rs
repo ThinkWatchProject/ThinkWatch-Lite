@@ -849,23 +849,258 @@ async fn each_plugin_is_gathered_on_its_own() {
     assert_eq!(b.titles().len(), 2, "{:?}", b.titles());
 }
 
-#[test]
-fn a_rule_that_only_records_does_not_interrupt_anyone() {
-    // 「仅记录」的那一类是用户说了不必打断的
-    let signals = rules::from_event(&tw_api::Event::ToolCallFlagged {
+// ---------------------------------------------------------------- 仅记录与监控（安全页重整）
+
+/// 一次命中的细节。`recorded`：core 说的结局是只记录（规则是「仅记录」，或者防护处于「监控」）
+fn hit_detail(
+    direction: tw_api::SecurityDirection,
+    id: &str,
+    name: &str,
+    recorded: bool,
+) -> tw_api::SecurityHitDetail {
+    tw_api::SecurityHitDetail {
+        direction,
+        locations: Vec::new(),
+        more_locations: 0,
+        rule_snapshot: tw_api::RuleSnapshot {
+            builtin: true,
+            id: id.into(),
+            name: name.into(),
+            core_version: "0.73.0".into(),
+            ..Default::default()
+        },
+        outcome_detail: if recorded {
+            tw_api::OutcomeDetail::Recorded {}
+        } else {
+            tw_api::OutcomeDetail::Stripped { segments: 1 }
+        },
+    }
+}
+
+/// 危险命令的一次命中，没有切断（`blocked: false`）
+fn flagged(provider: &str, rule: &str, action: tw_api::RuleAction) -> tw_api::Event {
+    tw_api::Event::ToolCallFlagged {
         id: 1,
-        provider: "relay".into(),
+        provider: provider.into(),
         tool: "Bash".into(),
-        rule: "rm-rf-root".into(),
+        rule: rule.into(),
         custom: false,
         why: "Deletes the whole home directory or the root".into(),
         excerpt: "rm -rf ~".into(),
-        action: tw_api::RuleAction::Record,
+        action,
         blocked: false,
         at_ms: T0,
-        detail: flag_detail(),
+        detail: hit_detail(
+            tw_api::SecurityDirection::Response,
+            rule,
+            "Delete home or root",
+            true,
+        ),
+    }
+}
+
+/// 内容过滤的一次命中。`custom` 时规则名就是用户起的名字
+fn content_hit(provider: &str, rule: &str, custom: bool, recorded: bool) -> tw_api::Event {
+    tw_api::Event::ContentMatched {
+        id: 2,
+        provider: provider.into(),
+        rule: rule.into(),
+        custom,
+        matching: tw_api::ContentMatch::Contains,
+        action: if recorded {
+            tw_api::RuleAction::Record
+        } else {
+            tw_api::RuleAction::Strip
+        },
+        outcome: if recorded {
+            tw_api::ContentOutcome::Recorded
+        } else {
+            tw_api::ContentOutcome::Stripped
+        },
+        in_tool_result: false,
+        excerpt: "SECRET-CODENAME".into(),
+        count: 1,
+        revealed: None,
+        detail: hit_detail(
+            tw_api::SecurityDirection::Response,
+            rule,
+            "Jailbreak",
+            recorded,
+        ),
+        at_ms: T0,
+    }
+}
+
+/// 密钥与隐私的一次请求里找到的几个值
+fn secrets(provider: &str, items: &[(&str, bool)]) -> tw_api::Event {
+    tw_api::Event::SecretsFound {
+        id: 3,
+        provider: provider.into(),
+        replaced: false,
+        items: items
+            .iter()
+            .map(|(rule, recorded)| tw_api::SecretItem {
+                rule: (*rule).into(),
+                custom: false,
+                kind: tw_api::SecretKind::Personal,
+                masked: "z…@example.com".into(),
+                count: 1,
+                detail: hit_detail(
+                    tw_api::SecurityDirection::Request,
+                    rule,
+                    "Email address",
+                    *recorded,
+                ),
+            })
+            .collect(),
+        at_ms: T0,
+    }
+}
+
+/// 「仅记录」= 记入日志并发出系统通知（规格 §3）。三项防护都说；**正文只有规则和上游**，
+/// 不带命中的原文
+#[test]
+fn a_record_only_hit_of_every_guard_is_told_with_rule_and_upstream_only() {
+    with_lang(Lang::Zh, || {
+        let tool = rules::from_event(&flagged("relay", "rm-rf-root", tw_api::RuleAction::Record));
+        let content = rules::from_event(&content_hit("relay", "项目代号", true, true));
+        let redact = rules::from_event(&secrets("relay", &[("email", true)]));
+        for (signals, key, name) in [
+            (
+                &tool,
+                "secwatch:inspect_tools:b:rm-rf-root",
+                "删除主目录或根目录",
+            ),
+            (&content, "secwatch:content:c:项目代号", "项目代号"),
+            (&redact, "secwatch:redact:b:email", "邮箱地址"),
+        ] {
+            assert_eq!(signals.len(), 1, "{key}");
+            let s = &signals[0];
+            assert_eq!(s.key, key);
+            assert_eq!(s.level, Level::Warning, "要发系统通知");
+            assert!(s.event && !s.hold, "每次命中都是一件新的事，不去抖");
+            assert!(s.merge.is_some(), "同时命中的要合成一条");
+            assert!(s.title.contains(name), "{}", s.title);
+            assert!(s.body.contains("relay"), "{}", s.body);
+            assert_eq!(s.view, Some("security"));
+            for leak in ["rm -rf", "SECRET-CODENAME", "example.com"] {
+                assert!(
+                    !s.body.contains(leak) && !s.title.contains(leak),
+                    "{leak} 进了通知"
+                );
+            }
+        }
+        // 防护名用新的叫法，回答一侧说「回答」
+        assert!(
+            redact[0].body.starts_with("密钥与隐私："),
+            "{}",
+            redact[0].body
+        );
+        assert!(
+            content[0].body.contains("的回答命中"),
+            "{}",
+            content[0].body
+        );
+        assert!(tool[0].body.starts_with("危险命令："), "{}", tool[0].body);
     });
-    assert!(signals.is_empty());
+}
+
+/// 防护处于「监控」时每条规则都按仅记录处理：「切断」规则命中了也没切，**照「仅记录」说**，
+/// 不再说「可疑调用、建议在客户端拒绝」
+#[test]
+fn a_cut_rule_in_monitor_is_told_like_record_only() {
+    let signals = rules::from_event(&flagged("relay", "curl-pipe-sh", tw_api::RuleAction::Cut));
+    assert_eq!(signals.len(), 1);
+    assert!(
+        signals[0].key.starts_with("secwatch:"),
+        "{}",
+        signals[0].key
+    );
+}
+
+/// 改了内容的（替换为占位符、删除、替换）只记日志，不通知；一次请求里只有仅记录的那几项说
+#[test]
+fn only_what_was_merely_recorded_is_told() {
+    assert!(rules::from_event(&content_hit("relay", "jailbreak", false, false)).is_empty());
+    let s = rules::from_event(&secrets(
+        "relay",
+        &[("email", true), ("anthropic-api-key", false)],
+    ));
+    assert_eq!(
+        s.iter().map(|s| s.key.as_str()).collect::<Vec<_>>(),
+        ["secwatch:redact:b:email"]
+    );
+}
+
+/// 几条规则同时命中：**合成一条通知**，逐条写规则和上游；列表里还是各是各的
+#[tokio::test(start_paused = true)]
+async fn hits_that_arrive_together_are_told_in_one_notification() {
+    // 测试里缺省是中文（合成那一条在另一个任务里写，`with_lang` 管不到）
+    {
+        let b = bed();
+        for s in rules::from_event(&content_hit("relay", "项目代号", true, true)) {
+            b.bus.ingest(s, T0);
+        }
+        for s in rules::from_event(&secrets("anthropic", &[("email", true)])) {
+            b.bus.ingest(s, T0 + 5);
+        }
+        assert!(b.titles().is_empty(), "要等同时到的几条一起说");
+        wait(MERGE).await;
+        assert_eq!(b.titles(), ["2 条安全规则命中"], "{:?}", b.bodies());
+        let body = b.bodies()[0].clone();
+        assert!(
+            body.contains("「项目代号」· relay") && body.contains("「邮箱地址」· anthropic"),
+            "{body}"
+        );
+        assert_eq!(b.bus.list().len(), 2, "列表里各是一条");
+    }
+}
+
+/// 同一条规则 5 分钟内至多通知一次；冷却结束时还有没说的，合成一条再说
+#[tokio::test(start_paused = true)]
+async fn the_same_rule_is_told_at_most_once_in_five_minutes() {
+    let b = bed();
+    let hit = || rules::from_event(&content_hit("relay", "项目代号", true, true)).remove(0);
+    b.bus.ingest(hit(), T0);
+    wait(MERGE).await;
+    assert_eq!(b.titles().len(), 1);
+    b.bus.ingest(hit(), T0 + 60_000);
+    wait(MERGE).await;
+    b.bus.ingest(hit(), T0 + 120_000);
+    wait(MERGE).await;
+    assert_eq!(b.titles().len(), 1, "冷却期间不再弹：{:?}", b.titles());
+    assert_eq!(b.bus.list()[0].count, 3, "次数照记");
+    wait(COOLDOWN).await;
+    wait(MERGE).await;
+    assert_eq!(b.titles().len(), 2, "冷却结束时说一次：{:?}", b.titles());
+    // 另一条规则不受这一条的冷却影响
+    for s in rules::from_event(&secrets("relay", &[("email", true)])) {
+        b.bus.ingest(s, T0 + 130_000);
+    }
+    wait(MERGE).await;
+    assert_eq!(b.titles().len(), 3, "{:?}", b.titles());
+}
+
+/// 只在应用内的提醒：列表里有，不弹
+#[tokio::test(start_paused = true)]
+async fn in_app_only_a_record_only_hit_is_listed_but_not_shown() {
+    let b = bed();
+    b.bus.set_mode(Mode::App);
+    for s in rules::from_event(&content_hit("relay", "项目代号", true, true)) {
+        b.bus.ingest(s, T0);
+    }
+    wait(MERGE).await;
+    assert!(b.titles().is_empty());
+    assert_eq!(b.bus.list().len(), 1);
+}
+
+/// 切断的那一条照旧单独、立刻说，不等合成
+#[tokio::test(start_paused = true)]
+async fn the_cut_notification_is_kept_and_not_merged() {
+    let b = bed();
+    b.bus.ingest(blocked("relay"), T0);
+    assert_eq!(b.titles().len(), 1, "切断要立刻说");
+    assert!(b.bus.list()[0].key.starts_with("toolwall:"));
 }
 
 #[test]

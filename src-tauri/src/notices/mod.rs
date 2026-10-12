@@ -82,6 +82,13 @@ const COOLDOWN: Duration = Duration::from_secs(300);
 /// 通知中心里原地贴一次。10 秒里合成一次，列表上的次数晚几秒跟上，没有别的代价
 const GATHER: Duration = Duration::from_secs(10);
 
+/// 同时命中的几条安全规则（[`Signal::merged`]）：要弹的先等这么久，这段时间里要弹的合成一条。
+///
+/// **2 秒**：一个请求里几条规则一起命中时，core 是一条接一条发事件的（同一个请求的事件前后
+/// 相差几毫秒），流式回答里的命中也在同一秒里到；再长，第一条通知就晚得让人觉得和那次请求
+/// 对不上了
+const MERGE: Duration = Duration::from_secs(2);
+
 #[derive(
     Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
 )]
@@ -146,6 +153,8 @@ pub struct Signal {
     pub times: u32,
     /// 级别只是 info，也弹系统通知（见 [`Signal::tell`]）
     pub tell: bool,
+    /// 同时要弹的几条合成一条通知时，这一条写成的那一行（见 [`Signal::merged`]）
+    pub merge: Option<String>,
 }
 
 impl Signal {
@@ -163,6 +172,7 @@ impl Signal {
             gather: false,
             times: 1,
             tell: false,
+            merge: None,
         }
     }
 
@@ -180,6 +190,7 @@ impl Signal {
             gather: false,
             times: 1,
             tell: false,
+            merge: None,
         }
     }
 
@@ -245,6 +256,16 @@ impl Signal {
         self
     }
 
+    /// 同时要弹的几件事合成一条通知（安全规则「仅记录」的命中）：要弹的时候先等 [`MERGE`]，
+    /// 这段时间里别的合成通知也要弹的，一起说成一条，`line` 是这一件在那一条里的样子。
+    ///
+    /// **只合成要弹的那一下**：列表里还是各是各的一条，去重、冷却照旧按各自的键。合成的那一条
+    /// 只取一个令牌
+    pub fn merged(mut self, line: impl Into<String>) -> Self {
+        self.merge = Some(line.into());
+        self
+    }
+
     /// 这一条算几次
     pub fn times(mut self, n: u32) -> Self {
         self.times = n.max(1);
@@ -298,6 +319,8 @@ struct Open {
     cool_until: Option<tokio::time::Instant>,
     /// 冷却期间又发生、还没为它弹过的次数。冷却结束时合成一条说
     unsaid: u32,
+    /// 要弹时和同时要弹的合成一条（[`Signal::merged`]），这是它那一行
+    merge: Option<String>,
 }
 
 #[derive(Debug, Default)]
@@ -327,6 +350,8 @@ pub struct Notices {
     /// 正在攒的那几件事，按键（[`Signal::gathered`]）。**和 `state` 分开一把锁**：攒只是
     /// 记一笔，不碰列表
     gathering: Mutex<HashMap<String, Gathering>>,
+    /// 等着合成一条再弹的那几件事的键，按先后（[`Signal::merged`]）
+    merging: Mutex<Vec<String>>,
 }
 
 /// 一个键这一阵攒下的
@@ -362,6 +387,7 @@ impl Notices {
                                 intermittent: false,
                                 cool_until: None,
                                 unsaid: 0,
+                                merge: None,
                             },
                         )
                     })
@@ -373,6 +399,7 @@ impl Notices {
             mode: Mutex::new(mode),
             store,
             gathering: Mutex::new(HashMap::new()),
+            merging: Mutex::new(Vec::new()),
         })
     }
 
@@ -684,7 +711,10 @@ impl Notices {
             let interrupts = mode == Mode::System && (signal.level.interrupts() || signal.tell);
             let wants = interrupts && !quiet;
             let due = (wants && signal.hold).then(|| now + HOLD);
-            let deliver = wants && !signal.hold && take_token(&mut g, &signal.key, signal.level);
+            // 合成的那几条到点一起只取一个令牌（`flush_merged`）
+            let merged = signal.merge.is_some();
+            let deliver =
+                wants && !signal.hold && (merged || take_token(&mut g, &signal.key, signal.level));
             let mut sum_up = None;
             if signal.event {
                 if deliver {
@@ -707,6 +737,7 @@ impl Notices {
                     intermittent: false,
                     cool_until,
                     unsaid,
+                    merge: signal.merge.clone(),
                 },
             );
             (notice, deliver, due, sum_up)
@@ -788,14 +819,14 @@ impl Notices {
                     .open
                     .get(&key)
                     .filter(|o| o.cool_until == Some(at) && o.unsaid > 0)
-                    .map(|o| (o.notice.clone(), o.unsaid, o.muted_until));
-                let Some((notice, unsaid, muted)) = pending else {
+                    .map(|o| (o.notice.clone(), o.unsaid, o.muted_until, o.merge.is_some()));
+                let Some((notice, unsaid, muted, merged)) = pending else {
                     return;
                 };
                 let say = wants
                     && !notice.read
                     && !hushed(&g, &key, muted, Instant::now())
-                    && take_token(&mut g, &key, notice.level);
+                    && (merged || take_token(&mut g, &key, notice.level));
                 if let Some(o) = g.open.get_mut(&key) {
                     o.unsaid = 0;
                     if say {
@@ -815,7 +846,11 @@ impl Notices {
         });
     }
 
-    fn deliver(&self, notice: &Notice) {
+    fn deliver(self: &Arc<Self>, notice: &Notice) {
+        if self.merges(&notice.key) {
+            self.merge_later(&notice.key);
+            return;
+        }
         let held = {
             let mut g = self.state.lock().expect("锁未中毒");
             if let Some(o) = g.open.get_mut(&notice.key) {
@@ -828,20 +863,109 @@ impl Notices {
         };
         let mut shown = notice.clone();
         shown.notified = true;
-        if held > 0 {
-            // 被限流压下去的那些，在这一条里带一句
-            shown.body = tr!(
-                format!("{}（另有 {held} 项待处理）", shown.body),
-                if held == 1 {
-                    format!("{} (1 more notice pending)", shown.body)
-                } else {
-                    format!("{} ({held} more notices pending)", shown.body)
-                }
-            );
-        }
+        shown.body = with_held(shown.body, held);
         for s in &self.sinks {
             s.show(&shown);
         }
+    }
+
+    /// 这一条要和同时要弹的合成一条（[`Signal::merged`]）
+    fn merges(&self, key: &str) -> bool {
+        self.state
+            .lock()
+            .expect("锁未中毒")
+            .open
+            .get(key)
+            .is_some_and(|o| o.merge.is_some())
+    }
+
+    /// 排进等着合成的那一批。这一批的头一条排上到点合成的那个时刻
+    fn merge_later(self: &Arc<Self>, key: &str) {
+        let first = {
+            let mut m = self.merging.lock().expect("锁未中毒");
+            if m.iter().any(|k| k == key) {
+                return;
+            }
+            m.push(key.to_string());
+            m.len() == 1
+        };
+        if !first {
+            return;
+        }
+        // 时刻在这里定，不等任务头一次跑起来（和攒、冷却的计时器一样）
+        let at = tokio::time::Instant::now() + MERGE;
+        let me = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep_until(at).await;
+            me.flush_merged();
+        });
+    }
+
+    /// 到点：这一批里还开着、用户还没看过的，合成一条弹出去。**只有一条就照它自己的样子说**；
+    /// 几条就说「N 条安全规则命中」，正文逐条写规则和上游。
+    ///
+    /// 合成的那一条用第一条的键：点它落到第一条的页面、标它已读时撤掉的也是它。只有这个键算
+    /// 弹过（`notified`），别的几条之后原地更新时不会在通知中心里各冒出一条
+    fn flush_merged(&self) {
+        let keys = std::mem::take(&mut *self.merging.lock().expect("锁未中毒"));
+        if self.mode() != Mode::System {
+            return;
+        }
+        let shown = {
+            let mut g = self.state.lock().expect("锁未中毒");
+            let batch: Vec<(Notice, String)> = keys
+                .iter()
+                .filter_map(|k| g.open.get(k))
+                .filter(|o| !o.notice.read)
+                .map(|o| (o.notice.clone(), o.merge.clone().unwrap_or_default()))
+                .collect();
+            let Some((first, _)) = batch.first() else {
+                return;
+            };
+            let level = batch
+                .iter()
+                .map(|(n, _)| n.level)
+                .max()
+                .unwrap_or(first.level);
+            if !take_token(&mut g, MERGED_KEY, level) {
+                // 限流压下去的按各自的键记着，下一条弹出去的通知里带一句「另有 N 项」
+                g.held_back.remove(MERGED_KEY);
+                for (n, _) in &batch {
+                    g.held_back.insert(n.key.clone());
+                }
+                return;
+            }
+            let first = first.clone();
+            if let Some(o) = g.open.get_mut(&first.key) {
+                o.notice.notified = true;
+            }
+            let mut held = std::mem::take(&mut g.held_back);
+            for (n, _) in &batch {
+                held.remove(&n.key);
+            }
+            let mut shown = if batch.len() == 1 {
+                first.clone()
+            } else {
+                Notice {
+                    level,
+                    title: tr!(
+                        format!("{} 条安全规则命中", batch.len()),
+                        format!("{} Security Rules Matched", batch.len())
+                    ),
+                    body: merged_body(batch.iter().map(|(_, line)| line.as_str()).collect()),
+                    count: 1,
+                    ..first.clone()
+                }
+            };
+            shown.notified = true;
+            shown.body = with_held(shown.body, held.len());
+            shown
+        };
+        for s in &self.sinks {
+            s.show(&shown);
+        }
+        self.persist();
+        self.changed();
     }
 
     fn clear(&self, key: &str, at_ms: u64) {
@@ -889,6 +1013,7 @@ impl Notices {
                             intermittent: true,
                             cool_until: None,
                             unsaid: 0,
+                            merge: None,
                         },
                     );
                 }
@@ -944,6 +1069,55 @@ impl Notices {
             s.listed(&list);
         }
     }
+}
+
+/// 合成的那一条取令牌时用的键（被限流时不记它，记那一批各自的键）
+const MERGED_KEY: &str = "secwatch";
+
+/// 一条合成通知里最多逐条写几件，其余写「等 N 条」
+const MERGED_LINES: usize = 4;
+
+/// 合成那一条的正文：逐条写规则和上游，多了截住
+fn merged_body(lines: Vec<&str>) -> String {
+    let n = lines.len();
+    let shown = &lines[..n.min(MERGED_LINES)];
+    let rest = n - shown.len();
+    tr!(
+        {
+            let more = if rest > 0 {
+                format!("等 {n} 条")
+            } else {
+                String::new()
+            };
+            format!("{}{more}。均已记入安全日志。", shown.join("；"))
+        },
+        {
+            let more = if rest > 0 {
+                format!("; and {rest} more")
+            } else {
+                String::new()
+            };
+            format!(
+                "{}{more}. All were recorded in the security log.",
+                shown.join("; ")
+            )
+        }
+    )
+}
+
+/// 被限流压下去的那些，在弹出去的这一条里带一句
+fn with_held(body: String, held: usize) -> String {
+    if held == 0 {
+        return body;
+    }
+    tr!(
+        format!("{body}（另有 {held} 项待处理）"),
+        if held == 1 {
+            format!("{body} (1 more notice pending)")
+        } else {
+            format!("{body} ({held} more notices pending)")
+        }
+    )
 }
 
 /// 开着的全部，最近的在前

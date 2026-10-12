@@ -9,13 +9,10 @@ export const securityPageText = messages(
   {
     /** 和源列表里那一项同一个词 */
     log: "日志",
-    /**
-     * 页头上几项防护各在哪一档：「2 项处置」。第三档在各项上叫法不同（替换、切断、处置），
-     * 合在一起数时统称「处置」
-     */
+    /** 页头上几项防护各处于哪种状态：「2 项开启」 */
     modes: {
-      enforce: "项处置",
-      observe: "项观察",
+      enforce: "项开启",
+      observe: "项监控",
       off: "项关闭",
     },
     /**
@@ -35,24 +32,21 @@ export const securityPageText = messages(
       replaced: "已替换",
       recorded: "仅记录",
     } satisfies Record<SecurityOutcome, string>,
-    /** 标签上的名字。和源列表、规则表里的名字一致 */
-    tabs: {
-      redact: "出站脱敏",
-      inspect_tools: "工具调用审查",
-      content: "内容过滤",
-    },
     loadFailed: "安全设置读取失败",
     /** 撤销提示 */
     ruleOn: (name: string) => `已启用「${name}」`,
     ruleOff: (name: string) => `已停用「${name}」`,
-    modeSet: (guard: string, mode: string) => `${guard}已切换到「${mode}」`,
+    groupOn: (n: number) => `已启用 ${n} 条规则`,
+    groupOff: (n: number) => `已停用 ${n} 条规则`,
+    actionSet: (name: string, action: string) => `「${name}」的动作已改为「${action}」`,
+    modeSet: (guard: string, mode: string) => `${guard}已切换为「${mode}」`,
     ruleCreated: (name: string) => `已创建规则「${name}」`,
   },
   {
     log: "Log",
     modes: {
-      enforce: "enforcing",
-      observe: "observing",
+      enforce: "on",
+      observe: "monitoring",
       off: "off",
     },
     hits: (count: number, n: ReactNode, range: string, custom: boolean) => (
@@ -67,15 +61,12 @@ export const securityPageText = messages(
       replaced: "replaced",
       recorded: "recorded",
     },
-    // 英文名长，标签用短名；全名在每一项的档位那一块上
-    tabs: {
-      redact: "Redaction",
-      inspect_tools: "Tool calls",
-      content: "Content",
-    },
     loadFailed: "The security settings could not be loaded",
     ruleOn: (name: string) => `“${name}” turned on`,
     ruleOff: (name: string) => `“${name}” turned off`,
+    groupOn: (n: number) => (n === 1 ? "1 rule turned on" : `${n} rules turned on`),
+    groupOff: (n: number) => (n === 1 ? "1 rule turned off" : `${n} rules turned off`),
+    actionSet: (name: string, action: string) => `Action for “${name}” set to ${action}`,
     modeSet: (guard: string, mode: string) => `${guard} set to ${mode}`,
     ruleCreated: (name: string) => `Rule “${name}” created`,
   },

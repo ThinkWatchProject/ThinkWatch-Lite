@@ -4,51 +4,54 @@ import { messages } from "@/i18n";
 export const ruleDialogText = messages(
   {
     title: {
-      redact: { create: "新建脱敏规则", edit: "编辑脱敏规则" },
-      inspect_tools: { create: "新建审查规则", edit: "编辑审查规则" },
+      redact: { create: "新建密钥与隐私规则", edit: "编辑密钥与隐私规则" },
+      inspect_tools: { create: "新建危险命令规则", edit: "编辑危险命令规则" },
       content: { create: "新建内容规则", edit: "编辑内容规则" },
     },
     testTitle: {
-      redact: "测试出站脱敏",
-      inspect_tools: "测试工具调用审查",
+      redact: "测试密钥与隐私",
+      inspect_tools: "测试危险命令",
       content: "测试内容过滤",
     },
     name: "名称",
-    nameHint: {
-      redact: "记入日志时显示此名称。",
-      inspect_tools: "记入日志和通知时显示此名称。",
-      content: "记入日志和拒绝原因时显示此名称。",
-    },
+    nameHint: "记入日志及发出通知时显示此名称。",
     namePlaceholder: {
       redact: "内部令牌",
       inspect_tools: "删除集群资源",
       content: "项目代号",
     },
-    /** 内容规则怎么认 */
+    /** 内容规则查哪一边 */
+    scope: "检查对象",
+    scopes: {
+      request: "请求",
+      response: "回答",
+      both: "请求和回答",
+    },
+    scopeHint: "请求：用户消息与工具结果。回答：模型输出的正文，不含工具调用与思考过程。",
+    /** 规则怎么认 */
     matchKind: "匹配方式",
     matchKinds: {
       contains: "包含",
       regex: "正则",
       codepoints: "码位",
     },
-    patternLabel: {
-      contains: "匹配内容",
-      regex: "匹配（正则表达式）",
-      codepoints: "码位",
-    },
-    toolHint: "按工具调用的参数匹配。",
-    /** 出站脱敏的自定义规则：怎么找、分不分大小写 */
-    redactHint: {
-      contains: (cased: boolean) =>
-        `在整个请求中按原样查找这段文字，. * 等字符没有特殊含义；${cased ? "区分" : "不区分"}大小写。找到的内容按凭据替换。`,
-      regex: (cased: boolean) => `按正则表达式匹配，${cased ? "区分" : "不区分"}大小写。匹配到的整段内容按凭据替换。`,
-    },
     caseSensitive: "区分大小写",
-    contentHint: {
-      contains: "在用户消息和工具结果中查找这段文字，不区分大小写，首尾空格也参与匹配。",
-      regex: "在用户消息和工具结果中匹配，不区分大小写。",
-      codepoints: "码位或码位范围，多个之间用逗号分隔，如 U+200B, U+E0000–U+E007F。在用户消息和工具结果中查找这些字符。",
+    patternLabel: "匹配内容",
+    toolHint: "按工具调用的参数匹配，使用正则表达式。",
+    /** 匹配方式下面那一句。`cased`：区分大小写 */
+    matchHint: {
+      contains: (cased: boolean) =>
+        `按原文查找，「.」「*」等字符不作特殊处理；${cased ? "区分" : "不区分"}大小写。`,
+      regex: (cased: boolean) => `按正则表达式匹配；${cased ? "区分" : "不区分"}大小写。`,
+      codepoints: "码位或码位范围，多个之间用逗号分隔，如 U+200B, U+E0000–U+E007F。",
     },
+    /** 检查对象含回答时，「码位」为何不可选 */
+    codepointsRequestOnly: "码位仅适用于请求。",
+    /** 检查对象含回答的正则规则：流式回答只暂缓有限的末尾 */
+    regexAnswerLimit: "回答中超过 256 个字符的命中，起始部分可能已送达客户端。",
+    /** 改了检查对象，选着的那一项不可选了，自动换成可选的 */
+    switchedMatch: "检查对象含回答，匹配方式已改为「包含」。",
+    switchedAction: "检查对象含回答，动作已改为「删除」。",
     /** 码位输入框里的样子 */
     codepointsExample: "U+200B, U+E0000–U+E007F",
     /** 码位写错时，输入框下面那一句 */
@@ -59,24 +62,35 @@ export const ruleDialogText = messages(
       order: (item: string) => `「${item}」的起点大于终点。`,
       count: (max: number) => `最多 ${max} 项。`,
     },
-    /** 出站脱敏：换成的占位符叫什么 */
+    /** 密钥与隐私：换成的占位符叫什么 */
     label: "占位符名称",
     labelHint: "替换为 <<TW_名称_序号>>。只能使用大写字母、数字和下划线。",
     labelBad: "须以大写字母开头，只能使用大写字母、数字和下划线，最多 24 个字符。",
     match: "匹配",
-    /** 规则在第三档下做什么 */
-    action: "处置",
-    /** 选了某一种处置时下面那一句 */
+    /** 规则在「开启」状态下做什么 */
+    action: "动作",
+    /** 选了某一种动作时下面那一句 */
     actionWhat: {
-      cut: "命中的调用不会完整到达客户端，因而无法执行。",
+      placeholder: "命中内容替换为占位符后发出，回答中出现该占位符时还原为原值。",
+      cut: "命中的调用不完整送达客户端，客户端无法执行该调用。",
       block: "命中的请求不发出，客户端收到拒绝的原因。",
-      strip: "命中的文字从用户消息和工具结果中删除，请求照常发出。",
+      strip: "删除命中内容，不保留任何标记。",
+      replace: "命中内容替换为下方的替换文本。",
       record: {
-        inspect_tools: "命中的调用照常返回，只记入日志。",
-        content: "命中的请求照常发出，只记入日志。",
+        redact: "命中内容照常发出，记入日志并发出系统通知。",
+        inspect_tools: "命中的调用照常返回，记入日志并发出系统通知。",
+        content: "命中内容不作修改，记入日志并发出系统通知。",
       },
     },
-    /** 内置规则：出厂时的处置 */
+    /** 检查对象含回答时，「拒绝」为何不可选 */
+    blockRequestOnly: "拒绝仅适用于请求：回答以流式输出，已送达的内容无法撤回。",
+    /** 内容规则：换成什么 */
+    replacement: "替换文本",
+    replacementHint: "命中内容替换为此文本，不可还原。",
+    replacementRequired: "请填写替换文本",
+    /** 内置规则选了「替换」：换成的文字固定 */
+    builtinReplace: (text: string) => `命中内容替换为 ${text}，不可还原。`,
+    /** 内置规则：出厂时的动作 */
     factory: (what: string) => `出厂设置为「${what}」。`,
     state: "状态",
     on: "已启用",
@@ -85,22 +99,29 @@ export const ruleDialogText = messages(
     replacedWith: "替换为",
     category: (kind: string) => `类别：${kind}`,
     sample: "测试文本",
+    /** 测试文本当作哪一边来试 */
+    testAs: {
+      request: "按请求测试",
+      response: "按回答测试",
+    },
     samplePlaceholder: {
       redact: "粘贴一段文本，例如一段含有密钥的环境变量",
       inspect_tools: "粘贴一段工具调用的参数，例如一条要执行的命令",
       content: "粘贴一段用户消息或工具结果",
     },
+    sampleAnswer: "粘贴一段模型回答的正文",
     hits: (n: number) => `命中 ${n} 处`,
     rule: "规则",
     noHit: "未命中",
     content: "内容",
-    position: "位置",
     line: (n: number) => `第 ${n} 行`,
     testDesc: "按当前启用的规则检查一段文本，不发出任何请求。",
-    /** 测试结果：替换、删除之后真正发出去的那一份 */
-    output: "发出的内容",
+    /** 测试结果：处理后的样子 */
+    output: "处理后",
     /** 测试结果：有「拒绝」规则命中 */
-    refused: (mode: string) => `在「${mode}」档下，此请求不会发出，客户端收到拒绝的原因。`,
+    refused: (mode: string) => `在「${mode}」状态下，此请求不会发出，客户端收到拒绝的原因。`,
+    /** 防护处于「监控」时，对话框底部那一句 */
+    monitoring: "当前分项处于监控状态，规则仅记录命中，不修改内容。",
     builtin: "内置",
     copyAsCustom: "复制为自定义规则",
     nameRequired: "请填写名称",
@@ -119,52 +140,49 @@ export const ruleDialogText = messages(
   },
   {
     title: {
-      redact: { create: "New redaction rule", edit: "Edit redaction rule" },
-      inspect_tools: { create: "New inspection rule", edit: "Edit inspection rule" },
+      redact: { create: "New secrets & privacy rule", edit: "Edit secrets & privacy rule" },
+      inspect_tools: { create: "New dangerous command rule", edit: "Edit dangerous command rule" },
       content: { create: "New content rule", edit: "Edit content rule" },
     },
     testTitle: {
-      redact: "Test outbound redaction",
-      inspect_tools: "Test tool-call inspection",
+      redact: "Test secrets & privacy",
+      inspect_tools: "Test dangerous commands",
       content: "Test the content filter",
     },
     name: "Name",
-    nameHint: {
-      redact: "Shown in the log.",
-      inspect_tools: "Shown in the log and in notifications.",
-      content: "Shown in the log and in the reason given for a refusal.",
-    },
+    nameHint: "Shown in the log and in notifications.",
     namePlaceholder: {
       redact: "Internal token",
       inspect_tools: "Delete cluster resources",
       content: "Project codename",
     },
+    scope: "Checks",
+    scopes: {
+      request: "Request",
+      response: "Answer",
+      both: "Request and answer",
+    },
+    scopeHint:
+      "Request: user messages and tool results. Answer: the text the model writes, excluding tool calls and thinking.",
     matchKind: "Match by",
     matchKinds: {
       contains: "Contains",
       regex: "Regex",
       codepoints: "Code points",
     },
-    patternLabel: {
-      contains: "Text to find",
-      regex: "Match (regular expression)",
-      codepoints: "Code points",
-    },
-    toolHint: "Matched against the arguments of each tool call.",
-    redactHint: {
-      contains: (cased: boolean) =>
-        `Looked for as written anywhere in the request; characters such as . and * have no special meaning. ${cased ? "Case must match" : "Case is ignored"}. What is found is replaced like a credential.`,
-      regex: (cased: boolean) =>
-        `A regular expression; ${cased ? "case must match" : "case is ignored"}. Everything it matches is replaced like a credential.`,
-    },
     caseSensitive: "Match case",
-    contentHint: {
-      contains:
-        "Searched for in user messages and tool results, ignoring case. Leading and trailing spaces count.",
-      regex: "Matched against user messages and tool results, ignoring case.",
-      codepoints:
-        "Code points or ranges, separated by commas, such as U+200B, U+E0000–U+E007F. These characters are searched for in user messages and tool results.",
+    patternLabel: "Match",
+    toolHint: "A regular expression matched against the arguments of each tool call.",
+    matchHint: {
+      contains: (cased: boolean) =>
+        `Looked for as written; characters such as . and * have no special meaning. ${cased ? "Case must match" : "Case is ignored"}.`,
+      regex: (cased: boolean) => `A regular expression. ${cased ? "Case must match" : "Case is ignored"}.`,
+      codepoints: "Code points or ranges, separated by commas, such as U+200B, U+E0000–U+E007F.",
     },
+    codepointsRequestOnly: "Code points apply to requests only.",
+    regexAnswerLimit: "In answers, the beginning of a match longer than 256 characters may already have reached the client.",
+    switchedMatch: "The rule checks answers, so the match was changed to Contains.",
+    switchedAction: "The rule checks answers, so the action was changed to Delete.",
     codepointsExample: "U+200B, U+E0000–U+E007F",
     codepointsBad: {
       syntax: (item: string) => `“${item}” is not a code point; write U+200B or U+E0000–U+E007F.`,
@@ -179,14 +197,24 @@ export const ruleDialogText = messages(
     match: "Match",
     action: "Action",
     actionWhat: {
-      cut: "A matching call never fully reaches the client, so it cannot run. ",
+      placeholder:
+        "Matches are replaced with placeholders before sending; a placeholder that appears in the answer is restored to the original value. ",
+      cut: "A matching call never fully reaches the client, so the client cannot run it. ",
       block: "A matching request is not sent, and the client is told why. ",
-      strip: "Matching text is deleted from user messages and tool results, and the request is sent. ",
+      strip: "Matches are deleted without leaving any marker. ",
+      replace: "Matches are replaced with the replacement text below. ",
       record: {
-        inspect_tools: "A matching call is returned as usual and recorded in the log. ",
-        content: "A matching request is sent as usual and recorded in the log. ",
+        redact: "Matches are sent as usual, recorded in the log and notified. ",
+        inspect_tools: "A matching call is returned as usual, recorded in the log and notified. ",
+        content: "Matches are left unchanged, recorded in the log and notified. ",
       },
     },
+    blockRequestOnly:
+      "Refuse applies to requests only: answers are streamed, and text already delivered cannot be withdrawn.",
+    replacement: "Replacement text",
+    replacementHint: "Matches are replaced with this text, which cannot be restored.",
+    replacementRequired: "Enter the replacement text",
+    builtinReplace: (text: string) => `Matches are replaced with ${text}, which cannot be restored. `,
     factory: (what: string) => `The factory setting is “${what}”.`,
     state: "State",
     on: "On",
@@ -194,20 +222,25 @@ export const ruleDialogText = messages(
     replacedWith: "Replaced with",
     category: (kind: string) => `Category: ${kind}`,
     sample: "Test text",
+    testAs: {
+      request: "Test as request",
+      response: "Test as answer",
+    },
     samplePlaceholder: {
       redact: "Paste some text, such as environment variables that contain a key",
       inspect_tools: "Paste the arguments of a tool call, such as a command to run",
       content: "Paste a user message or a tool result",
     },
+    sampleAnswer: "Paste the text of a model answer",
     hits: (n: number) => (n === 1 ? "1 match" : `${n} matches`),
     rule: "Rule",
     noHit: "No match",
     content: "Content",
-    position: "Position",
     line: (n: number) => `Line ${n}`,
     testDesc: "Checks a piece of text against the rules that are on. No request is sent.",
-    output: "What is sent",
-    refused: (mode: string) => `In ${mode} mode this request is not sent, and the client is told why.`,
+    output: "After processing",
+    refused: (mode: string) => `When the protection is ${mode}, this request is not sent, and the client is told why.`,
+    monitoring: "This protection is in Monitor: rules only record matches and change nothing.",
     builtin: "Built-in",
     copyAsCustom: "Copy as a custom rule",
     nameRequired: "Enter a name",

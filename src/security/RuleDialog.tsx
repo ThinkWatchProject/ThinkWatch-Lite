@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { CaseSensitiveIcon, CopyIcon } from "lucide-react";
+import { CopyIcon } from "lucide-react";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -26,37 +26,56 @@ import { Spinner } from "@/ui/spinner";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
+import { Switch } from "@/ui/switch";
 import { Textarea } from "@/ui/textarea";
-import { Toggle } from "@/ui/toggle";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
-import type { ContentMatch, Guard, RuleAction, SecurityRuleView, SecurityTestHit } from "@/types";
-import { hasAction, type ActionGuard, type RuleSave } from "./api";
+import { ACTIONS, type RuleSave } from "./api";
 import { checkCodepoints, DEFAULT_LABEL, labelOk, MAX_CODEPOINT_ITEMS, placeholderOf, type CodepointsProblem } from "./check";
+import {
+  actionOf,
+  DEFAULT_REPLACEMENT,
+  scopeOf,
+  type ContentMatch,
+  type Guard,
+  type GuardMode,
+  type RuleAction,
+  type RuleScope,
+  type SecurityRuleView,
+  type SecurityTestHit,
+} from "./contract-types";
 import { Highlight, lineOf, type Mark } from "./Highlight";
 import { MatcherText, modeName, ruleName, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
+import {
+  actionAllowed,
+  adjustForScope,
+  coversAnswer,
+  matchAllowed,
+  scopeChoice,
+  scopeOfChoice,
+  type ScopeChoice,
+} from "./rules";
 import { useTrial, type Trial } from "./useTrial";
 
-/** 每一项防护的规则在第三档下能做的几件事，按选项的顺序 */
-const ACTIONS: Record<ActionGuard, readonly RuleAction[]> = {
-  inspect_tools: ["cut", "record"],
-  content: ["block", "strip", "record"],
-};
-
-/** 自定义规则能选的写法：内容规则三种，出站脱敏不认码位。工具调用审查只有正则，不选 */
+/** 自定义规则能选的写法：内容规则三种，密钥与隐私不认码位。危险命令只有正则，不选 */
 const MATCHES: Record<"redact" | "content", readonly ContentMatch[]> = {
   redact: ["contains", "regex"],
   content: ["contains", "regex", "codepoints"],
 };
 
+const SCOPES: readonly ScopeChoice[] = ["request", "response", "both"];
+
+/** 新建的规则缺省做什么：内容规则仅记录（规格 §5.1），密钥与隐私替换为占位符，危险命令切断 */
+const NEW_ACTION: Record<Guard, RuleAction> = { redact: "placeholder", inspect_tools: "cut", content: "record" };
+
 /**
  * 一条规则写的是什么，以及怎么认、分不分大小写。码位写成一行，和输入框里的写法一样。
  *
- * **写不出来的是 `null`**：出站脱敏那几种（前缀、PEM、身份证号…）和代码里做的检查
+ * **写不出来的是 `null`**：密钥与隐私那几种（前缀、PEM、身份证号…）和代码里做的检查
  * （`builtin`）没有一条能填进自定义规则的写法，所以也没有「复制为自定义规则」。
  */
 export function patternOf(r: SecurityRuleView): { pattern: string; match: ContentMatch; cased: boolean } | null {
@@ -77,10 +96,11 @@ export interface RuleSeed {
   name: string;
   pattern: string;
   match?: ContentMatch;
+  cased?: boolean;
   action?: RuleAction;
 }
 
-/** 一处命中标成什么样：会被切断、拒绝的红，会被删掉的划掉，会被替换或只记录的黄 */
+/** 一处命中标成什么样：会被切断、拒绝的红，会被删掉的划掉，替换和只记录的黄 */
 function tone(action: string | null | undefined): Mark["tone"] {
   return action === "cut" || action === "block" ? "bad" : action === "strip" ? "strip" : "warn";
 }
@@ -90,6 +110,7 @@ function Field({
   htmlFor,
   hint,
   error,
+  notes,
   children,
 }: {
   label: string;
@@ -97,6 +118,8 @@ function Field({
   hint?: string;
   /** 写错了：代替说明，红字 */
   error?: string | null;
+  /** 说明下面再接的几句：不可选的原因（淡色）、自动换了哪一项（提醒色） */
+  notes?: { text: string; tone?: "muted" | "warn" }[];
   children: React.ReactNode;
 }) {
   return (
@@ -110,36 +133,59 @@ function Field({
       ) : (
         hint && <p className="tw-label text-muted-foreground">{hint}</p>
       )}
+      {notes?.map((n) => (
+        <p
+          key={n.text}
+          className={cn("tw-label", n.tone === "warn" ? "text-warning-foreground" : "text-muted-foreground")}
+          role={n.tone === "warn" ? "status" : undefined}
+        >
+          {n.text}
+        </p>
+      ))}
     </div>
   );
 }
 
 /**
- * 第三档下做什么：工具调用是切断或仅记录，内容规则是拒绝、删除或仅记录。**自定义规则和
- * 内置规则用同一个** —— 内置规则提供的只是一条写法，命中之后怎么处置和自定义规则一样
- * 由用户定。
+ * 规则在「开启」状态下做什么。**自定义规则和内置规则用同一个** —— 内置规则提供的只是一条
+ * 写法，命中之后怎么处理由用户定。查回答的内容规则「拒绝」置灰（不隐藏），下面说原因；
+ * 换检查对象时自动换掉的，`switched` 说一句
  */
 function ActionField({
   guard,
   value,
   onChange,
+  scope = "request",
   factory,
+  switched = false,
+  extra,
 }: {
-  guard: ActionGuard;
+  guard: Guard;
   value: RuleAction;
   onChange: (a: RuleAction) => void;
-  /** 内置规则出厂时的处置，标在下面那一句里 */
+  scope?: ScopeChoice;
+  /** 内置规则出厂时的动作，标在下面那一句里 */
   factory?: RuleAction | null;
+  switched?: boolean;
+  /** 代替动作说明的那一句（内置规则「替换」：换成的文字固定） */
+  extra?: string;
 }) {
   const t = useText(ruleDialogText);
   const lt = useText(securityLabelsText);
-  const what = value === "record" ? t.actionWhat.record[guard] : t.actionWhat[value];
+  const what = extra ?? (value === "record" ? t.actionWhat.record[guard] : t.actionWhat[value]);
+  const notes: { text: string; tone?: "muted" | "warn" }[] = [];
+  if (guard === "content" && coversAnswer(scope)) notes.push({ text: t.blockRequestOnly });
+  if (switched) notes.push({ text: t.switchedAction, tone: "warn" });
   return (
-    <Field label={t.action} hint={factory ? what + t.factory(lt.ruleActions[factory] ?? factory) : what}>
+    <Field label={t.action} hint={factory ? what + t.factory(lt.ruleActions[factory] ?? factory) : what} notes={notes}>
       <Segmented<RuleAction>
         label={t.action}
         value={value}
-        options={ACTIONS[guard].map((a) => ({ id: a, label: lt.ruleActions[a] ?? a }))}
+        options={ACTIONS[guard].map((a) => ({
+          id: a,
+          label: lt.ruleActions[a] ?? a,
+          disabled: !actionAllowed(guard, a, scope),
+        }))}
         onChange={onChange}
       />
     </Field>
@@ -160,10 +206,67 @@ function codepointsError(t: typeof ruleDialogText.zh, p: CodepointsProblem | nul
 }
 
 /**
- * 试出来的结果：命中几处，在原文里标出来；替换、删除之后真正发出去的那一份；第三档下
- * 会不会被拒。
+ * 测试文本：内容规则先选这段当作请求还是回答来试（规则不查的那一边置灰），下面是文本框
+ * 和试出来的结果
+ */
+function SampleField({
+  id,
+  guard,
+  sample,
+  onSample,
+  side,
+  onSide,
+  sides,
+  children,
+}: {
+  id: string;
+  guard: Guard;
+  sample: string;
+  onSample: (s: string) => void;
+  side: RuleScope;
+  onSide: (s: RuleScope) => void;
+  /** 规则查的那几边。不给（测试全部规则、非内容规则）就两边都能选 */
+  sides?: readonly RuleScope[];
+  children: React.ReactNode;
+}) {
+  const t = useText(ruleDialogText);
+  const content = guard === "content";
+  return (
+    <Field label={t.sample} htmlFor={id}>
+      {content && (
+        <Segmented<RuleScope>
+          label={t.sample}
+          value={side}
+          options={(["request", "response"] as const).map((s) => ({
+            id: s,
+            label: t.testAs[s],
+            disabled: sides != null && !sides.includes(s),
+          }))}
+          onChange={onSide}
+        />
+      )}
+      <Textarea
+        id={id}
+        className="min-h-16 font-mono"
+        value={sample}
+        spellCheck={false}
+        placeholder={content && side === "response" ? t.sampleAnswer : t.samplePlaceholder[guard]}
+        onChange={(e) => onSample(e.target.value)}
+      />
+      {children}
+    </Field>
+  );
+}
+
+/** 测试那一边：规则查的那几边里，原来选的还在就留着，否则换成它查的第一边 */
+function sideWithin(side: RuleScope, sides: readonly RuleScope[]): RuleScope {
+  return sides.includes(side) ? side : (sides[0] ?? "request");
+}
+
+/**
+ * 试出来的结果：命中几处，在原文里标出来；处理后的样子；「开启」状态下会不会被拒。
  *
- * **标的是 core 给的位置**（见 `Highlight`），发出去的样子也是 core 给的 —— 界面不自己
+ * **标的是 core 给的位置**（见 `Highlight`），处理后的样子也是 core 给的 —— 界面不自己
  * 再找一遍、再删一遍。
  */
 function TrialBox({
@@ -175,9 +278,9 @@ function TrialBox({
 }: {
   trial: Trial;
   sample: string;
-  /** 标成什么颜色。不给就按每一处自己的处置 */
+  /** 标成什么颜色。不给就按每一处自己的动作 */
   action?: RuleAction;
-  /** 显示发出去的样子（core 给了的话） */
+  /** 显示处理后的样子（core 给了的话） */
   output?: boolean;
   /** 会被拒时说的那句话。不给就不说 */
   refusal?: string;
@@ -223,15 +326,27 @@ function TrialBox({
   );
 }
 
+/** 对话框底部左边那一句：还缺什么；都齐了、防护处于「监控」时说规则只记录 */
+function FooterNote({ missing, mode }: { missing: string | null; mode: GuardMode }) {
+  const t = useText(ruleDialogText);
+  const text = missing ?? (mode === "observe" ? t.monitoring : null);
+  return text ? <span className="mr-auto tw-label text-muted-foreground">{text}</span> : null;
+}
+
 /**
  * 新建或编辑一条自定义规则。
  *
  * **写法由 core 检查**：保存时写错了当场拒绝，并说明错在哪；测试文本随输入
  * 标出命中，用的也是 core，和网关用同一个引擎。码位和占位符名称的写法简单、
  * 写错的样子固定，敲完就在框下面说（见 `check.ts`），不用等保存。
+ *
+ * 内容规则按规格 §5：检查对象、匹配方式（同一行右边是「区分大小写」开关）、匹配内容、
+ * 动作、替换文本（动作为「替换」时）、测试文本。检查对象含回答时「拒绝」和「码位」置灰，
+ * 已选着的自动换成「删除」「包含」并在控件下方说明。
  */
 export function RuleDialog({
   guard,
+  mode,
   editing,
   seed,
   taken,
@@ -239,6 +354,8 @@ export function RuleDialog({
   onSave,
 }: {
   guard: Guard;
+  /** 这项防护现在的状态。处于「监控」时底部说一句规则只记录 */
+  mode: GuardMode;
   /** 编辑哪一条。不给就是新建 */
   editing: SecurityRuleView | null;
   seed?: RuleSeed;
@@ -254,36 +371,46 @@ export function RuleDialog({
   const redact = guard === "redact";
   const [name, setName] = useState(editing?.id ?? seed?.name ?? "");
   const [pattern, setPattern] = useState(was?.pattern ?? seed?.pattern ?? "");
-  // 内容过滤和出站脱敏能选，默认按原样找；工具调用审查的自定义规则都是正则
+  // 内容过滤和密钥与隐私能选，缺省按原样找；危险命令的自定义规则都是正则
   const choosable = content ? "content" : redact ? "redact" : null;
   const [match, setMatch] = useState<ContentMatch>(choosable ? (was?.match ?? seed?.match ?? "contains") : "regex");
-  // 出站脱敏：分不分大小写，默认不分
-  const [cased, setCased] = useState(was?.cased ?? false);
-  // 新建的规则默认是最重的那一种：专门写一条规则，多半就是要拦它
-  const acts = hasAction(guard) ? guard : null;
+  // 分不分大小写，缺省不分
+  const [cased, setCased] = useState(was?.cased ?? seed?.cased ?? false);
   const [action, setAction] = useState<RuleAction>(
-    editing?.action ?? seed?.action ?? (acts ? ACTIONS[acts][0]! : "record"),
+    editing ? actionOf(guard, editing) : (seed?.action ?? NEW_ACTION[guard]),
   );
-  // 出站脱敏：占位符名称。默认值显式填在框里，不留空
+  // 内容规则：查哪一边、换成什么。缺省值直接填在框里
+  const [scope, setScope] = useState<ScopeChoice>(editing ? scopeChoice(scopeOf(editing)) : "request");
+  const [replacement, setReplacement] = useState(editing?.replacement ?? DEFAULT_REPLACEMENT);
+  /** 换检查对象时自动换掉了哪一项，在那个控件下方说一句；动手改了那一项就不再说 */
+  const [switched, setSwitched] = useState({ action: false, match: false });
+  // 密钥与隐私：占位符名称。缺省值显式填在框里，不留空
   const [label, setLabel] = useState(editing?.label ?? DEFAULT_LABEL);
   const [sample, setSample] = useState("");
+  const [side, setSide] = useState<RuleScope>(scope === "response" ? "response" : "request");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const codepoints = content && match === "codepoints";
-  const cpProblem = codepoints && pattern.length > 0 ? checkCodepoints(pattern) : null;
+  const sides = scopeOfChoice(scope);
+  const testSide = sideWithin(side, sides);
+  const codepoints = match === "codepoints";
+  const cpProblem = content && codepoints && pattern.length > 0 ? checkCodepoints(pattern) : null;
+  const placeholder = redact && action === "placeholder";
   const labelValid = labelOk(label);
-  const labelError = redact && label.length > 0 && !labelValid ? t.labelBad : null;
-  // 选着的处置一起带上：发出去的样子、会不会被拒按它算
+  const labelError = placeholder && label.length > 0 && !labelValid ? t.labelBad : null;
+  const replacing = content && action === "replace";
+  // 选着的动作一起带上：处理后的样子、会不会被拒按它算
   const trial = useTrial(
     guard,
     sample,
     {
       pattern,
       match: choosable ? match : undefined,
-      case_sensitive: redact ? cased : undefined,
+      case_sensitive: choosable && !codepoints ? cased : undefined,
       label: redact && labelValid ? label : undefined,
-      action: acts ? action : undefined,
+      action,
+      scope: content ? testSide : undefined,
+      replacement: replacing ? replacement : undefined,
     },
     pattern.length > 0 && !cpProblem,
   );
@@ -296,9 +423,20 @@ export function RuleDialog({
         ? t.nameTaken
         : pattern.length === 0
           ? t.patternRequired[match]
-          : redact && label.length === 0
+          : placeholder && label.length === 0
             ? t.labelRequired
-            : null;
+            : replacing && replacement.length === 0
+              ? t.replacementRequired
+              : null;
+
+  function changeScope(c: ScopeChoice) {
+    setError(null);
+    setScope(c);
+    const next = adjustForScope(c, action, match);
+    setAction(next.action);
+    setMatch(next.match);
+    setSwitched({ action: next.changed.action, match: next.changed.match });
+  }
 
   async function save() {
     setSaving(true);
@@ -307,10 +445,12 @@ export function RuleDialog({
       await onSave({
         name: name.trim(),
         pattern,
-        action: acts ? action : undefined,
+        action,
         match: choosable ? match : undefined,
-        case_sensitive: redact ? cased : undefined,
+        case_sensitive: choosable && !codepoints ? cased : undefined,
         label: redact ? label : undefined,
+        scope: content ? scopeOfChoice(scope) : undefined,
+        replacement: replacing ? replacement : undefined,
         enabled: editing?.enabled ?? true,
       });
     } catch (e) {
@@ -318,6 +458,14 @@ export function RuleDialog({
       setSaving(false);
     }
   }
+
+  // 匹配方式下面：怎么找、分不分大小写；查回答时码位为何不可选、正则的长度限制、自动换了什么
+  const matchNotes: { text: string; tone?: "muted" | "warn" }[] = [];
+  if (content && coversAnswer(scope)) {
+    matchNotes.push({ text: t.codepointsRequestOnly });
+    if (match === "regex") matchNotes.push({ text: t.regexAnswerLimit });
+  }
+  if (switched.match) matchNotes.push({ text: t.switchedMatch, tone: "warn" });
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -327,7 +475,7 @@ export function RuleDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          <Field label={t.name} htmlFor="rule-name" hint={t.nameHint[guard]}>
+          <Field label={t.name} htmlFor="rule-name" hint={t.nameHint}>
             <Input
               id="rule-name"
               value={name}
@@ -340,46 +488,59 @@ export function RuleDialog({
             />
           </Field>
 
+          {content && (
+            <Field label={t.scope} hint={t.scopeHint}>
+              <Segmented<ScopeChoice>
+                label={t.scope}
+                value={scope}
+                options={SCOPES.map((c) => ({ id: c, label: t.scopes[c] }))}
+                onChange={changeScope}
+              />
+            </Field>
+          )}
+
           {choosable && (
-            <Field label={t.matchKind}>
-              <div className="flex items-center gap-2">
+            <Field
+              label={t.matchKind}
+              hint={match === "codepoints" ? t.matchHint.codepoints : t.matchHint[match](cased)}
+              notes={matchNotes}
+            >
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <Segmented<ContentMatch>
                   label={t.matchKind}
                   value={match}
-                  options={MATCHES[choosable].map((m) => ({ id: m, label: t.matchKinds[m] }))}
+                  options={MATCHES[choosable].map((m) => ({
+                    id: m,
+                    label: t.matchKinds[m],
+                    disabled: !matchAllowed(m, scope),
+                  }))}
                   onChange={(m) => {
                     setError(null);
                     setMatch(m);
+                    setSwitched((s) => ({ ...s, match: false }));
                   }}
                 />
-                {redact && (
-                  <Toggle
-                    variant="outline"
+                {/* 开 / 关两态用开关；码位不分大小写，置灰 */}
+                <label className="flex items-center gap-2 tw-body">
+                  <Switch
                     size="sm"
-                    pressed={cased}
-                    onPressedChange={(on) => {
+                    checked={cased && !codepoints}
+                    disabled={codepoints}
+                    onCheckedChange={(on) => {
                       setError(null);
                       setCased(on);
                     }}
-                  >
-                    <CaseSensitiveIcon />
-                    {t.caseSensitive}
-                  </Toggle>
-                )}
+                  />
+                  <span className={cn(codepoints && "text-muted-foreground")}>{t.caseSensitive}</span>
+                </label>
               </div>
             </Field>
           )}
 
           <Field
-            label={t.patternLabel[match]}
+            label={t.patternLabel}
             htmlFor="rule-pattern"
-            hint={
-              content
-                ? t.contentHint[match]
-                : redact
-                  ? t.redactHint[match === "regex" ? "regex" : "contains"](cased)
-                  : t.toolHint
-            }
+            hint={choosable ? undefined : t.toolHint}
             error={codepointsError(t, cpProblem)}
           >
             <Input
@@ -398,7 +559,35 @@ export function RuleDialog({
             />
           </Field>
 
-          {redact && (
+          <ActionField
+            guard={guard}
+            value={action}
+            scope={scope}
+            switched={switched.action}
+            onChange={(a) => {
+              setAction(a);
+              setSwitched((s) => ({ ...s, action: false }));
+            }}
+          />
+
+          {replacing && (
+            <Field label={t.replacement} htmlFor="rule-replacement" hint={t.replacementHint}>
+              <Input
+                id="rule-replacement"
+                className="w-48 font-mono"
+                value={replacement}
+                spellCheck={false}
+                autoCapitalize="off"
+                autoCorrect="off"
+                onChange={(e) => {
+                  setError(null);
+                  setReplacement(e.target.value);
+                }}
+              />
+            </Field>
+          )}
+
+          {placeholder && (
             <Field label={t.label} htmlFor="rule-label" hint={t.labelHint} error={labelError}>
               <div className="flex min-w-0 items-center gap-3">
                 <Input
@@ -422,25 +611,23 @@ export function RuleDialog({
             </Field>
           )}
 
-          {acts && <ActionField guard={acts} value={action} onChange={setAction} />}
-
-          <Field label={t.sample} htmlFor="rule-sample">
-            <Textarea
-              id="rule-sample"
-              className="min-h-16 font-mono"
-              value={sample}
-              spellCheck={false}
-              placeholder={t.samplePlaceholder[guard]}
-              onChange={(e) => setSample(e.target.value)}
-            />
+          <SampleField
+            id="rule-sample"
+            guard={guard}
+            sample={sample}
+            onSample={setSample}
+            side={testSide}
+            onSide={setSide}
+            sides={sides}
+          >
             <TrialBox
               trial={trial}
               sample={sample}
-              action={acts ? action : undefined}
-              output={labelValid}
-              refusal={content ? t.refused(modeName("content", "enforce")) : undefined}
+              action={action}
+              output={!redact || labelValid}
+              refusal={content && testSide === "request" ? t.refused(modeName("enforce")) : undefined}
             />
-          </Field>
+          </SampleField>
         </div>
 
         <Banner layout="inline" tone="error" title={t.saveFailed} show={error !== null}>
@@ -448,7 +635,7 @@ export function RuleDialog({
         </Banner>
 
         <DialogFooter className="items-center">
-          {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
+          <FooterNote missing={missing} mode={mode} />
           <Button variant="outline" onClick={onClose}>
             {common.cancel}
           </Button>
@@ -466,39 +653,47 @@ export function RuleDialog({
 }
 
 /**
- * 一条内置规则：可以试，可以复制成自定义规则再改；工具调用和内容规则还能改
- * 第三档下的处置（出厂是哪一种标在下面）。出站脱敏的规则写明换成的占位符。
+ * 一条内置规则：可以试，可以改「开启」状态下的动作（出厂是哪一种标在下面），可以复制成
+ * 自定义规则再改写法。密钥与隐私的规则写明换成的占位符；内置的内容规则只查请求。
  *
  * **停用着的也能试** —— 出厂停用的那几条，就是要先试过才知道该不该开。
  */
 export function BuiltinRuleDialog({
   guard,
+  mode,
   rule,
   onClose,
   onCopy,
   onSaveAction,
 }: {
   guard: Guard;
+  mode: GuardMode;
   rule: SecurityRuleView;
   onClose: () => void;
-  /** 复制成自定义规则。写不出等价写法的（出站脱敏）不给 */
+  /** 复制成自定义规则。写不出等价写法的不给 */
   onCopy?: () => void;
-  /** 改第三档下的处置。只有工具调用审查和内容过滤的规则有 */
+  /** 改「开启」状态下的动作 */
   onSaveAction: (a: RuleAction) => Promise<void>;
 }) {
   const t = useText(ruleDialogText);
   const lt = useText(securityLabelsText);
   const common = useText(commonText);
   const [sample, setSample] = useState("");
-  const [action, setAction] = useState<RuleAction>(rule.action ?? "record");
+  const was = actionOf(guard, rule);
+  const [action, setAction] = useState<RuleAction>(was);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const written = patternOf(rule);
-  const acts = hasAction(guard) ? guard : null;
-  // 改了处置还没保存：按选着的那一种试
-  const trial = useTrial(guard, sample, { rule: rule.id, action: acts ? action : undefined });
+  const sides = scopeOf(rule);
+  // 改了动作还没保存：按选着的那一种试
+  const trial = useTrial(guard, sample, {
+    rule: rule.id,
+    action,
+    scope: guard === "content" ? sides[0] : undefined,
+  });
   const why = ruleWhy(guard, rule);
-  const changed = acts != null && action !== (rule.action ?? "record");
+  const changed = action !== was;
+  const replacement = rule.replacement ?? DEFAULT_REPLACEMENT;
 
   async function save() {
     setSaving(true);
@@ -523,7 +718,7 @@ export function BuiltinRuleDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          <Field label={written?.match === "regex" ? t.patternLabel.regex : t.match}>
+          <Field label={written?.match === "regex" ? t.patternLabel : t.match}>
             <div className="rounded-md border border-border bg-surface/60 px-3 py-2 tw-body">
               {written?.match === "regex" ? (
                 <span className="font-mono tw-label break-all">{written.pattern}</span>
@@ -533,9 +728,14 @@ export function BuiltinRuleDialog({
             </div>
           </Field>
 
-          {acts && (
-            <ActionField guard={acts} value={action} onChange={setAction} factory={rule.default_action ?? null} />
-          )}
+          <ActionField
+            guard={guard}
+            value={action}
+            onChange={setAction}
+            scope={scopeChoice(sides)}
+            factory={rule.default_action ?? null}
+            extra={action === "replace" ? t.builtinReplace(replacement) : undefined}
+          />
 
           <dl className="grid grid-cols-[88px_minmax(0,1fr)] gap-y-1 tw-body">
             <dt className="text-muted-foreground">{t.state}</dt>
@@ -544,7 +744,13 @@ export function BuiltinRuleDialog({
                 {rule.enabled ? t.on : t.off}
               </StatusLabel>
             </dd>
-            {rule.label && (
+            {guard === "content" && (
+              <>
+                <dt className="text-muted-foreground">{t.scope}</dt>
+                <dd>{sides.map((s) => lt.directions[s]).join(" · ")}</dd>
+              </>
+            )}
+            {rule.label && action === "placeholder" && (
               <>
                 <dt className="text-muted-foreground">{t.replacedWith}</dt>
                 <dd className="font-mono">{placeholderOf(rule.label)}</dd>
@@ -552,22 +758,22 @@ export function BuiltinRuleDialog({
             )}
           </dl>
 
-          <Field label={t.sample} htmlFor="builtin-sample">
-            <Textarea
-              id="builtin-sample"
-              className="min-h-16 font-mono"
-              value={sample}
-              spellCheck={false}
-              placeholder={t.samplePlaceholder[guard]}
-              onChange={(e) => setSample(e.target.value)}
-            />
+          <SampleField
+            id="builtin-sample"
+            guard={guard}
+            sample={sample}
+            onSample={setSample}
+            side={sides[0] ?? "request"}
+            onSide={() => {}}
+            sides={sides}
+          >
             <TrialBox
               trial={trial}
               sample={sample}
-              action={acts ? action : undefined}
-              refusal={guard === "content" ? t.refused(modeName("content", "enforce")) : undefined}
+              action={action}
+              refusal={guard === "content" ? t.refused(modeName("enforce")) : undefined}
             />
-          </Field>
+          </SampleField>
         </div>
 
         <Banner layout="inline" tone="error" title={t.saveFailed} show={error !== null}>
@@ -583,18 +789,15 @@ export function BuiltinRuleDialog({
           ) : (
             <span />
           )}
-          {acts ? (
-            <div className="flex gap-2">
-              <Button variant="outline" onClick={onClose}>
-                {common.cancel}
-              </Button>
-              <Button onClick={() => void save()} pending={saving} disabled={!changed}>
-                {common.save}
-              </Button>
-            </div>
-          ) : (
-            <Button onClick={onClose}>{common.close}</Button>
-          )}
+          <div className="flex items-center gap-2">
+            {mode === "observe" && <span className="tw-label text-muted-foreground">{t.monitoring}</span>}
+            <Button variant="outline" onClick={onClose}>
+              {common.cancel}
+            </Button>
+            <Button onClick={() => void save()} pending={saving} disabled={!changed}>
+              {common.save}
+            </Button>
+          </div>
         </DialogFooter>
       </DialogContent>
     </Dialog>
@@ -603,17 +806,18 @@ export function BuiltinRuleDialog({
 
 /**
  * 按现在启用的全部规则试一段文本。**不发出任何请求** —— 试的是网关手里的
- * 那一份规则，结论和真的请求一致：命中了哪几条，替换、删除之后发出去的是什么，
- * 内容过滤在第三档下会不会拒掉它。
+ * 那一份规则，结论和真的请求一致：命中了哪几条，处理后是什么样子，内容过滤在
+ * 「开启」状态下会不会拒掉它。内容过滤先选这段当作请求还是回答来试。
  */
 export function TestDialog({ guard, onClose }: { guard: Guard; onClose: () => void }) {
   const t = useText(ruleDialogText);
   const lt = useText(securityLabelsText);
   const common = useText(commonText);
   const [sample, setSample] = useState("");
-  const trial = useTrial(guard, sample, {});
+  const [side, setSide] = useState<RuleScope>("request");
+  const content = guard === "content";
+  const trial = useTrial(guard, sample, { scope: content ? side : undefined });
   const hits = trial.state === "done" ? trial.hits : [];
-  const acts = hasAction(guard);
 
   return (
     <Dialog open onOpenChange={(o) => !o && onClose()}>
@@ -624,64 +828,59 @@ export function TestDialog({ guard, onClose }: { guard: Guard; onClose: () => vo
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          <Field label={t.sample} htmlFor="test-sample">
-            <Textarea
-              id="test-sample"
-              className="min-h-24 font-mono"
-              value={sample}
-              spellCheck={false}
-              placeholder={t.samplePlaceholder[guard]}
-              onChange={(e) => setSample(e.target.value)}
-            />
-          </Field>
-
-          {trial.state !== "idle" && (
-            <div className="flex flex-col gap-2">
-              <TrialBox
-                trial={trial}
-                sample={sample}
-                refusal={guard === "content" ? t.refused(modeName("content", "enforce")) : undefined}
-              />
-              {hits.length > 0 && (
-                <Table className="table-fixed">
-                  <colgroup>
-                    <col className="w-[200px]" />
-                    <col />
-                    <col className="w-[88px]" />
-                  </colgroup>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>{t.rule}</TableHead>
-                      <TableHead>{t.content}</TableHead>
-                      <TableHead>{acts ? t.action : t.position}</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {hits.map((h, i) => (
-                      <TableRow key={`${h.rule}:${h.start}:${i}`}>
-                        <TableCell className="truncate">
-                          {ruleName(guard, h.rule, h.custom)}
-                          {h.custom && (
-                            <Badge variant="outline" className="ml-1.5">
-                              {lt.custom}
-                            </Badge>
-                          )}
-                        </TableCell>
-                        <TableCell className="truncate font-mono tw-label text-muted-foreground">{h.excerpt}</TableCell>
-                        {acts ? (
-                          <TableCell className={tone(h.action) === "bad" ? "text-destructive" : "text-muted-foreground"}>
-                            {lt.ruleActions[h.action ?? "record"] ?? h.action}
-                          </TableCell>
-                        ) : (
-                          <TableCell className="text-muted-foreground">{t.line(lineOf(sample, h.start))}</TableCell>
-                        )}
+          <SampleField id="test-sample" guard={guard} sample={sample} onSample={setSample} side={side} onSide={setSide}>
+            {trial.state !== "idle" && (
+              <div className="flex flex-col gap-2">
+                <TrialBox
+                  trial={trial}
+                  sample={sample}
+                  refusal={content && side === "request" ? t.refused(modeName("enforce")) : undefined}
+                />
+                {hits.length > 0 && (
+                  <Table className="table-fixed">
+                    <colgroup>
+                      <col className="w-[200px]" />
+                      <col />
+                      <col className="w-[120px]" />
+                    </colgroup>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>{t.rule}</TableHead>
+                        <TableHead>{t.content}</TableHead>
+                        <TableHead>{t.action}</TableHead>
                       </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
-          )}
+                    </TableHeader>
+                    <TableBody>
+                      {hits.map((h, i) => {
+                        const a = h.action ?? (guard === "redact" ? "placeholder" : "record");
+                        return (
+                          <TableRow key={`${h.rule}:${h.start}:${i}`}>
+                            <TableCell className="truncate">
+                              {ruleName(guard, h.rule, h.custom)}
+                              {h.custom && (
+                                <Badge variant="outline" className="ml-1.5">
+                                  {lt.custom}
+                                </Badge>
+                              )}
+                            </TableCell>
+                            <TableCell className="truncate font-mono tw-label text-muted-foreground">
+                              {h.excerpt}
+                              <span className="ml-1.5 font-sans">· {t.line(lineOf(sample, h.start))}</span>
+                            </TableCell>
+                            <TableCell
+                              className={cn("truncate", tone(a) === "bad" ? "text-destructive" : "text-muted-foreground")}
+                            >
+                              {lt.ruleActions[a] ?? a}
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            )}
+          </SampleField>
         </div>
 
         <DialogFooter>

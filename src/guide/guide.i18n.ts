@@ -56,8 +56,8 @@ export const guideText = messages(
 
     // 安全页
     /** 此刻停在「观察」的有几项 */
-    observeTitle: (n: number) => `${n} 项防护处于「观察」`,
-    observeBody: "命中时只记录。在日志中确认没有误报后，再切换到「替换」「切断」或「处置」。",
+    observeTitle: (n: number) => `${n} 项防护处于「监控」`,
+    observeBody: "命中时只记录并发出通知。在日志中确认没有误报后，再切换为「开启」。",
 
     // 设置
     hintsLabel: "引导提示",
@@ -105,9 +105,9 @@ export const guideText = messages(
     openRowTitle: "Open a request for its details",
     openRowBody: "The routing rule it matched, the upstreams it tried, its usage and cost, and any redacted values.",
 
-    observeTitle: (n: number) => (n === 1 ? "1 protection is set to Observe" : `${n} protections are set to Observe`),
+    observeTitle: (n: number) => (n === 1 ? "1 protection is set to Monitor" : `${n} protections are set to Monitor`),
     observeBody:
-      "Matches are only recorded. Once the log shows no false positives, switch to Replace, Cut off or Enforce.",
+      "Matches are only recorded and notified. Once the log shows no false positives, switch to On.",
 
     hintsLabel: "Guidance",
     hintsHint: "Hints set to “Don’t show again” and ignored warnings reappear.",

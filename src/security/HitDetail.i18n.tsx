@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { messages } from "@/i18n";
 
 /** 英文的单复数 */
@@ -41,8 +42,24 @@ export const hitDetailText = messages(
     /** 已拒绝 */
     notSent: "请求未发往上游。",
     clientReply: "客户端收到的回复",
-    /** 已删除：发出之前删去了几段 */
-    stripped: (n: number) => `发往上游之前删除了 ${n.toLocaleString()} 处命中的内容。`,
+    /** 已删除：发出（或返回）之前删去了几段 */
+    stripped: {
+      request: (n: number) => `删除 ${n.toLocaleString()} 处：命中内容在发往上游之前删除。`,
+      response: (n: number) => `删除 ${n.toLocaleString()} 处：命中内容在返回客户端之前删除。`,
+    },
+    /** 内容过滤的「替换」：几处换成了规则指定的文字 */
+    replacedText: {
+      request: (n: number, text: ReactNode) => (
+        <>
+          替换 {n.toLocaleString()} 处：命中内容在发往上游之前替换为 {text}，不可还原。
+        </>
+      ),
+      response: (n: number, text: ReactNode) => (
+        <>
+          替换 {n.toLocaleString()} 处：命中内容在返回客户端之前替换为 {text}，不可还原。
+        </>
+      ),
+    },
     /** 实际发给上游的模型名（和客户端要的不同时） */
     sentModel: (model: string) => `发往上游的模型为 ${model}`,
     openRequest: (id: number) => `打开请求 #${id}`,
@@ -70,8 +87,26 @@ export const hitDetailText = messages(
     clientNotice: "Notice the client received",
     notSent: "The request was not sent to the upstream.",
     clientReply: "Reply the client received",
-    stripped: (n: number) =>
-      `${count(n, "matched segment was", "matched segments were")} deleted before the request was sent.`,
+    stripped: {
+      request: (n: number) =>
+        `${count(n, "matched segment was", "matched segments were")} deleted before the request was sent.`,
+      response: (n: number) =>
+        `${count(n, "matched segment was", "matched segments were")} deleted before the answer reached the client.`,
+    },
+    replacedText: {
+      request: (n: number, text: ReactNode) => (
+        <>
+          {count(n, "matched segment was", "matched segments were")} replaced with {text} before the request was sent; this
+          cannot be restored.
+        </>
+      ),
+      response: (n: number, text: ReactNode) => (
+        <>
+          {count(n, "matched segment was", "matched segments were")} replaced with {text} before the answer reached the
+          client; this cannot be restored.
+        </>
+      ),
+    },
     sentModel: (model: string) => `sent to the upstream as ${model}`,
     openRequest: (id: number) => `Open request #${id}`,
     openSession: "View session",

@@ -44,6 +44,11 @@ pub fn text(m: &Msg) -> String {
     tr!(zh(m).unwrap_or_else(|| m.text.clone()), m.text.clone())
 }
 
+/// 词表里的一项（`guard`、`secret_rule`、`content_rule`…），中文。表或项不在是 `None`
+pub fn table_zh(table: &str, key: &str) -> Option<String> {
+    self::table().tables.get(table)?.get(key).cloned()
+}
+
 /// 同 [`text`]，去掉句末的句号：后面还要接自己的一句时用
 pub fn clause(m: &Msg) -> String {
     let s = text(m);

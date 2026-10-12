@@ -22,7 +22,7 @@ export const overviewText = messages(
     /** 失败过半集中在一个上游时点出它；全在一个上游时说「均」 */
     attnFailed: (n: number, top: { name: string; n: number } | null) =>
       `${n} 次请求失败` + (top ? (top.n === n ? `，均发生在 ${top.name}` : `，其中 ${top.name} ${top.n} 次`) : ""),
-    attnToolCut: (n: number) => `工具调用审查切断了 ${n} 个可疑工具调用`,
+    attnToolCut: (n: number) => `危险命令防护切断了 ${n} 个可疑工具调用`,
     attnUpstream: (name: string, why: string) => `${name} ${why}`,
     attnUpstreams: (n: number, names: string[]) =>
       `${n} 个上游不可用：${names.slice(0, 3).join("、")}${names.length > 3 ? " 等" : ""}`,
@@ -151,7 +151,7 @@ export const overviewText = messages(
       (n === 1 ? "1 request failed" : `${n} requests failed`) +
       (top ? (top.n === n ? (n === 1 ? ` on ${top.name}` : `, all on ${top.name}`) : `, ${top.n} of them on ${top.name}`) : ""),
     attnToolCut: (n: number) =>
-      n === 1 ? "Tool-call inspection cut off 1 suspicious tool call" : `Tool-call inspection cut off ${n} suspicious tool calls`,
+      n === 1 ? "Dangerous-command protection cut off 1 suspicious tool call" : `Dangerous-command protection cut off ${n} suspicious tool calls`,
     attnUpstream: (name: string, why: string) => `${name}: ${why}`,
     attnUpstreams: (n: number, names: string[]) =>
       `${n} upstreams unavailable: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
