@@ -2593,7 +2593,8 @@ base_version?: string | null, };
  */
 export type Matcher = { "kind": "prefix", prefix: string, min_tail: number, } | { "kind": "openai-legacy", min_len: number, } | { "kind": "pem" } | { "kind": "jwt" } | { "kind": "conn-string" } | { "kind": "private-ip" } | { "kind": "domain-suffix", suffixes: Array<string>, } | { "kind": "cn-resident-id", born_since: number, } | { "kind": "bank-card", networks: Array<CardNetwork>, } | { "kind": "email" } | { "kind": "cn-mobile-phone" } | { "kind": "regex", pattern: string, 
 /**
- * 分大小写：工具调用审查的规则、写明了要分的出站脱敏自定义规则。内容过滤的不分
+ * 分大小写：工具调用审查的规则（开头写了 `(?i)` 的除外）、写明了要分的出站脱敏
+ * 自定义规则。内容过滤的不分
  */
 case_sensitive?: boolean, } | { "kind": "contains", text: string, 
 /**
