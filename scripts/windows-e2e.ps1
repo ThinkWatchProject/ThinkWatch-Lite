@@ -511,6 +511,11 @@ function Wait-Ready($proc, [string] $data, [string] $folder, [string] $label, [d
         }
         $d = Get-Dialog $proc.Id
         if ($d) {
+            # 让位刚完成时，等待对话框可能正在关、只剩一个标题：过两秒还在才算
+            Start-Sleep -Seconds 2
+            $d = Get-Dialog $proc.Id
+        }
+        if ($d) {
             $texts = (Get-Texts $d) -join ' | '
             Raise $d
             Shot ('{0}-unexpected-dialog' -f $label)
