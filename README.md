@@ -42,16 +42,18 @@ before the client runs them.
   Cursor, Continue and Antigravity CLI come with instructions. Switching
   upstreams then happens in the gateway alone.
 - **Protection against relays.** A relay sees every request in full and can
-  rewrite every answer. Outbound redaction swaps API keys, private keys, JWTs,
+  rewrite every answer. Secrets & privacy swaps API keys, private keys, JWTs,
   connection-string passwords, Chinese resident ID numbers and bank card numbers
   for placeholders before a request leaves, so the relay never holds the real
   values. When an answer carries a tool call
   that downloads and runs code, sends out environment variables or credential
   files, reads private keys or installs a startup item or scheduled job,
-  tool-call inspection cuts the answer off before the client can run it.
+  Dangerous commands cuts the answer off before the client can run it.
   The content filter deletes instructions hidden in invisible characters before
-  a request leaves and can refuse prompt injection. Each protection starts in
-  Observe, which only records, and is switched over one at a time.
+  a request leaves, can refuse prompt injection, and can delete or replace
+  chosen words in requests and in the model's answers. Each protection starts in
+  Monitor, which records and notifies, and is switched on one at a time; every
+  rule has its own action.
 - **Upstreams, cross-checked.** Each upstream is compared with the others
   serving the same model: answers naming a different model, reported input well
   above or below theirs and low prompt-cache reads are marked on its row in the
