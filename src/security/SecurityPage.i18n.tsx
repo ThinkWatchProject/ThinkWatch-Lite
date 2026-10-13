@@ -36,8 +36,6 @@ export const securityPageText = messages(
     /** 撤销提示 */
     ruleOn: (name: string) => `已启用「${name}」`,
     ruleOff: (name: string) => `已停用「${name}」`,
-    groupOn: (n: number) => `已启用 ${n} 条规则`,
-    groupOff: (n: number) => `已停用 ${n} 条规则`,
     actionSet: (name: string, action: string) => `「${name}」的动作已改为「${action}」`,
     modeSet: (guard: string, mode: string) => `${guard}已切换为「${mode}」`,
     ruleCreated: (name: string) => `已创建规则「${name}」`,
@@ -64,8 +62,6 @@ export const securityPageText = messages(
     loadFailed: "The security settings could not be loaded",
     ruleOn: (name: string) => `“${name}” turned on`,
     ruleOff: (name: string) => `“${name}” turned off`,
-    groupOn: (n: number) => (n === 1 ? "1 rule turned on" : `${n} rules turned on`),
-    groupOff: (n: number) => (n === 1 ? "1 rule turned off" : `${n} rules turned off`),
     actionSet: (name: string, action: string) => `Action for “${name}” set to ${action}`,
     modeSet: (guard: string, mode: string) => `${guard} set to ${mode}`,
     ruleCreated: (name: string) => `Rule “${name}” created`,

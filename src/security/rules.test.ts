@@ -4,9 +4,7 @@ import {
   actionAllowed,
   actionOf,
   adjustForScope,
-  groupChecked,
   groupRules,
-  groupTarget,
   matchAllowed,
   patternText,
   ruleMatches,
@@ -41,20 +39,6 @@ describe("分组", () => {
       ["custom", ["c1"]],
     ]);
     expect(groups.map((g) => g.custom)).toEqual([false, false, true]);
-  });
-});
-
-describe("组标题的复选框", () => {
-  it("全部启用、部分启用（半选）、全部停用", () => {
-    expect(groupChecked([{ enabled: true }, { enabled: true }])).toBe(true);
-    expect(groupChecked([{ enabled: true }, { enabled: false }])).toBe("indeterminate");
-    expect(groupChecked([{ enabled: false }])).toBe(false);
-  });
-
-  it("全部启用时点它全部停用，否则全部启用", () => {
-    expect(groupTarget([{ enabled: true }, { enabled: true }])).toBe(false);
-    expect(groupTarget([{ enabled: true }, { enabled: false }])).toBe(true);
-    expect(groupTarget([{ enabled: false }])).toBe(true);
   });
 });
 

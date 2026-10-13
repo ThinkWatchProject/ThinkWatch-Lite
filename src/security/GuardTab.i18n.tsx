@@ -34,8 +34,6 @@ export const guardTabText = messages(
     /** 组标题：「隐藏字符 · 内置 · 已启用 2 条，共 3 条」 */
     builtin: "内置",
     groupCount: (on: number, all: number) => `已启用 ${on} 条，共 ${all} 条`,
-    /** 组标题的复选框 */
-    groupToggle: (group: string) => `启用「${group}」中的全部规则`,
     /** 行内的动作选择，给读屏 */
     actionFor: (name: string) => `「${name}」的动作`,
     /** 动作为「替换」时，行内选项写出换成什么 */
@@ -70,7 +68,6 @@ export const guardTabText = messages(
     action: "Action",
     builtin: "Built-in",
     groupCount: (on: number, all: number) => `${on} of ${all} on`,
-    groupToggle: (group: string) => `Turn on all rules in “${group}”`,
     actionFor: (name: string) => `Action for “${name}”`,
     replaceWith: (text: string) => `Replace with ${text}`,
     turnOn: "Turn on",

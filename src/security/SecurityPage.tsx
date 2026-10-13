@@ -183,40 +183,6 @@ export default function SecurityPage({
     });
   }
 
-  /**
-   * 一组规则一起启用或停用（组标题的复选框）。只写状态要变的那几条，一次写配置；撤销把
-   * 这几条拨回去
-   */
-  function bulk(guard: Guard, rules: SecurityRuleView[], enabled: boolean) {
-    const targets = rules.filter((r) => r.enabled !== enabled);
-    if (targets.length === 0) return;
-    const hit = (x: SecurityRuleView) => targets.some((r) => same(r, x));
-    const send = (on: boolean) =>
-      tracked(
-        targets.map((r) => ruleKey(guard, r)),
-        () =>
-          write((base) =>
-            api.setEnabled(guard, {
-              builtin: targets.filter((r) => !r.custom).map((r) => r.id),
-              custom: targets.filter((r) => r.custom).map((r) => r.id),
-              enabled: on,
-              base_version: base,
-            }),
-          ),
-      );
-    void undoable({
-      message: enabled ? t.groupOn(targets.length) : t.groupOff(targets.length),
-      apply: () =>
-        detail.mutate((d) => ({
-          ...d!,
-          [guard]: { ...d![guard], rules: d![guard].rules.map((x) => (hit(x) ? { ...x, enabled } : x)) },
-        })),
-      do: () => send(enabled),
-      undo: () => send(!enabled),
-      after: settle,
-    });
-  }
-
   /** 行内改一条规则的动作。可撤销 */
   function setAction(guard: Guard, r: SecurityRuleView, action: RuleAction) {
     const before = actionOf(guard, r);
@@ -259,7 +225,6 @@ export default function SecurityPage({
   const actions = (guard: Guard): RuleActions => ({
     mode: (mode) => setMode(guard, mode),
     toggle: (r, enabled) => toggle(guard, r, enabled),
-    bulk: (rules, enabled) => bulk(guard, rules, enabled),
     setAction: (r, a) => setAction(guard, r, a),
     pending: (r) => busy(ruleKey(guard, r)),
     open: (r) =>

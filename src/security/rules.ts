@@ -1,5 +1,5 @@
 /**
- * 规则表和规则对话框里不画东西的那部分：分组、检索、组标题复选框的状态、内容规则
+ * 规则表和规则对话框里不画东西的那部分：分组、检索、内容规则
  * 「检查对象」和「动作」「匹配方式」的联动。拆出来是为了能单独测。
  */
 import type { ContentMatch, ContentScope, Guard, OutcomeDetail, RuleAction, SecurityRuleView } from "@/types";
@@ -37,17 +37,6 @@ export function groupRules<T>(rows: readonly T[], ruleOf: (row: T) => SecurityRu
   }
   if (custom) out.push(custom);
   return out;
-}
-
-/** 组标题复选框：全部启用、部分启用（半选）、全部停用 */
-export function groupChecked(rules: readonly Pick<SecurityRuleView, "enabled">[]): boolean | "indeterminate" {
-  const on = rules.filter((r) => r.enabled).length;
-  return on === 0 ? false : on === rules.length ? true : "indeterminate";
-}
-
-/** 点组标题复选框之后要的状态：全部启用时全部停用，否则全部启用 */
-export function groupTarget(rules: readonly Pick<SecurityRuleView, "enabled">[]): boolean {
-  return groupChecked(rules) !== true;
 }
 
 /**

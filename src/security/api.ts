@@ -13,7 +13,6 @@ import type {
   Guard,
   GuardMode,
   RuleAction,
-  RulesToggle,
   SecurityEventsQuery,
 } from "@/types";
 
@@ -56,8 +55,6 @@ export const api = {
   /** 启用或停用一条内置规则 */
   toggleBuiltin: (guard: Guard, id: string, enabled: boolean, baseVersion: string) =>
     call("ToggleBuiltinRule", { enabled, base_version: baseVersion }, guard, id),
-  /** 一组规则一起启用或停用：一次写配置 */
-  setEnabled: (guard: Guard, save: RulesToggle) => call("SetRulesEnabled", save, guard),
   /** 一条内置规则在「开启」档下做什么 */
   setAction: (guard: Guard, id: string, action: RuleAction, baseVersion: string) =>
     call("SetBuiltinRuleAction", { action, base_version: baseVersion }, guard, id),

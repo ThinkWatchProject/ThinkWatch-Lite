@@ -2,7 +2,6 @@ import { Fragment, useMemo, useState } from "react";
 import { FlaskConicalIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { Checkbox } from "@/ui/checkbox";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
@@ -27,9 +26,7 @@ import {
   actionAllowed,
   actionOf,
   DEFAULT_REPLACEMENT,
-  groupChecked,
   groupRules,
-  groupTarget,
   ruleMatches,
   scopeChoice,
   scopeOf,
@@ -43,8 +40,6 @@ const MODES: readonly GuardMode[] = ["enforce", "observe", "off"];
 export interface RuleActions {
   mode: (mode: GuardMode) => void;
   toggle: (r: SecurityRuleView, enabled: boolean) => void;
-  /** 一组规则一起启用或停用（组标题的复选框） */
-  bulk: (rules: SecurityRuleView[], enabled: boolean) => void;
   /** 行内改一条规则的动作 */
   setAction: (r: SecurityRuleView, action: RuleAction) => void;
   /** 这条规则正在写（开关、动作） */
@@ -131,7 +126,7 @@ export function GuardSkeleton() {
  * 规则的实际处理按这个顺序定（规格 §4.3）：防护关闭不检查；规则停用不检查；防护处于
  * 「监控」时一律仅记录（动作列照写用户设的动作，后面标「监控中」）；其余按规则的动作。
  *
- * 内置规则按类别分组，组标题上的复选框一次启用或停用这一组（部分启用时半选）；自定义
+ * 内置规则按类别分组，组标题只写名字和启用条数、没有开关；自定义
  * 规则在最后一组。检索框按名字和写法筛。每一行的开关、动作就地改；点一行打开它的对话框。
  */
 export function GuardTab({
@@ -290,8 +285,6 @@ function RuleTable({
                 title={title}
                 builtin={!g.custom && g.key !== "command"}
                 rules={live}
-                pending={live.some(actions.pending)}
-                onToggle={(enabled) => actions.bulk(live, enabled)}
               />
               {g.rows.map(({ item: r, key, presence }) => (
                 <RuleRow
@@ -312,39 +305,24 @@ function RuleTable({
   );
 }
 
-/**
- * 一组的标题行：复选框一次启用或停用组内（检索筛出来的）全部规则，部分启用时半选；后面是
- * 「隐藏字符 · 内置 · 已启用 2 条，共 3 条」。**复选框只是批量操作的入口**，组本身没有开关
- */
+/** 一组的标题行：「隐藏字符 · 内置 · 已启用 2 条，共 3 条」。组本身没有开关，逐条启停 */
 function GroupHead({
   span,
   title,
   builtin,
   rules,
-  pending,
-  onToggle,
 }: {
   span: number;
   title: string;
   /** 标题后面写「内置」（工具调用的内置组本来就叫「内置」，不重复） */
   builtin: boolean;
   rules: SecurityRuleView[];
-  pending: boolean;
-  onToggle: (enabled: boolean) => void;
 }) {
   const t = useText(guardTabText);
   const on = rules.filter((r) => r.enabled).length;
   return (
     <TableRow className="hover:bg-transparent" data-slot="rule-group">
-      <TableCell className="h-8 bg-surface/70 py-0">
-        <Checkbox
-          checked={groupChecked(rules)}
-          disabled={pending || rules.length === 0}
-          aria-label={t.groupToggle(title)}
-          onCheckedChange={() => onToggle(groupTarget(rules))}
-        />
-      </TableCell>
-      <TableCell colSpan={span - 1} className="h-8 bg-surface/70 py-0 tw-label text-muted-foreground">
+      <TableCell colSpan={span} className="h-8 bg-surface/70 py-0 tw-label text-muted-foreground">
         <span className="font-medium text-foreground/80">{title}</span>
         {builtin && ` · ${t.builtin}`}
         {` · ${t.groupCount(on, rules.length)}`}
