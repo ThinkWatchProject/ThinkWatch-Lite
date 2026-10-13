@@ -445,7 +445,7 @@ async fn wait(d: Duration) {
 }
 
 /// 每拦下一次都是一件新的事。**看过之后再拦下，铃铛和菜单栏立刻重新数它**（它们只数没
-/// 看过的）；冷却期间不再弹，冷却结束时合成一条说。以前它按「同一件事」去重：看过一次
+/// 看过的）；冷却期间不再弹，冷却结束时也不补。以前它按「同一件事」去重：看过一次
 /// 之后，再拦下多少次都只是悄悄涨个次数
 #[tokio::test(start_paused = true)]
 async fn a_block_after_the_last_one_was_read_counts_again_at_once() {
@@ -459,7 +459,7 @@ async fn a_block_after_the_last_one_was_read_counts_again_at_once() {
     assert_eq!(n.count, 2);
     assert_eq!(b.titles().len(), 1, "冷却期间不再弹：{:?}", b.titles());
     wait(COOLDOWN).await;
-    assert_eq!(b.titles().len(), 2, "冷却结束时要说：{:?}", b.titles());
+    assert_eq!(b.titles().len(), 1, "冷却结束时不补：{:?}", b.titles());
 }
 
 #[tokio::test(start_paused = true)]
@@ -474,10 +474,11 @@ async fn once_the_cooldown_is_over_the_next_block_pops_right_away() {
     assert_eq!(b.bus.list()[0].count, 2);
 }
 
-/// 一阵子里接连拦下好多次：**只弹一条**，其余的进列表、累计次数，不刷屏；冷却结束时还有
-/// 没说的，合成一条再说一次，之后没有再拦下就安静。另一家不受这一家的冷却影响
+/// 一阵子里接连拦下好多次：**只弹一条**，其余的进列表、累计次数，不刷屏。**冷却结束时
+/// 不补发**：几分钟后补的一条说的是那次会话早就过去的事。另一家不受这一家的冷却影响；
+/// 冷却过后再拦下，当场弹
 #[tokio::test(start_paused = true)]
-async fn a_burst_of_blocks_pops_once_and_is_summed_up_when_the_cooldown_ends() {
+async fn a_burst_of_blocks_pops_once_and_nothing_comes_late() {
     let b = bed();
     for i in 0..10 {
         b.bus.ingest(blocked("relay"), T0 + i * 1_000);
@@ -488,20 +489,28 @@ async fn a_burst_of_blocks_pops_once_and_is_summed_up_when_the_cooldown_ends() {
     b.bus.ingest(blocked("other"), T0 + 10_000);
     assert_eq!(b.titles().len(), 2, "另一家照常说：{:?}", b.titles());
 
-    wait(COOLDOWN).await;
-    assert_eq!(b.titles().len(), 3, "{:?}", b.titles());
-    let last = b.bodies().last().cloned().unwrap_or_default();
-    assert!(
-        last.contains("relay") && last.contains("又发生 9 次"),
-        "{last}"
-    );
     wait(COOLDOWN * 3).await;
-    assert_eq!(b.titles().len(), 3, "之后没有再拦下，不再说");
+    assert_eq!(b.titles().len(), 2, "冷却结束时不补：{:?}", b.titles());
+    assert_eq!(
+        b.bus
+            .list()
+            .iter()
+            .find(|n| n.key == "toolwall:relay")
+            .map(|n| n.count),
+        Some(10)
+    );
+    b.bus.ingest(blocked("relay"), T0 + 1_000_000);
+    assert_eq!(
+        b.titles().len(),
+        3,
+        "冷却过后再拦下，当场弹：{:?}",
+        b.titles()
+    );
 }
 
-/// 这一阵子拦下的，用户在冷却结束之前都看过了：没有要合成的
+/// 这一阵子拦下的，用户在冷却结束之前都看过了：之后什么都不说
 #[tokio::test(start_paused = true)]
-async fn a_burst_that_was_read_before_the_cooldown_ended_is_not_summed_up() {
+async fn a_burst_that_was_read_before_the_cooldown_ended_stays_quiet() {
     let b = bed();
     for i in 0..3 {
         b.bus.ingest(blocked("relay"), T0 + i * 1_000);
@@ -820,11 +829,10 @@ async fn a_plugin_failing_on_every_answer_is_gathered_not_flooded() {
     assert_eq!(bus.list()[0].count, 52);
     assert_eq!(pushes(), after_first + 2);
 
-    // 冷却结束时合成一条说，带上这期间又发生的次数
+    // 冷却结束时不补发：次数在列表里
     wait(COOLDOWN).await;
     let all = shown.lock().unwrap().clone();
-    assert_eq!(all.len(), 2, "{all:?}");
-    assert!(all[1].contains("51"), "{}", all[1]);
+    assert_eq!(all.len(), 1, "{all:?}");
 }
 
 /// 两个插件各攒各的：一个在攒着，另一个的头一次照样立刻说
@@ -1058,7 +1066,7 @@ async fn hits_that_arrive_together_are_told_in_one_notification() {
     }
 }
 
-/// 同一条规则 5 分钟内至多通知一次；冷却结束时还有没说的，合成一条再说
+/// 同一条规则 5 分钟内至多通知一次；冷却结束时不补发
 #[tokio::test(start_paused = true)]
 async fn the_same_rule_is_told_at_most_once_in_five_minutes() {
     let b = bed();
@@ -1072,13 +1080,17 @@ async fn the_same_rule_is_told_at_most_once_in_five_minutes() {
     wait(MERGE).await;
     assert_eq!(b.titles().len(), 1, "冷却期间不再弹：{:?}", b.titles());
     assert_eq!(b.bus.list()[0].count, 3, "次数照记");
-    wait(COOLDOWN).await;
-    wait(MERGE).await;
-    assert_eq!(b.titles().len(), 2, "冷却结束时说一次：{:?}", b.titles());
     // 另一条规则不受这一条的冷却影响
     for s in rules::from_event(&secrets("relay", &[("email", true)])) {
         b.bus.ingest(s, T0 + 130_000);
     }
+    wait(MERGE).await;
+    assert_eq!(b.titles().len(), 2, "{:?}", b.titles());
+    wait(COOLDOWN).await;
+    wait(MERGE).await;
+    assert_eq!(b.titles().len(), 2, "冷却结束时不补：{:?}", b.titles());
+    // 冷却过后再命中，当场弹
+    b.bus.ingest(hit(), T0 + 600_000);
     wait(MERGE).await;
     assert_eq!(b.titles().len(), 3, "{:?}", b.titles());
 }
@@ -1536,16 +1548,6 @@ fn the_bus_adds_its_own_words_in_english_too() {
         assert_eq!(
             b.titles().last().unwrap(),
             "Resolved: Gateway Not Forwarding"
-        );
-
-        // 冷却结束时合成的那一条
-        assert_eq!(
-            summed_up("It matched the rule.", 1),
-            "It matched the rule. (1 more time since the last notification)"
-        );
-        assert_eq!(
-            summed_up("It matched the rule.", 9),
-            "It matched the rule. (9 more times since the last notification)"
         );
     });
 }
