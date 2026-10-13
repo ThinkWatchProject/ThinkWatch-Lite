@@ -282,10 +282,11 @@ export function UpstreamDialog({
     setAdoptedFrom(p.name);
   }, [signedIn, adoptedFrom, ov]);
 
-  // 「自动识别」此刻会判成什么、密钥放在哪个请求头。只看地址和选定的协议，不联网
+  // 「自动识别」此刻会判成什么、密钥放在哪个请求头。只看地址和选定的协议，不联网。
+  // 选定了协议，地址还没填也知道密钥放哪个头
   useEffect(() => {
     const url = form.baseUrl.trim();
-    if (!url) {
+    if (!url && !form.protocol) {
       setPreview(null);
       return;
     }
