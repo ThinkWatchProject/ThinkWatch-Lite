@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LiveBatch } from "@/types";
 import { AnswerReader, dialectOf, readRequest, type ClientDialect } from "./dialect";
 import { LiveContent, utf8Bytes } from "./live";
-import { bodyText, fromDetail, fromLive } from "./wireModel";
+import { bodyText, caughtUp, fromDetail, fromLive } from "./wireModel";
 
 const sse = (events: [string | null, unknown][]) =>
   events.map(([e, d]) => `${e ? `event: ${e}\n` : ""}data: ${typeof d === "string" ? d : JSON.stringify(d)}\n\n`).join("");
@@ -287,5 +287,75 @@ describe("实时内容", () => {
     expect(utf8Bytes("ab")).toBe(2);
     expect(utf8Bytes("中文")).toBe(6);
     expect(utf8Bytes("😀")).toBe(4);
+  });
+
+  describe("存下的那一份赶上实时收到的了没有", () => {
+    const view = (text: string) => ({ text, original_len: text.length, truncated: false });
+    const stored = (over: Partial<Record<string, unknown>> = {}) =>
+      ({
+        row: { routing: { attempts: [{ provider: "anthropic" }] } },
+        heads: [],
+        request_body: null,
+        request_after_plugins: null,
+        response_body: null,
+        upstream_request_body: null,
+        upstream_response_body: null,
+        plugins: [],
+        in_flight: false,
+        ...over,
+      }) as unknown as Parameters<typeof caughtUp>[0];
+    const someHead = [{ side: "client", dir: "request", attempt: 0, line: "POST /v1/messages", headers: [] }];
+    /** 一个流完了的请求：客户端收到的回答就是上游的原话 */
+    const finished = (clientAnswer = "data: {}\n\n") => {
+      const live = new LiveContent();
+      live.apply(
+        batch([
+          head("client", "request", 0, "POST /v1/messages HTTP/1.1"),
+          body("client", "request", 0, '{"messages":[]}'),
+          head("upstream", "request", 1, "POST https://api.anthropic.com/v1/messages"),
+          head("upstream", "response", 1, "HTTP/2 200"),
+          head("client", "response", 0, "HTTP/1.1 200"),
+          body("upstream", "response", 1, "data: {}\n\n"),
+          body("client", "response", 0, clientAnswer),
+        ]),
+      );
+      return live;
+    };
+
+    it("请求那一行和请求体先到、回答还没落盘：没赶上，接着画实时收到的", () => {
+      const live = finished();
+      // 计价事件到的那一刻：请求体一开始就存了，报文头和回答还在打码、排队
+      expect(caughtUp(stored({ request_body: view("{}") }), live)).toBe(false);
+      expect(caughtUp(stored({ request_body: view("{}"), heads: someHead }), live)).toBe(false);
+      expect(
+        caughtUp(stored({ request_body: view("{}"), heads: someHead, response_body: view("data: {}\n\n") }), live),
+      ).toBe(true);
+    });
+
+    it("还在跑的不算赶上", () => {
+      const all = { request_body: view("{}"), heads: someHead, response_body: view("data: {}\n\n") };
+      expect(caughtUp(stored({ ...all, in_flight: true }), finished())).toBe(false);
+    });
+
+    it("交给客户端的和上游的原话不一样：上游那一份也到了才算，否则 response_body 可能还是上游的原话", () => {
+      const live = finished('data: {"choices":[]}\n\n');
+      const base = { request_body: view("{}"), heads: someHead, response_body: view("data: {}\n\n") };
+      expect(caughtUp(stored(base), live)).toBe(false);
+      expect(caughtUp(stored({ ...base, upstream_response_body: view("data: {}\n\n") }), live)).toBe(true);
+    });
+
+    it("回答那一跳另发了请求体：存下的也要有", () => {
+      const live = finished();
+      live.apply(batch([body("upstream", "request", 1, '{"messages":[],"x":1}')]));
+      const base = { request_body: view("{}"), heads: someHead, response_body: view("data: {}\n\n") };
+      expect(caughtUp(stored(base), live)).toBe(false);
+      expect(caughtUp(stored({ ...base, upstream_request_body: view("{}") }), live)).toBe(true);
+    });
+
+    it("没有实时内容的：有一样落盘了就算", () => {
+      expect(caughtUp(stored(), null)).toBe(false);
+      expect(caughtUp(stored({ request_body: view("{}") }), null)).toBe(true);
+      expect(caughtUp(stored({ request_body: view("{}") }), new LiveContent())).toBe(true);
+    });
   });
 });

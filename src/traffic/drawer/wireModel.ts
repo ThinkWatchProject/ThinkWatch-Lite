@@ -200,7 +200,41 @@ export function fromLive(live: LiveContent, d: RequestDetail): WireModel {
   return { client, upstream, afterPlugins: null };
 }
 
-/** 存下的详情里有没有这些报文（落盘了）：请求一结束取回来的那一份，正文可能晚几毫秒才到 */
-export function landed(d: RequestDetail): boolean {
-  return !d.in_flight && (d.heads.length > 0 || d.request_body !== null || d.response_body !== null);
+/** 实时收到过这一段的正文（空的不算：空的不落盘） */
+const had = (s: Segment | undefined): s is Segment => s !== undefined && s.hasBody && s.bytes > 0;
+
+/** 两份实时的正文不是同一份 */
+function differs(a: Segment, b: Segment): boolean {
+  return a.bytes !== b.bytes || a.chunks.length !== b.chunks.length || a.chunks.some((c, i) => c !== b.chunks[i]);
+}
+
+/**
+ * 存下的那一份赶上实时收到的了没有：请求结束了，实时收到过的报文头、正文，存下的里面都有了。
+ *
+ * **请求那一行和正文分两条线程落盘**（core 的 `tw_store::task`）：计价事件到的时候那一行已经在
+ * 库里，请求体在请求一开始就存了，报文头和回答却要等请求结束、打完码才写。只看「有一样落盘了」
+ * 的话，取回来的那一份里回答还没到，「内容」就从实时的那一份换成了「未保存」。
+ *
+ * 交给客户端的回答和上游的原话不一样（转换了格式、回答钩子、回答过滤）时两份都存，客户端那一份
+ * 还没落盘时 `response_body` 是上游的原话：上游那一份也要到了才算。没有实时内容的（没订上、
+ * 订阅前就结束了），有一样落盘了就算
+ */
+export function caughtUp(d: RequestDetail, live: LiveContent | null): boolean {
+  if (d.in_flight) return false;
+  if (live === null || live.order.length === 0) {
+    return d.heads.length > 0 || d.request_body !== null || d.response_body !== null;
+  }
+  const anyHead = live.order.some((k) => live.segments.get(k)?.head);
+  if (anyHead && d.heads.length === 0) return false;
+  if (had(live.get("client", "request", 0)) && d.request_body === null) return false;
+  const attempts = live.attempts();
+  const serving = attempts[attempts.length - 1];
+  if (serving !== undefined && had(live.get("upstream", "request", serving)) && d.upstream_request_body === null) {
+    return false;
+  }
+  const cres = live.get("client", "response", 0);
+  if (!had(cres)) return true;
+  if (d.response_body === null) return false;
+  const up = serving === undefined ? undefined : live.get("upstream", "response", serving);
+  return !(had(up) && differs(cres, up) && d.upstream_response_body === null);
 }

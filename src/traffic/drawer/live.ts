@@ -131,19 +131,25 @@ let seq = 0;
 const subId = (id: number) => `${id}.${Date.now().toString(36)}.${(seq += 1)}`;
 
 /**
- * 请求 `id` 在跑时订阅它的实时内容（`on`）。返回收到的全部，还没订过是 null。
+ * 请求 `id` 在跑时订阅它的实时内容（`start`）。返回收到的全部，还没订过是 null。
  *
  * - **每一帧最多重画一次**：内容一批一批来（Rust 那边攒了 30 毫秒），重画跟着显示器的节拍走
  * - **订阅结束时**（收到 `end`、断了、没订上）调一次 `onClosed`：该去取存下的详情了
- * - **请求结束、浮层关了、换了一条请求时退订**；`on` 变成 false 之后收到的那一份留着，画到
- *   存下的那一份取回来为止
+ * - **订上了就订到它自己结束为止**，`start` 变回 false 也不退订：请求结束的消息（计价事件）
+ *   可能比最后那一截内容和 `end` 先到，那时就退订的话，回答少了结尾，也不会再去取存下的那一份
+ * - 浮层关了、换了一条请求时退订；收到的那一份留着，画到存下的那一份赶上它为止
  * - 先听、再订阅：补发的那一批可能比订阅的应答先到
  */
-export function useLiveContent(id: number, on: boolean, onClosed: () => void): LiveContent | null {
+export function useLiveContent(
+  id: number,
+  start: boolean,
+  onClosed: (live: LiveContent) => void,
+): LiveContent | null {
   const [live, setLive] = useState<LiveContent | null>(null);
   const [, setVersion] = useState(0);
   const closedCb = useRef(onClosed);
   closedCb.current = onClosed;
+  const on = start || live !== null;
 
   useEffect(() => {
     if (!on) return;
@@ -160,7 +166,7 @@ export function useLiveContent(id: number, on: boolean, onClosed: () => void): L
       if (frame === 0) frame = requestAnimationFrame(paint);
     };
     const closed = () => {
-      if (!gone) closedCb.current();
+      if (!gone) closedCb.current(store);
     };
     const un = subscribe<LiveBatch>("request-live", (e) => {
       if (e.payload.sub !== sub || store.closed) return;

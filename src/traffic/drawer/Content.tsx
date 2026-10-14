@@ -14,7 +14,7 @@ import type { LiveContent } from "./live";
 import { Parsed } from "./Parsed";
 import { Raw } from "./Raw";
 import { requestDrawerText } from "./RequestDrawer.i18n";
-import { fromDetail, fromLive, landed } from "./wireModel";
+import { caughtUp, fromDetail, fromLive } from "./wireModel";
 
 export type ContentView = "parsed" | "raw";
 
@@ -39,8 +39,8 @@ export function useContentView(): [ContentView | null, (v: ContentView) => void]
  * 请求详情的「内容」：**解析**（按对话读出来）和**原始报文**（报文原样，客户端一侧、上游一侧）。
  *
  * 在跑的请求看的是实时内容（`live`），一边收一边长；请求结束、存下的那一份取回来之后换成存下的
- * —— 两种整理成同一个样子（`wireModel`），换的那一下画面不跳。存下的那一份还没落盘（请求刚
- * 结束的那几毫秒）时接着画实时收到的。
+ * —— 两种整理成同一个样子（`wireModel`），换的那一下画面不跳。存下的那一份还没赶上实时收到的
+ * （回答比请求那一行晚落盘，`caughtUp`）时接着画实时收到的。
  *
  * 安全命中的那几段（脱敏的凭据、它的占位符、可疑的工具调用、内容规则命中的字）在两种看法里都
  * 标出来，颜色和安全日志里的一样（`needlesOf`）。
@@ -61,7 +61,7 @@ export function Content({
   const running = d.in_flight;
   const dialect = dialectOf(d.row.path, d.row.translated?.from);
   const view: ContentView = chosen ?? (dialect ? "parsed" : "raw");
-  const fromStream = live !== null && live.order.length > 0 && (running || !landed(d));
+  const fromStream = live !== null && live.order.length > 0 && (running || !caughtUp(d, live));
   const version = live?.version ?? 0;
   const model = useMemo(
     () => (fromStream && live ? fromLive(live, d) : fromDetail(d)),

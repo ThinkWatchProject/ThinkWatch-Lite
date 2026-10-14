@@ -21,13 +21,13 @@ import { PanelHeader, PanelHeaderSkeleton, PanelSkeleton } from "../PanelHeader"
 import { stateOf, type DrawerState } from "./parts";
 import { Content, useContentView } from "./Content";
 import { dialectOf } from "./dialect";
-import { useLiveContent } from "./live";
+import { type LiveContent, useLiveContent } from "./live";
 import { Replay } from "./Replay";
 import { requestDrawerText } from "./RequestDrawer.i18n";
 import { Routing } from "./Routing";
 import { Timeline } from "./Timeline";
 import { Usage } from "./Usage";
-import { landed } from "./wireModel";
+import { caughtUp } from "./wireModel";
 
 type Tab = "timeline" | "routing" | "payload" | "usage" | "replay";
 
@@ -136,24 +136,27 @@ function Detail({ id, onClose }: { id: number; onClose: () => void }) {
     };
   }, []);
   /*
-    **实时内容结束了，取存下的那一份。**结局和正文是分开落盘的，正文可能晚几毫秒才到：取回来的
-    还在跑、或者还没有报文，隔一会儿再取，几次之后照取到的画
+    **实时内容结束了，取存下的那一份。**结局和正文是分开落盘的，回答可能晚一阵才到：取回来的
+    还在跑、或者还没赶上实时收到的（`caughtUp`），隔一会儿再取，几次之后照取到的画
   */
-  const settle = useCallback(async () => {
-    let last: RequestDetail | null = null;
-    for (const ms of [0, 150, 400, 1_000, 2_500]) {
-      if (ms) await new Promise((r) => setTimeout(r, ms));
-      if (!mounted.current) return;
-      try {
-        last = await call("RequestDetail", null, id);
-        if (landed(last)) break;
-      } catch {
-        // 下一轮再取
+  const settle = useCallback(
+    async (live: LiveContent) => {
+      let last: RequestDetail | null = null;
+      for (const ms of [0, 150, 400, 1_000, 2_500]) {
+        if (ms) await new Promise((r) => setTimeout(r, ms));
+        if (!mounted.current) return;
+        try {
+          last = await call("RequestDetail", null, id);
+          if (caughtUp(last, live)) break;
+        } catch {
+          // 下一轮再取
+        }
       }
-    }
-    if (last && mounted.current) setD(last);
-  }, [id]);
-  const live = useLiveContent(id, running && sawContent, () => void settle());
+      if (last && mounted.current) setD(last);
+    },
+    [id],
+  );
+  const live = useLiveContent(id, running && sawContent, (l) => void settle(l));
 
   useEffect(() => {
     if (!running) return;
