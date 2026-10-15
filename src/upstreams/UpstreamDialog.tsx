@@ -19,6 +19,7 @@ import { notify } from "@/ui/notify";
 import type {
   BedrockDraft,
   ImportProposal,
+  ModelRow,
   Overview,
   ProviderPreview,
   ProviderTestResult,
@@ -27,6 +28,7 @@ import type {
   SheetRef,
   ZaiFamily,
 } from "@/types";
+import { AliasDialog } from "@/aliases/AliasDialog";
 import { useAccountLogin, type AccountLogin, type LoginAccount } from "./accountLogin";
 import { AccountLine, AccountPanel, AccountSummary } from "./AccountPanel";
 import { api } from "./api";
@@ -43,7 +45,8 @@ import {
 import { coreText, errorText, planLabel, plain, protocolLabel, shortUrl } from "./labels";
 import { useManualEntry } from "./ManualModelInput";
 import { addToList, unionModels } from "./manualModels";
-import { ModelsSection, catalogOf, type ModelCatalog } from "./ModelsSection";
+import { ModelSpecDialog } from "./ModelSpecDialog";
+import { ModelsSection, catalogOf, type ModelActions, type ModelCatalog } from "./ModelsSection";
 import { DialogError, FormItem, ProviderTile, StepNav } from "./parts";
 import { CUSTOM, ZAI_ENDPOINTS, accountKind, presetById } from "./presets";
 import type { Relogin } from "./ReloginDialog";
@@ -67,6 +70,7 @@ import {
   inScope,
   modelsMissing,
   newSheetName,
+  sheetPrefill,
   retarget,
   sheetMissing,
   sheetToCreate,
@@ -265,6 +269,10 @@ export function UpstreamDialog({
     | { kind: "sheet"; name: string | null; add?: string[] }
     /** 导入链接带来的新价目表：改的是草稿，不写配置 */
     | { kind: "draft-sheet"; add?: string[] }
+    /** 「模型」一节里那一行的规格 */
+    | { kind: "spec"; row: ModelRow }
+    /** 「模型」一节里给这个模型起别名 */
+    | { kind: "alias"; model: string }
   >(null);
 
   /**
@@ -485,6 +493,39 @@ export function UpstreamDialog({
   }
 
   const original = saved?.name ?? null;
+
+  /**
+   * 为这几个模型设置价格：「计费」一节和「模型」一节共用。导入链接带来的新价目表还没建：改
+   * 草稿；选了自定义价目表：编辑它，这几个模型各加一条覆盖；用的是默认价目表：新建一张
+   * （见下面 `sheet` 那个对话框的预填）
+   */
+  function priceModels(models: string[]) {
+    if (draftSheet) setNested({ kind: "draft-sheet", add: models });
+    else setNested({ kind: "sheet", name: form.pricing || null, add: models });
+  }
+
+  /** 写了规格、别名之后：清单按已保存的这一家重读（别名标记、手写的上下文窗口跟着变） */
+  function reloadCatalog() {
+    if (!saved || connectionChanged(form, saved)) return;
+    api
+      .providerModels(saved.name)
+      .then((v) => setCatalog(catalogOf(v)))
+      .catch((e) => setError(errorText(e)));
+  }
+
+  /**
+   * 「模型」一节里设置规格、价格、别名的入口。**已在配置里的上游才有**：规格和别名按已保存的
+   * 名字写；新建、还没登录建出来的上游没处写
+   */
+  const modelActions: ModelActions | undefined =
+    saved && ready
+      ? {
+          spec: (model) => setNested({ kind: "spec", row: catalog?.rows?.[model] ?? bareRow(model) }),
+          price: priceModels,
+          alias: (model) => setNested({ kind: "alias", model }),
+        }
+      : undefined;
+
   const missing =
     section === "connection"
       ? signedIn
@@ -836,6 +877,7 @@ export function UpstreamDialog({
               loading={catalogLoading || (testing && catalog == null)}
               refreshing={refreshing || testing}
               onRefresh={refreshModels}
+              actions={modelActions}
             />
           )}
           {section === "billing" && (
@@ -849,11 +891,7 @@ export function UpstreamDialog({
               onNewSheet={() => setNested({ kind: "sheet", name: null })}
               onEditSheet={(name) => setNested({ kind: "sheet", name })}
               onEditNewSheet={() => setNested({ kind: "draft-sheet" })}
-              onPriceModels={(models) =>
-                draftSheet
-                  ? setNested({ kind: "draft-sheet", add: models })
-                  : setNested({ kind: "sheet", name: form.pricing || null, add: models })
-              }
+              onPriceModels={priceModels}
             />
           )}
         </div>
@@ -961,7 +999,7 @@ export function UpstreamDialog({
             mode={
               nested.name
                 ? { kind: "edit", name: nested.name, add: nested.add }
-                : { kind: "create", prefill: nested.add ? { models: nested.add, usedBy: [] } : undefined }
+                : { kind: "create", prefill: nested.add ? sheetPrefill(nested.add, original, ov.price_sheets) : undefined }
             }
             ov={ov}
             configVersion={base}
@@ -1002,6 +1040,32 @@ export function UpstreamDialog({
               const name = was?.name == null && sheet.name.trim() === newSheetName(form) ? null : sheet.name.trim();
               const next: NewSheet = { name, multiplier: sheet.multiplier, models: sheet.models, chosen: true };
               set({ newSheet: next });
+            }}
+          />
+        )}
+        {saved && (
+          <ModelSpecDialog
+            open={nested?.kind === "spec"}
+            onOpenChange={(o) => !o && setNested(null)}
+            provider={saved.name}
+            row={nested?.kind === "spec" ? nested.row : null}
+            configVersion={base}
+            onSaved={(version) => {
+              setBase(version);
+              reloadCatalog();
+              onChanged();
+            }}
+          />
+        )}
+        {nested?.kind === "alias" && (
+          <AliasDialog
+            open
+            onOpenChange={(o) => !o && setNested(null)}
+            initial={{ models: [nested.model] }}
+            onSaved={(version) => {
+              setBase(version);
+              reloadCatalog();
+              onChanged();
             }}
           />
         )}
@@ -1065,6 +1129,14 @@ function withModelsAndBilling(adopted: UpstreamForm, f: UpstreamForm): UpstreamF
     billing: f.billing,
     newSheet: f.newSheet,
   };
+}
+
+/**
+ * 清单里还没有的模型（手动添加了、还没保存）在规格对话框里的那一行：什么都不知道，占位都
+ * 写「价目表中没有」
+ */
+function bareRow(id: string): ModelRow {
+  return { id, enabled: true, estimated: false, aliases: [], manual: true, listed: false };
 }
 
 /** 链接写的上下文窗口在模型表里先显示出来（创建后写进规格）。core 记着手写的照旧优先 */

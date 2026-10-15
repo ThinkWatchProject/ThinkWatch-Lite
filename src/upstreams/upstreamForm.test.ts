@@ -18,6 +18,7 @@ import {
   modelsMissing,
   oauthKept,
   retarget,
+  sheetPrefill,
   signedInKey,
   siteLocked,
   toInput,
@@ -826,5 +827,23 @@ describe("高级设置自动展开", () => {
     expect(advancedNonDefault(formFromView(view({ headers: [] })))).toBe(false);
     expect(advancedNonDefault(formFromView(view({ headers: [], max_concurrent: 2 })))).toBe(true);
     expect(advancedNonDefault(formFromView(view({ headers: [], proxy: "hk", on_proxy_fail: "direct" })))).toBe(true);
+  });
+});
+
+describe("设置价格时新建价目表的预填", () => {
+  it("已在配置里的上游：由它使用，名称用它的名字", () => {
+    expect(sheetPrefill(["glm-5"], "relay", [{ name: "office" }])).toEqual({
+      models: ["glm-5"],
+      usedBy: ["relay"],
+      name: "relay",
+    });
+  });
+
+  it("名字被别的价目表占了：名称留空由人起，照样由它使用", () => {
+    expect(sheetPrefill(["glm-5"], "relay", [{ name: "relay" }])).toEqual({ models: ["glm-5"], usedBy: ["relay"] });
+  });
+
+  it("还没保存的上游不在配置里：不预选、不预填名称", () => {
+    expect(sheetPrefill(["glm-5"], null, [])).toEqual({ models: ["glm-5"], usedBy: [] });
   });
 });

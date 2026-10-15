@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import type { ModelRow } from "@/types";
-import { catalogOf, modelCount } from "./ModelsSection";
+import type { ModelRow, ResolvedPrice } from "@/types";
+import { catalogOf, modelCount, unknownContext } from "./ModelsSection";
 
 // 断言按中文写：不随跑测试那台机器的系统语言变
 beforeAll(() => setLang("zh"));
@@ -54,5 +54,29 @@ describe("编辑对话框的模型一节", () => {
     } finally {
       setLang("zh");
     }
+  });
+
+  it("每一行按模型 ID 记下：别名标记、规格对话框照它", () => {
+    const c = catalogOf({
+      provider: "relay",
+      source: "discovered",
+      status: "listed",
+      fetching: false,
+      models: [row({ id: "glm-5", aliases: ["glm"] }), row({ id: "kimi-k3" })],
+    });
+    expect(c.rows?.["glm-5"]?.aliases).toEqual(["glm"]);
+    expect(Object.keys(c.rows ?? {})).toEqual(["glm-5", "kimi-k3"]);
+  });
+
+  it("上下文窗口未知：手写的没有、价目表里也没有；价格还没查回来的不算", () => {
+    const price = (model: string, max?: number): ResolvedPrice => ({ model, estimated: false, max_input_tokens: max });
+    const prices = {
+      a: price("a", 200_000),
+      b: price("b"),
+      c: price("c"),
+    };
+    // c 手写过；d 还没查回来
+    expect(unknownContext(["a", "b", "c", "d"], prices, { c: 1_000_000 })).toEqual(["b"]);
+    expect(unknownContext(["a", "b"], prices, undefined)).toEqual(["b"]);
   });
 });

@@ -49,7 +49,8 @@ const MAX_SUGGESTIONS = 50;
  *
  * 红字是 core 说的问题，不能保存；黄字是要留意的，可以保存。
  *
- * 挂载方：别名标签（新建、编辑），上游模型弹窗（「起别名…」，`initial.models` 是那个模型）。
+ * 挂载方：别名标签（新建、编辑），上游模型弹窗和编辑上游对话框的「模型」一节（「起别名…」，
+ * `initial.models` 是那个模型）。
  */
 export function AliasDialog(props: {
   open: boolean;
@@ -58,7 +59,8 @@ export function AliasDialog(props: {
   editing?: string;
   /** 新建时预填。编辑时不用给：模型按原名从 core 读 */
   initial?: Partial<AliasInput>;
-  onSaved?(): void;
+  /** 写完了。`version`：写完之后的配置版本（编辑上游对话框里打开的，那边接着用它） */
+  onSaved?(version: string): void;
 }) {
   const { open, onOpenChange, editing } = props;
   return (
@@ -89,7 +91,7 @@ function Body({
 }: {
   editing?: string;
   initial?: Partial<AliasInput>;
-  onSaved?(): void;
+  onSaved?(version: string): void;
   onClose: () => void;
 }) {
   const t = useText(aliasDialogText);
@@ -246,18 +248,20 @@ function Body({
     setError(null);
     const body: AliasSave = { alias: { name: trimmed, models }, base_version: base };
     try {
+      let version: string;
       if (editing != null) {
         const w = await api.updateAlias(editing, body);
+        version = w.version;
         const refs = refsText(w.renamed_in, t);
         if (trimmed !== editing && refs) notify.success(t.renamed(editing, trimmed), t.renamedIn(refs));
       } else {
-        await api.createAlias(body);
+        version = (await api.createAlias(body)).version;
       }
       // 列着别名的几处（别名标签、模型建议、上游模型弹窗的别名标记）
       invalidate("aliases");
       invalidate("known-models");
       invalidate("upstream-models:");
-      onSaved?.();
+      onSaved?.(version);
       onClose();
     } catch (e) {
       setError(errorText(e));

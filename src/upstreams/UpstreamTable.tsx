@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { ChevronDownIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Resource } from "@/lib/resource";
 import { Badge } from "@/ui/badge";
@@ -53,6 +54,8 @@ export interface UpstreamActions {
   refreshBalance: (name: string) => void;
   /** 打开编辑对话框的「模型」一节：启用范围、手动添加的模型 */
   editModels: (name: string) => void;
+  /** 为这家的这几个模型设置价格：打开价目表对话框（用着自定义价目表就编辑它，否则新建） */
+  setPrices: (name: string, models: string[]) => void;
   /** ChatGPT 账号上游：编辑对话框的「账号」一节（额度与重置卡） */
   account: (name: string) => void;
   /** 流量页，只看经这个上游的请求 */
@@ -162,6 +165,7 @@ export function UpstreamTable({
                   configVersion={configVersion}
                   onChanged={onChanged}
                   onEdit={() => actions.editModels(p.name)}
+                  onPrice={(model) => actions.setPrices(p.name, [model])}
                 />
                 <QuotaCell p={p} stats={stats} now={now} />
                 <DayCell p={p} stats={stats} slots={slots.get(p.name)} />
@@ -411,12 +415,15 @@ function ModelsCell({
   configVersion,
   onChanged,
   onEdit,
+  onPrice,
 }: {
   p: ProviderView;
   busy: boolean;
   configVersion: string;
   onChanged: () => void;
   onEdit: () => void;
+  /** 为这个模型设置价格（价目表对话框，挂在页面上） */
+  onPrice: (model: string) => void;
 }) {
   const t = useText(upstreamTableText);
   const l = useText(labelsText);
@@ -445,7 +452,17 @@ function ModelsCell({
         >
           <span className="inline-flex items-center gap-1.5 tw-num">
             {fetching && <Spinner className="size-3 text-muted-foreground" />}
-            {face.count ?? "—"}
+            <span className="inline-flex items-center gap-0.5">
+              {face.count ?? "—"}
+              {/* 平时就带着箭头：看得出这一格能点开，展开时朝上 */}
+              <ChevronDownIcon
+                aria-hidden
+                className={cn(
+                  "size-3.5 text-muted-foreground transition-transform duration-(--motion-fast)",
+                  open && "rotate-180 text-foreground",
+                )}
+              />
+            </span>
           </span>
           {face.note && (
             <span className={cn("tw-label", face.warn ? "text-warning" : "text-muted-foreground")}>
@@ -453,7 +470,13 @@ function ModelsCell({
             </span>
           )}
         </PopoverTrigger>
-        <PopoverContent align="end" className="w-[26rem] gap-0 p-0">
+        <PopoverContent
+          align="end"
+          className="w-[30rem] gap-0 p-0"
+          // 弹层里的模型行有自己的右键菜单。弹层挂在这一行的 React 树里，右键会冒泡到上游那一行，
+          // 把上游的菜单也打开：在这里截住
+          onContextMenu={(e) => e.stopPropagation()}
+        >
           <ModelsPanel
             p={p}
             perToken={p.billing === "per-token"}
@@ -474,6 +497,10 @@ function ModelsCell({
             onSpec={(row) => {
               setOpen(false);
               setSpecFor(row);
+            }}
+            onPrice={(model) => {
+              setOpen(false);
+              onPrice(model);
             }}
           />
         </PopoverContent>

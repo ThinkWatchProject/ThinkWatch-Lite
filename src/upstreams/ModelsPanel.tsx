@@ -7,6 +7,7 @@ import { invalidate, useResource } from "@/lib/resource";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
+import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Skeleton } from "@/ui/skeleton";
 import { Spinner } from "@/ui/spinner";
 import { StatusLabel } from "@/ui/status-dot";
@@ -28,20 +29,21 @@ const FILTER_FROM = 10;
  * 点开「模型」一格看到的东西：这一家有哪些模型，是怎么知道的，没拿到的话
  * 原因和下一步。
  *
- * **启用范围在编辑对话框里改**，和上游其余设置走同一条路，这里给的是去那儿的入口。
- * 手动添加的模型（上游能服务、却没列进清单的）在这里加、在这里移除：「添加模型…」
- * 打开添加的对话框（`onAdd`），手动添加的那几行标「手动」，悬停给「移除」—— 可撤销，
+ * **启用范围在编辑对话框里改**，和上游其余设置走同一条路，这里给的是去那儿的入口（「管理
+ * 模型…」）。手动添加的模型（上游能服务、却没列进清单的）在这里加、在这里移除：「添加模型…」
+ * 打开添加的对话框（`onAdd`），手动添加的那几行标「手动」，行菜单里有「移除」—— 可撤销，
  * 不弹确认。上游也列了的手动模型照样标着、照样能移除：手动清单里有什么，这里一样不藏。
  *
  * 清单按上游缓存（`upstream-models:<名字>`）：再点开一次先画上一次的，后台再读。
  * 概览里这一家的获取状态一变（开始问了、问完了）就重读 —— 开着面板等它问完，
  * 也能看到结果。读的是 core 记下的答案，不联网。
  *
- * 列进了别名的模型，名字后面标出别名；悬停一行给「起别名…」（`onAlias`），打开新建别名的
- * 对话框，这个模型已经列为上游模型。
+ * 列进了别名的模型，名字后面标出别名。右边是单价（按量计费时，没有就标「未定价」）和上下文
+ * 窗口（不知道写「未知」）；在这一家手写过规格的，名字后面标「手动规格」，悬停说是哪几项。
  *
- * 右边的数是上下文窗口：在这一家手写过规格（上下文窗口或输出上限）的，名字后面标「手动
- * 规格」，悬停说是哪几项。悬停一行还给「规格…」（`onSpec`），打开手写规格的对话框。
+ * 每行行尾「…」常显，和右键是同一份菜单：「规格…」（`onSpec`，手写规格的对话框）、「设置
+ * 价格…」（`onPrice`，价目表对话框）、「起别名…」（`onAlias`，新建别名的对话框，这个模型已经
+ * 列为上游模型），手动添加的另有「移除」。和编辑对话框「模型」一节的菜单一样。
  */
 export function ModelsPanel({
   p,
@@ -51,6 +53,7 @@ export function ModelsPanel({
   onAdd,
   onAlias,
   onSpec,
+  onPrice,
   onChanged,
 }: {
   p: ProviderView;
@@ -66,6 +69,8 @@ export function ModelsPanel({
   onAlias?: (model: string) => void;
   /** 手写这个模型的规格。不给就不出「规格…」 */
   onSpec?: (model: ModelRow) => void;
+  /** 为这个模型设置价格（价目表对话框）。按量计费时才出「设置价格…」 */
+  onPrice?: (model: string) => void;
   /** 改了配置之后（移除了手动添加的模型）：让概览重读 */
   onChanged?: () => void;
 }) {
@@ -238,6 +243,7 @@ export function ModelsPanel({
                     perToken={perToken}
                     onAlias={onAlias}
                     onSpec={onSpec}
+                    onPrice={onPrice}
                     onRemove={(row) => void remove(row)}
                   />
                 ))}
@@ -266,6 +272,7 @@ export function ModelsPanel({
                           perToken={perToken}
                           onAlias={onAlias}
                           onSpec={onSpec}
+                          onPrice={onPrice}
                           onRemove={(row) => void remove(row)}
                         />
                       ))}
@@ -316,12 +323,14 @@ function Row({
   perToken,
   onAlias,
   onSpec,
+  onPrice,
   onRemove,
 }: {
   m: ModelRow;
   perToken: boolean;
   onAlias?: (model: string) => void;
   onSpec?: (model: ModelRow) => void;
+  onPrice?: (model: string) => void;
   /** 从手动添加的模型里移除。只给手动添加的那几行 */
   onRemove?: (model: ModelRow) => void;
 }) {
@@ -330,8 +339,6 @@ function Row({
     perToken && m.price
       ? `$${perMillion(m.price.input)} / $${perMillion(m.price.output)}${m.estimated ? t.estimated : ""}`
       : null;
-  const removable = m.manual && onRemove;
-  const actions = onAlias || onSpec || removable;
   /** 手写了哪几项：「上下文窗口 128k」「输出上限 16k」「支持推理」「不支持图片输入」 */
   const manual = [
     m.context_window_source === "manual" && m.context_window ? t.manualContext(compact(m.context_window)) : null,
@@ -341,11 +348,21 @@ function Row({
     m.reasoning_source === "manual" && m.reasoning != null ? t.manualReasoning(m.reasoning) : null,
     m.image_input_source === "manual" && m.image_input != null ? t.manualImageInput(m.image_input) : null,
   ].filter((x): x is string => x !== null);
-  return (
+  // 右键和行尾「…」共用这一份
+  const items: MenuItems = [
+    ...(onSpec ? [{ kind: "item" as const, label: t.specs, onSelect: () => onSpec(m) }] : []),
+    ...(perToken && onPrice ? [{ kind: "item" as const, label: t.setPrice, onSelect: () => onPrice(m.id) }] : []),
+    ...(onAlias ? [{ kind: "item" as const, label: t.makeAlias, onSelect: () => onAlias(m.id) }] : []),
+  ];
+  if (m.manual && onRemove) {
+    if (items.length > 0) items.push({ kind: "sep" });
+    items.push({ kind: "item", label: t.remove, onSelect: () => onRemove(m) });
+  }
+  const row = (
     <div
       className={cn(
-        "group/model relative flex items-center gap-2 rounded-md px-1.5 py-1",
-        actions && "hover:bg-muted/60 focus-within:bg-muted/60",
+        "group/model flex items-center gap-2 rounded-md py-1 pr-0.5 pl-1.5",
+        items.length > 0 && "hover:bg-muted/60 focus-within:bg-muted/60 data-[state=open]:bg-muted/60",
         !m.enabled && "text-muted-foreground",
       )}
     >
@@ -362,7 +379,6 @@ function Row({
           <span className="truncate">{t.aliasMark(a)}</span>
         </AliasMark>
       ))}
-      {/* 放在名字这一边，不放在数旁边：悬停时右边让给按钮，这些标记和它们的说明还看得见 */}
       {m.manual && <ManualTag listed={m.listed} />}
       {hasManual(m) && (
         <Badge
@@ -373,49 +389,29 @@ function Row({
           {t.manualSpecs}
         </Badge>
       )}
-      {/* 悬停时这一格让给「规格…」「起别名…」：叠在同一个位置，行高不跳 */}
-      <span
-        className={cn(
-          "ml-auto flex shrink-0 items-baseline gap-2",
-          actions && "group-focus-within/model:invisible group-hover/model:invisible",
-        )}
-      >
-        {price && (
+      <span className="ml-auto flex shrink-0 items-baseline gap-2">
+        {price ? (
           <span className="tw-num tw-label text-muted-foreground" title={t.priceTitle}>
             {price}
           </span>
+        ) : (
+          perToken && <span className="tw-label text-warning">{t.unpriced}</span>
         )}
         <span className="w-10 text-right tw-num tw-label text-muted-foreground" title={t.context}>
-          {m.context_window ? compact(m.context_window) : ""}
+          {m.context_window ? compact(m.context_window) : t.unknown}
         </span>
       </span>
-      {actions && (
-        <span className="absolute top-1/2 right-1.5 flex -translate-y-1/2 gap-1 opacity-0 group-hover/model:opacity-100 has-focus-visible:opacity-100">
-          {onSpec && (
-            <Button size="xs" variant="outline" className="h-5 bg-popover" onClick={() => onSpec(m)}>
-              {t.specs}
-            </Button>
-          )}
-          {onAlias && (
-            <Button size="xs" variant="outline" className="h-5 bg-popover" onClick={() => onAlias(m.id)}>
-              {t.makeAlias}
-            </Button>
-          )}
-          {removable && (
-            <Button
-              size="xs"
-              variant="outline"
-              className="h-5 bg-popover"
-              aria-label={t.removeLabel(m.id)}
-              onClick={() => onRemove(m)}
-            >
-              {t.remove}
-            </Button>
-          )}
+      {items.length > 0 ? (
+        <span className="-my-0.5 shrink-0">
+          <RowMenuButton items={items} label={t.actionsOf(m.id)} />
         </span>
+      ) : (
+        // 没有菜单的行也让出那一列，数和别的行对齐
+        <span aria-hidden className="w-6 shrink-0" />
       )}
     </div>
   );
+  return items.length > 0 ? <RowMenu items={items}>{row}</RowMenu> : row;
 }
 
 /** 清单还没读到：几行和模型行一样高的占位 */

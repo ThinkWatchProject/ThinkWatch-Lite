@@ -31,8 +31,8 @@ import { DialogError, FormItem } from "./parts";
  * 留空是什么意思，看占位就知道。推理、图片输入是三段：价目表 / 支持 / 不支持，价目表怎么说
  * 写在下面一行。
  *
- * 挂载方：上游表「模型」一格的弹窗（「规格…」）。对话框挂在弹窗外面：弹窗一收起，里面的
- * 东西就卸掉了。
+ * 挂载方：上游表「模型」一格的弹窗（「规格…」）、编辑上游对话框的「模型」一节（上下文窗口
+ * 那一格、行菜单的「规格…」）。对话框挂在弹窗外面：弹窗一收起，里面的东西就卸掉了。
  */
 export function ModelSpecDialog({
   open,
@@ -49,7 +49,8 @@ export function ModelSpecDialog({
   row: ModelRow | null;
   /** 概览里的配置版本。**只取打开那一刻的**，见 `Body` 的 `base` */
   configVersion: string;
-  onSaved?: () => void;
+  /** 写完了。`version`：写完之后的配置版本（编辑上游对话框里打开的，那边接着用它） */
+  onSaved?: (version: string) => void;
 }) {
   return (
     <Dialog open={open && row !== null} onOpenChange={onOpenChange}>
@@ -81,7 +82,7 @@ function Body({
   row: ModelRow;
   configVersion: string;
   onClose: () => void;
-  onSaved?: () => void;
+  onSaved?: (version: string) => void;
 }) {
   const t = useText(modelSpecDialogText);
   const c = useText(commonText);
@@ -110,7 +111,7 @@ function Body({
     setSaving(true);
     setError(null);
     try {
-      await api.setModelSpec({
+      const w = await api.setModelSpec({
         provider,
         model: row.id,
         ...spec,
@@ -120,7 +121,7 @@ function Body({
       invalidate(modelsKey(provider));
       invalidate("aliases");
       invalidate("known-models");
-      onSaved?.();
+      onSaved?.(w.version);
       onClose();
     } catch (e) {
       setError(errorText(e));

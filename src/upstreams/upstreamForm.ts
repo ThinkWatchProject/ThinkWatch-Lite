@@ -645,6 +645,20 @@ export function sheetMissing(f: UpstreamForm, sheets: readonly { name: string }[
 }
 
 /**
+ * 「设置价格」新建价目表时预填什么：要设价格的模型，**这个上游**（已在配置里时）—— 建好就由它
+ * 使用，下次再设价格编辑的就是这一张，不会再新建；名称用上游的名字（没被占用时，占用了就留空
+ * 由人起）。还没保存的上游不在配置里，用不了：留给对话框「保存」时选上
+ */
+export function sheetPrefill(
+  models: string[],
+  upstream: string | null,
+  sheets: readonly { name: string }[],
+): { models: string[]; usedBy: string[]; name?: string } {
+  if (!upstream) return { models, usedBy: [] };
+  return { models, usedBy: [upstream], name: sheets.some((s) => s.name === upstream) ? undefined : upstream };
+}
+
+/**
  * 这一家是 Bedrock：协议选的就是它，或者自动识别、地址是标准的 Bedrock 地址（core 按
  * 同一个规矩认）。**不等识别结果**：那是异步的，换地址的一瞬间会闪一下
  */

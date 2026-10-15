@@ -48,8 +48,11 @@ import { priceSheetDialogText } from "./PriceSheetDialog.i18n";
 import { defaultSheetUsers } from "./PriceSheetTable";
 
 export type PriceSheetDialogMode =
-  /** `prefill`：从「无法计价」那条提示进来，带着要设价格的模型和上游 */
-  | { kind: "create"; prefill?: { models: string[]; usedBy: string[] } }
+  /**
+   * `prefill`：从「无法计价」那条提示、上游的「设置价格」进来，带着要设价格的模型和上游。
+   * `name`：预填的名称（那个上游的名字，没被占用时）
+   */
+  | { kind: "create"; prefill?: { models: string[]; usedBy: string[]; name?: string } }
   /** `add`：打开后为这几个模型各加一条覆盖（从上游对话框的「设置价格」进来） */
   | { kind: "edit"; name: string; add?: string[] }
   | { kind: "duplicate"; from: string }
@@ -127,7 +130,9 @@ export function PriceSheetDialog({
   const [base] = useState(configVersion);
   const original =
     mode.kind === "edit" ? (ov.price_sheets.find((s) => s.name === mode.name) ?? null) : null;
-  const [name, setName] = useState(mode.kind === "draft" ? mode.sheet.name : "");
+  const [name, setName] = useState(
+    mode.kind === "draft" ? mode.sheet.name : mode.kind === "create" ? (mode.prefill?.name ?? "") : "",
+  );
   const [multiplier, setMultiplier] = useState(mode.kind === "draft" ? multiplierText(mode.sheet.multiplier) : "1.00");
   const [overrides, setOverrides] = useState<Record<string, PriceFields>>(mode.kind === "draft" ? mode.sheet.models : {});
   const [ratios, setRatios] = useState<Record<string, Ratios>>({});

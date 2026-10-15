@@ -40,7 +40,7 @@ import { ProxyDialog, type ProxyDialogMode } from "./ProxyDialog";
 import { ProxyTable, type ProxyCheck } from "./ProxyTable";
 import { LinkTestDialog, SpeedTestDialog, TestConnectionDialog } from "./TestDialogs";
 import { UpstreamDialog, type UpstreamDialogMode } from "./UpstreamDialog";
-import { formFromView, toInput } from "./upstreamForm";
+import { formFromView, sheetPrefill, toInput } from "./upstreamForm";
 import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
@@ -469,6 +469,17 @@ export default function UpstreamsPage({
                 refreshBalance,
                 editModels: (name) =>
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "models" } }),
+                // 用着自定义价目表：编辑它，这几个模型各加一条覆盖；用着默认的：新建一张，由这个
+                // 上游使用（之后再设价格编辑的就是这一张）
+                setPrices: (name, models) => {
+                  const pricing = ov.providers.find((x) => x.name === name)?.pricing;
+                  setDialog({
+                    kind: "sheet",
+                    mode: pricing
+                      ? { kind: "edit", name: pricing, add: models }
+                      : { kind: "create", prefill: sheetPrefill(models, name, ov.price_sheets) },
+                  });
+                },
                 account: (name) =>
                   setDialog({ kind: "upstream", mode: { kind: "edit", name, section: "account" } }),
                 traffic: (name) => nav.open("requests", { filter: { provider: name } }),
