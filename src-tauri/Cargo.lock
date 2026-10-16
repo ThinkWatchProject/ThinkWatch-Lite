@@ -82,7 +82,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.60.2",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -985,7 +985,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -1171,7 +1171,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2661,7 +2661,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.59.0",
 ]
 
 [[package]]
@@ -2996,7 +2996,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7d8fae84b431384b68627d0f9b3b1245fcf9f46f6c0e3dc902e9dce64edd1967"
 dependencies = [
  "libc",
- "windows-sys 0.61.2",
+ "windows-sys 0.45.0",
 ]
 
 [[package]]
@@ -3625,7 +3625,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3681,7 +3681,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4809,7 +4809,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4832,7 +4832,7 @@ dependencies = [
 
 [[package]]
 name = "thinkwatch-lite"
-version = "2026.10.21"
+version = "2026.10.22"
 dependencies = [
  "anyhow",
  "block2",
@@ -5335,8 +5335,8 @@ dependencies = [
 
 [[package]]
 name = "tw-api"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "serde",
  "serde_json",
@@ -5347,8 +5347,8 @@ dependencies = [
 
 [[package]]
 name = "tw-dialect"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "memchr",
  "serde",
@@ -5357,8 +5357,8 @@ dependencies = [
 
 [[package]]
 name = "tw-guard"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "aho-corasick",
  "base64 0.22.1",
@@ -5376,8 +5376,8 @@ dependencies = [
 
 [[package]]
 name = "tw-link"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "serde",
  "serde_json",
@@ -5403,8 +5403,8 @@ dependencies = [
 
 [[package]]
 name = "tw-types"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "serde",
  "ts-rs",
@@ -5412,8 +5412,8 @@ dependencies = [
 
 [[package]]
 name = "tw-watch"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "libc",
  "notify",
@@ -5423,8 +5423,8 @@ dependencies = [
 
 [[package]]
 name = "tw-yaml"
-version = "0.74.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.74.0#21e560cdfa0cb197d1688b329b18123547ce1d8f"
+version = "0.75.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.75.0#f040a92a2d509d24c21e8a460e25f6cd3db2cd39"
 dependencies = [
  "saphyr-parser",
  "thiserror 2.0.21",
@@ -5888,7 +5888,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.61.2",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
