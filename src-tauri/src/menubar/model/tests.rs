@@ -185,8 +185,8 @@ fn an_idle_menu_keeps_today_and_checks_for_updates_last() {
     assert_eq!(d.state, "运行中");
 }
 
-/// 「今日」那一块：今天的 token 是大字，下面一行次数、失败、费用 —— 和菜单栏上「token 在上、
-/// 费用在下」一个次序。失败数只在有失败时出现，用红字
+/// 「今日」那一块：今天的 token 是大字，下面一行次数、失败、费用。失败数只在有失败时出现，
+/// 用红字
 #[test]
 fn today_leads_with_tokens_and_puts_the_cost_last_in_the_small_line() {
     let mut s = running();
@@ -346,16 +346,28 @@ fn the_status_block_says_why_the_gateway_is_not_running() {
     });
 }
 
+/// 菜单栏上两行：今日 token 在上，最近一分钟的生成速度在下。**费用不上菜单栏**（用户说
+/// 金额没什么用），菜单里和悬停提示里照旧有
 #[test]
-fn the_bar_shows_todays_tokens_over_todays_cost() {
-    let (bar, _) = build(&running(), Style::Full);
-    assert_eq!(bar.numbers, Some(("3.1M".into(), "$41.20".into())));
+fn the_bar_shows_todays_tokens_over_the_generation_speed() {
+    let mut s = running();
+    s.rate = Some(42);
+    let (bar, _) = build(&s, Style::Full);
+    assert_eq!(bar.numbers, Some(("3.1M".into(), "42 t/s".into())));
     assert!(!bar.dim && !bar.alert && !bar.dot);
+    with_lang(Lang::En, || {
+        let tip = build(&s, Style::Full).0.tooltip;
+        assert!(tip.contains("$41.20 cost, 42 tokens/s"), "{tip}");
+    });
+    s.rate = Some(2_215);
+    assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "2.2k t/s");
+    // 最近一分钟没有跑完的请求：没有速度，不是 0
+    s.rate = None;
+    assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "— t/s");
 }
 
 /// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单里和悬停
-/// 提示里的金额是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面。**菜单栏上
-/// 只写数**（用户要求和 token 数一样短），那几个记号不上菜单栏
+/// 提示里的金额是下限的写「≥」，含估算的带「~」，缺着什么写在费用那一格下面
 #[test]
 fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
     use crate::i18n::{Lang, with_lang};
@@ -366,7 +378,7 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
         let d = dash(&rows);
         // 费用是那一行的最后一段
         let long = d.meta.last().unwrap().text.clone();
-        (bar.numbers.unwrap().1, long, d.note.clone(), bar.tooltip)
+        (long, d.note.clone(), bar.tooltip)
     };
     let base = Today {
         requests: 10,
@@ -375,27 +387,21 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
         ..Default::default()
     };
     with_lang(Lang::En, || {
-        let (short, long, note, _) = cost(base.clone());
-        assert_eq!(
-            (short.as_str(), long.as_str(), note),
-            ("$2.50", "$2.50", None)
-        );
+        let (long, note, _) = cost(base.clone());
+        assert_eq!((long.as_str(), note), ("$2.50", None));
 
-        let (short, long, note, tip) = cost(Today {
+        let (long, note, tip) = cost(Today {
             estimated_micros: 500_000,
             ..base.clone()
         });
-        assert_eq!(
-            (short.as_str(), long.as_str(), note),
-            ("$2.50", "~$2.50", None)
-        );
+        assert_eq!((long.as_str(), note), ("~$2.50", None));
         assert!(tip.contains("~$2.50 cost"), "{tip}");
 
-        let (short, _, note, _) = cost(Today {
+        let (long, note, _) = cost(Today {
             unpriced: 3,
             ..base.clone()
         });
-        assert_eq!(short, "$2.50");
+        assert_eq!(long, "≥$2.50");
         assert_eq!(note.as_deref(), Some("3 unpriced"));
         // 那一行放不下小字时它只在悬停提示里：提示里总有它
         let mut s = running();
@@ -415,12 +421,12 @@ fn todays_cost_says_when_it_is_estimated_or_only_a_lower_bound() {
         );
 
         // 一条都没算出钱：不是「今天花了 $0」
-        let (short, _, note, _) = cost(Today {
+        let (long, note, _) = cost(Today {
             cost_micros: 0,
             no_usage: 2,
             ..base.clone()
         });
-        assert_eq!(short, "$0.00");
+        assert_eq!(long, "≥$0.00");
         assert_eq!(note.as_deref(), Some("2 with no usage"));
     });
 }
@@ -434,7 +440,7 @@ fn an_unknown_day_is_two_dashes_and_a_quiet_day_is_zero() {
     s.today = Some(Today::default());
     assert_eq!(
         build(&s, Style::Full).0.numbers,
-        Some(("0".into(), "$0.00".into()))
+        Some(("0".into(), "— t/s".into()))
     );
 }
 
@@ -450,23 +456,13 @@ fn numbers_are_written_the_way_the_overview_writes_them() {
     ] {
         assert_eq!(tokens_short(n), want, "{n}");
     }
-    for (micros, want) in [
-        (0, "$0.00"),
-        (3_420_000, "$3.42"),
-        (99_990_000, "$99.99"),
-        (123_400_000, "$123"),
-        (1_234_000_000, "$1.2k"),
-        (12_345_000_000, "$12k"),
-    ] {
-        assert_eq!(cost_short(micros), want, "{micros}");
-    }
     assert_eq!(cost_long(1_234_567_000_000), "$1,234,567");
     assert_eq!(grouped(1234), "1,234");
     assert_eq!(elapsed(102_000), "1:42");
     assert_eq!(elapsed(3_800_000), "1:03:20");
 }
 
-/// **取整之后再定单位。**先定单位再取整，就会写出「10.0k」「1000k」「$10.0k」「60 分钟」
+/// **取整之后再定单位。**先定单位再取整，就会写出「10.0k」「1000k」「60 分钟」
 /// 这样多出一位、或者该进位却没进的数
 #[test]
 fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
@@ -481,16 +477,6 @@ fn a_number_that_rounds_up_to_the_next_unit_is_written_in_that_unit() {
         (999_950_001, "1.0B"),
     ] {
         assert_eq!(tokens_short(n), want, "{n}");
-    }
-    for (micros, want) in [
-        (99_994_999, "$99.99"),
-        (99_996_000, "$100"),
-        (999_499_999, "$999"),
-        (999_600_000, "$1.0k"),
-        (9_949_000_000, "$9.9k"),
-        (9_960_000_000, "$10k"),
-    ] {
-        assert_eq!(cost_short(micros), want, "{micros}");
     }
     assert_eq!(cost_long(999_994_000), "$999.99");
     assert_eq!(cost_long(999_996_000), "$1,000");

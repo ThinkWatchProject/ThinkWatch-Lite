@@ -300,7 +300,7 @@ pub enum Tone {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bar {
     pub style: Style,
-    /// 上面一行今日 token，下面一行今日费用。**None 画成两道破折号**：还不知道
+    /// 上面一行今日 token，下面一行最近一分钟的生成速度。**None 画成两道破折号**：还不知道
     pub numbers: Option<(String, String)>,
     /// 正在启动，或者不在运行
     pub dim: bool,
@@ -363,8 +363,8 @@ pub struct Meta {
 }
 
 /// 「今日」那一块：网关在运行时，菜单里打开主界面之后的第一样东西。上面一行左边「今日」、
-/// 右边网关的状态；中间是今天的 token，大字；下面一行是次数、失败、费用，和菜单栏上两行
-/// 「token 在上、费用在下」同一个次序；右边是今天每小时的 token
+/// 右边网关的状态；中间是今天的 token，大字；下面一行是次数、失败、费用；右边是今天每小时
+/// 的 token
 #[derive(Debug, Clone, PartialEq)]
 pub struct Dash {
     pub title: String,
@@ -563,11 +563,11 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
     Bar {
         style,
         numbers: if running {
+            // 费用不上菜单栏（用户说金额没什么用），在点开的菜单和悬停提示里。最近一分钟没有
+            // 跑完的请求就没有速度，写破折号：不是 0 token/秒
             s.today
                 .as_ref()
-                // **菜单栏上只写数，和 token 数一样**：「≥」「~」那套记号放不下也读不快，留给
-                // 点开的菜单和悬停提示（那里写着金额是下限、含估算，以及缺了哪些请求）
-                .map(|t| (tokens_short(t.tokens), cost_short(t.cost_micros)))
+                .map(|t| (tokens_short(t.tokens), rate_short(s.rate)))
         } else {
             // 不在运行时，上一次的数字已经不代表现在：画破折号，不画一个凝固的旧值
             None
@@ -642,6 +642,9 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
                     t.cost(cost_long)
                 )
             ));
+        }
+        if let Some(r) = s.rate {
+            parts.push(rate_long(r));
         }
         if let Some((provider, w)) = tight {
             let percent = w.used_percent.round() as i64;
@@ -932,9 +935,7 @@ fn dash(s: &Snapshot) -> Dash {
         state: state_text(&s.gateway).to_string(),
         tone: StateTone::Ok,
         server: s.remote.clone(),
-        rate: s
-            .rate
-            .map(|r| tr!(format!("{r} token/秒"), format!("{r} tokens/s"))),
+        rate: s.rate.map(rate_long),
         value: t.map_or_else(|| "—".to_string(), |t| tokens_short(t.tokens)),
         unit: tr!(
             "token",
@@ -1203,18 +1204,15 @@ pub fn tokens_short(n: i64) -> String {
     }
 }
 
-/// 菜单栏上的费用：`$41.20`、`$123`、`$1.2k`。**只写数，不带「≥」「~」**，和 token 数一样短；
-/// 美元符号照通行写法放在前面。位数少才放得下：满 100 去掉小数，满 1000 写成 k。和 token
-/// 数一样取整之后再定单位：99.996 是「$100」，9,960 是「$10k」
-pub fn cost_short(micros: i64) -> String {
-    let d = micros.max(0) as f64 / 1_000_000.0;
-    if let Some(s) = below(d, 2, 100.0).or_else(|| below(d, 0, 1_000.0)) {
-        return format!("${s}");
-    }
-    match below(d / 1_000.0, 1, 10.0) {
-        Some(s) => format!("${s}k"),
-        None => format!("${:.0}k", d / 1_000.0),
-    }
+/// 菜单栏上的生成速度：`42 t/s`、`2.2k t/s`，数字和 token 数同一套写法。没有速度是 `— t/s`
+pub fn rate_short(rate: Option<u32>) -> String {
+    let n = rate.map_or_else(|| "—".to_string(), |r| tokens_short(r.into()));
+    format!("{n} t/s")
+}
+
+/// 菜单和悬停提示里的生成速度：「42 token/秒」
+fn rate_long(r: u32) -> String {
+    tr!(format!("{r} token/秒"), format!("{r} tokens/s"))
 }
 
 /// 菜单里的费用：地方够，满 $1000 之前都写到分。$999.996 写到分是「$1000.00」，那已经是

@@ -165,10 +165,25 @@ async fn run(app: tauri::AppHandle) {
         let reset = next_reset_in(&snap, day_end).map(|d| tokio::time::Instant::now() + d);
         let mut due = None;
         // 菜单开着时每秒走一次：秒数、倒计时现算，在跑的和速率问 core 一次（很轻），
-        // 汇总和额度不问
-        while let Woke::Tick =
-            wait(&wake, &now, &mut core_rx, reset, &mut tick, open, &mut due).await
-        {
+        // 汇总和额度不问。**菜单栏上挂着速度时菜单关着也走**：速度只算最近一分钟跑完的
+        // 请求，不再问的话，最后一个请求落地之后菜单栏上的速度就一直挂着
+        loop {
+            let rate_shown = snap.rate.is_some() && drawn_style() != Style::Icon;
+            let ticking = || open() || rate_shown;
+            if wait(
+                &wake,
+                &now,
+                &mut core_rx,
+                reset,
+                &mut tick,
+                ticking,
+                &mut due,
+            )
+            .await
+                == Woke::Collect
+            {
+                break;
+            }
             refresh_live(&state, &mut snap).await;
             present(&snap);
         }
@@ -180,21 +195,21 @@ async fn run(app: tauri::AppHandle) {
 enum Woke {
     /// 整个重收
     Collect,
-    /// 菜单开着，走一秒
+    /// 菜单开着或者菜单栏上挂着速度，走一秒
     Tick,
 }
 
 /// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言、钟跳了）、
 /// core 换了状态、到了 `reset`（额度重置、本地零点，见 [`next_reset_in`]），立刻收。
-/// 菜单开着时每秒回来一次 [`Woke::Tick`]，**攒着的那几秒也走** —— 不然请求一个接一个
-/// 落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
+/// `ticking`（菜单开着，或者菜单栏上挂着速度）时每秒回来一次 [`Woke::Tick`]，**攒着的
+/// 那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
 async fn wait(
     wake: &tokio::sync::Notify,
     now: &tokio::sync::Notify,
     core_rx: &mut tokio::sync::watch::Receiver<CoreState>,
     reset: Option<tokio::time::Instant>,
     tick: &mut tokio::time::Interval,
-    open: impl Fn() -> bool,
+    ticking: impl Fn() -> bool,
     due: &mut Option<tokio::time::Instant>,
 ) -> Woke {
     loop {
@@ -207,7 +222,7 @@ async fn wait(
             _ = now.notified() => return Woke::Collect,
             _ = core_rx.changed() => return Woke::Collect,
             _ = sleep_until(reset), if reset.is_some() => return Woke::Collect,
-            _ = tick.tick(), if open() => return Woke::Tick,
+            _ = tick.tick(), if ticking() => return Woke::Tick,
         }
     }
 }
