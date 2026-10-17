@@ -473,6 +473,7 @@
     "gw.upstream.timeout": "上游响应超时。",
     "gw.upstream.unreachable": "无法连接上游 {url}，请检查接口地址、网络和代理设置。",
     "gw.upstream.forward_failed": "转发失败：{detail}",
+    "gw.upstream.body_broken": "回答接收途中与上游的连接断开：{detail}",
     "gw.upstream.rate_limited": "上游「{upstream}」触发限流。",
     "gw.upstream.status": "上游「{upstream}」返回 {status}。",
     "gw.upstream.status_message": "上游「{upstream}」返回 {status}：{message}",
