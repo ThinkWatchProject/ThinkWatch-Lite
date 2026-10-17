@@ -212,12 +212,14 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
     let remote_hours = [
         0, 0, 0, 0, 0, 0, 0, 0, 2, 5, 6, 4, 3, 5, 7, 6, 4, 3, 2, 1, 3, 2,
     ];
-    let live = |id: u64, app: &str, model: &str, secs: u64| Live {
+    // `rate`：这个请求此刻的速度，还在等第一个 token 的是 None。菜单栏上的速度是它们的合计
+    let live = |id: u64, app: &str, model: &str, secs: u64, rate: Option<u32>| Live {
         id,
         app: Some(app.into()),
         key: app.into(),
         model: model.into(),
         started_ms: start - secs * 1000,
+        rate,
     };
     let remote = matches!(name, "remote" | "unlinked");
     let base = Snapshot {
@@ -281,8 +283,8 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                     .into(),
                 }],
                 live: vec![
-                    live(41, "claude-code", "claude-opus-4-6", 12),
-                    live(42, "codex", "gpt-5.2-codex", 3),
+                    live(41, "claude-code", "claude-opus-4-6", 12, Some(42)),
+                    live(42, "codex", "gpt-5.2-codex", 3, None),
                 ],
                 update: Some("2026.10.9".into()),
                 ..base
@@ -366,7 +368,10 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                     },
                 ],
                 live: (0..7)
-                    .map(|i| live(7 + i, "claude-code", "claude-sonnet-4-5", 21 + i * 13))
+                    .map(|i| {
+                        let rate = [Some(18), Some(0), Some(34)].get(i as usize).copied().flatten();
+                        live(7 + i, "claude-code", "claude-sonnet-4-5", 21 + i * 13, rate)
+                    })
                     .collect(),
                 ..base
             }
@@ -377,7 +382,7 @@ fn snapshot(name: &str) -> thinkwatch_lite_lib::menubar::model::Snapshot {
                 today,
                 hourly,
                 rate: Some(38),
-                live: vec![live(9, "claude-code", "claude-sonnet-4-5", 5)],
+                live: vec![live(9, "claude-code", "claude-sonnet-4-5", 5, Some(38))],
                 ..base
             }
         }

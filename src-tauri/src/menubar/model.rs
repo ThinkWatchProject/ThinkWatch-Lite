@@ -58,7 +58,8 @@ pub struct Snapshot {
     pub quotas: Vec<Quota>,
     /// 进行中的请求，开始得早的在前
     pub live: Vec<Live>,
-    /// 最近一分钟跑完的请求平均每秒生成多少 token
+    /// 此刻每秒生成多少 token：在跑的请求各自的速度加起来（core 的 `/live`）。**没有在跑的
+    /// 请求是 None**；有请求在跑、却都还没开始生成（在等第一个 token，或者是非流式的）是 0
     pub rate: Option<u32>,
     /// 未读的提醒，要紧的在前
     pub notices: Vec<NoticeLine>,
@@ -229,6 +230,9 @@ pub struct Live {
     /// 开始的时刻，**这台机器的时钟**：由 core 报的「已经跑了多久」推回来的，
     /// 和 `Snapshot::now_ms` 相减就是已跑时长
     pub started_ms: u64,
+    /// 这个请求此刻每秒生成多少 token。**第一个 token 之前、非流式的没有**；开了口又停下来
+    /// 不吐字的是 0
+    pub rate: Option<u32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -300,7 +304,7 @@ pub enum Tone {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Bar {
     pub style: Style,
-    /// 上面一行今日 token，下面一行最近一分钟的生成速度。**None 画成两道破折号**：还不知道
+    /// 上面一行今日 token，下面一行此刻的生成速度。**None 画成两道破折号**：还不知道
     pub numbers: Option<(String, String)>,
     /// 正在启动，或者不在运行
     pub dim: bool,
@@ -373,7 +377,7 @@ pub struct Dash {
     pub tone: StateTone,
     /// 连着远程时那台服务器的名字，跟在状态后面。原来写在状态头上，状态头没了
     pub server: Option<String>,
-    /// 最近一分钟的生成速度「42 token/秒」，知道时才有
+    /// 此刻的生成速度「42 token/秒」，有请求在跑时才有
     pub rate: Option<String>,
     /// 今天的 token，大字。**没问到是破折号**，不是 0
     pub value: String,
@@ -510,9 +514,12 @@ pub enum Row {
         window: WindowRow,
         action: Action,
     },
+    /// 一个在跑的请求：谁、哪个模型，右边是此刻的速度（开口之前没有）和已跑时长
     Live {
         app: String,
         model: String,
+        /// 「42 t/s」。第一个 token 之前、非流式的没有
+        rate: Option<String>,
         elapsed: String,
         action: Action,
     },
@@ -563,8 +570,8 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
     Bar {
         style,
         numbers: if running {
-            // 费用不上菜单栏（用户说金额没什么用），在点开的菜单和悬停提示里。最近一分钟没有
-            // 跑完的请求就没有速度，写破折号：不是 0 token/秒
+            // 费用不上菜单栏（用户说金额没什么用），在点开的菜单和悬停提示里。速度是此刻的：
+            // 没有在跑的请求写破折号，不是 0 t/s；在跑却都还没开始生成的是 0 t/s
             s.today
                 .as_ref()
                 .map(|t| (tokens_short(t.tokens), rate_short(s.rate)))
@@ -805,6 +812,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     .unwrap_or(&l.key)
                     .to_string(),
                 model: l.model.clone(),
+                rate: l.rate.map(|r| rate_short(Some(r))),
                 elapsed: elapsed(s.now_ms.saturating_sub(l.started_ms)),
                 action: Action::OpenRequest(l.id),
             });
@@ -1204,7 +1212,8 @@ pub fn tokens_short(n: i64) -> String {
     }
 }
 
-/// 菜单栏上的生成速度：`42 t/s`、`2.2k t/s`，数字和 token 数同一套写法。没有速度是 `— t/s`
+/// 菜单栏上的生成速度：`42 t/s`、`2.2k t/s`，数字和 token 数同一套写法。没有速度是 `— t/s`。
+/// 菜单里「进行中」每一行右边的速度也是这个写法：那一行要放下应用、模型和时长
 pub fn rate_short(rate: Option<u32>) -> String {
     let n = rate.map_or_else(|| "—".to_string(), |r| tokens_short(r.into()));
     format!("{n} t/s")

@@ -32,6 +32,7 @@ import { RequestTable, type RequestTableHandle } from "./RequestTable";
 import { SessionSheet } from "./SessionPanel";
 import { AbortSessionDialog, abortable } from "./abort";
 import { TrafficSummary } from "./TrafficSummary";
+import { useLiveSpeeds } from "./liveSpeed";
 import { trafficText } from "./Traffic.i18n";
 import type { TrafficView } from "./view";
 import { OpenRowHint } from "@/guide/PageHints";
@@ -110,6 +111,12 @@ export default function TrafficPage({
   /** 库里那一页还没回来，表里一条都还没有：画骨架，不说「没有符合条件的」 */
   const searching = search.mode !== "off" && (found === null || (found.busy && found.stopped === null));
   const facet = useMemo(() => facets(allRows), [allRows]);
+  /*
+    **在跑的那几行此刻多快，问 core**（事件流不带这个数）：这一页挂着、窗口没藏起来、
+    列表里有在跑的请求时每秒问一次，都跑完了就停（见 `liveSpeed.ts`）
+  */
+  const anyRunning = useMemo(() => allRows.some((r) => r.state === "in_flight"), [allRows]);
+  useLiveSpeeds(anyRunning);
   /** 上一次归出来的组：没变的组沿用原来的对象，组头就不重画（见 `groupBySession`） */
   const lastGroups = useRef<Group[]>([]);
   /*

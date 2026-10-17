@@ -112,6 +112,7 @@ fn main() {
             key: "claude-code".into(),
             model: "claude-sonnet-5".into(),
             started_ms: now - 6_000,
+            rate: Some(64),
         }],
         rate: Some(64),
         notices_on: true,

@@ -21,6 +21,8 @@ import type {
   HistorySearchQuery,
   InFlightRequest,
   LatencyView,
+  LiveView,
+  RunningView,
   TokenRateView,
   Msg,
   PriceFields,
@@ -194,6 +196,44 @@ export const HISTORY: HistoryRow[] = [];
 export const SEC_EVENTS: SecurityEventView[] = [];
 /** 打开页面时还在跑的请求（`InFlight` 快照）：每个请求到目前为止的事件 */
 export const IN_FLIGHT: InFlightRequest[] = [];
+
+/** 截图里在跑的那一条此刻每秒生成多少 token：已经开口了 */
+const LIVE_SPEED = 64;
+
+/**
+ * `/live`：在跑的那几条和它们此刻的速度，照 core 的口径 —— 开口之前的没有速度，合计是
+ * 各条加起来，一条都不在跑时是空
+ */
+export function liveView(): LiveView {
+  const running: RunningView[] = IN_FLIGHT.flatMap((f) => {
+    const s = f.events[0];
+    if (s?.kind !== "request_started") return [];
+    const talking = f.events.some((e) => e.kind === "request_first_token");
+    const elapsed = Math.max(0, Date.now() - s.at_ms);
+    return [
+      {
+        id: f.id,
+        client: s.client,
+        client_hint: s.client_hint ?? null,
+        model: s.model,
+        provider: s.provider,
+        at_ms: s.at_ms,
+        elapsed_ms: elapsed,
+        session: s.session ?? null,
+        route: s.route,
+        rule: s.rule,
+        group: s.group ?? null,
+        upstream: s.provider,
+        tokens_per_sec: talking ? LIVE_SPEED : null,
+        output_tokens: talking ? Math.round((elapsed / 1000) * LIVE_SPEED) : null,
+      },
+    ];
+  });
+  return {
+    running,
+    tokens_per_sec: running.length === 0 ? null : running.reduce((a, r) => a + (r.tokens_per_sec ?? 0), 0),
+  };
+}
 
 function makeRow(s: Spec, r: () => number): HistoryRow {
   const outcome = s.outcome ?? { kind: "ok" };

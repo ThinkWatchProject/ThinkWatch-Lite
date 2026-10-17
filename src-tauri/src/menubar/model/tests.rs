@@ -346,7 +346,7 @@ fn the_status_block_says_why_the_gateway_is_not_running() {
     });
 }
 
-/// 菜单栏上两行：今日 token 在上，最近一分钟的生成速度在下。**费用不上菜单栏**（用户说
+/// 菜单栏上两行：今日 token 在上，此刻的生成速度在下。**费用不上菜单栏**（用户说
 /// 金额没什么用），菜单里和悬停提示里照旧有
 #[test]
 fn the_bar_shows_todays_tokens_over_the_generation_speed() {
@@ -361,7 +361,10 @@ fn the_bar_shows_todays_tokens_over_the_generation_speed() {
     });
     s.rate = Some(2_215);
     assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "2.2k t/s");
-    // 最近一分钟没有跑完的请求：没有速度，不是 0
+    // 有请求在跑、却都还没开始生成：0，不是破折号
+    s.rate = Some(0);
+    assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "0 t/s");
+    // 没有在跑的请求：没有速度，不是 0
     s.rate = None;
     assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "— t/s");
 }
@@ -732,6 +735,12 @@ fn requests_in_progress_put_a_dot_on_the_mark_and_list_at_most_five() {
             key: "default".into(),
             model: "gpt-5-codex".into(),
             started_ms: NOW - 102_000,
+            // 第一个开口了，第二个开了口又停下来，其余的还在等第一个 token
+            rate: match i {
+                1 => Some(1_234),
+                2 => Some(0),
+                _ => None,
+            },
         })
         .collect();
     let (bar, rows) = build(&s, Style::Full);
@@ -739,14 +748,19 @@ fn requests_in_progress_put_a_dot_on_the_mark_and_list_at_most_five() {
     let live: Vec<_> = rows
         .iter()
         .filter_map(|r| match r {
-            Row::Live { app, elapsed, .. } => Some((app.as_str(), elapsed.as_str())),
+            Row::Live {
+                app, rate, elapsed, ..
+            } => Some((app.as_str(), rate.as_deref(), elapsed.as_str())),
             _ => None,
         })
         .collect();
     assert_eq!(live.len(), MAX_LIVE);
-    assert_eq!(live[0], ("Codex", "1:42"));
+    // 每一行右边是此刻的速度和已跑时长，速度和菜单栏上同一个写法
+    assert_eq!(live[0], ("Codex", Some("1.2k t/s"), "1:42"));
     // 认不出应用的用密钥名
-    assert_eq!(live[1].0, "default");
+    assert_eq!(live[1], ("default", Some("0 t/s"), "1:42"));
+    // 还没开始生成的不写速度
+    assert_eq!(live[2].1, None);
     assert_eq!(item(&rows, "live-more").unwrap().title, "另有 2 个");
 }
 
@@ -943,7 +957,7 @@ fn the_tooltip_says_the_whole_state_in_one_sentence() {
 
 #[test]
 fn a_row_keeps_its_shape_while_only_its_text_changes() {
-    // 菜单开着时，秒数、倒计时每秒在变 —— 那不该让菜单整个重建
+    // 菜单开着时，秒数、倒计时、请求此刻的速度每秒在变 —— 那不该让菜单整个重建
     let mut s = running();
     s.live = vec![Live {
         id: 7,
@@ -965,6 +979,9 @@ fn a_row_keeps_its_shape_while_only_its_text_changes() {
     s.today.as_mut().unwrap().tokens += 50_000;
     s.hourly.as_mut().unwrap().tokens[10] += 50_000;
     s.quotas[0].windows[0].used_percent = 32.0;
+    // 第一个 token 到了：那一行多出速度，行还是那一行
+    s.live[0].rate = Some(42);
+    s.rate = Some(42);
     let b: Vec<String> = rows(&s).iter().map(Row::shape).collect();
     assert_eq!(a, b);
 }

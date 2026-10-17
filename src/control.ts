@@ -29,6 +29,7 @@ export const WEBVIEW_ENDPOINTS = [
   "Overview",
   "L1",
   "InFlight",
+  "Live",
   "GetConfig",
   "PatchConfig",
   "PutConfig",

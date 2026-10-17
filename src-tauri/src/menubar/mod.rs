@@ -29,7 +29,8 @@ use crate::{AppState, error::CmdError, notices, supervisor::CoreState};
 /// 把这一条落库、算出费用的时间
 const SETTLE: std::time::Duration = std::time::Duration::from_secs(3);
 
-/// 菜单开着时隔多久走一次秒数和倒计时。**只在开着时走**，关上就停
+/// 菜单开着时隔多久走一次秒数和倒计时；菜单栏上挂着数字、有请求在跑时，也按它刷新此刻的
+/// 速度。**两样都不是时就停**
 const TICK: std::time::Duration = std::time::Duration::from_secs(1);
 
 /// 问 core 的一句最多等多久。**core 接了连接却不回话**（卡在存储层上、远程那台半死不活）
@@ -165,11 +166,11 @@ async fn run(app: tauri::AppHandle) {
         let reset = next_reset_in(&snap, day_end).map(|d| tokio::time::Instant::now() + d);
         let mut due = None;
         // 菜单开着时每秒走一次：秒数、倒计时现算，在跑的和速率问 core 一次（很轻），
-        // 汇总和额度不问。**菜单栏上挂着速度时菜单关着也走**：速度只算最近一分钟跑完的
-        // 请求，不再问的话，最后一个请求落地之后菜单栏上的速度就一直挂着
+        // 汇总和额度不问。**菜单栏上挂着数字、有请求在跑时菜单关着也走**：速度是此刻的，
+        // 请求跑着的每一秒都在变。都跑完了就停（最后那一问拿到的是破折号）；下一个请求开始
+        // 时事件叫醒这里，收一次就又走起来
         loop {
-            let rate_shown = snap.rate.is_some() && drawn_style() != Style::Icon;
-            let ticking = || open() || rate_shown;
+            let ticking = || ticks(open(), &snap, drawn_style());
             if wait(
                 &wake,
                 &now,
@@ -190,19 +191,25 @@ async fn run(app: tauri::AppHandle) {
     }
 }
 
+/// 该不该每秒走一次：菜单开着；或者有请求在跑、菜单栏上挂着速度那一行（只有标识的、
+/// 不显示的没有）。**什么都没在跑、菜单关着时不走**：菜单栏上的破折号不会自己变
+fn ticks(open: bool, snap: &Snapshot, style: Style) -> bool {
+    open || (!snap.live.is_empty() && matches!(style, Style::Full | Style::Numbers))
+}
+
 /// [`wait`] 为什么回来了
 #[derive(Debug, PartialEq, Eq)]
 enum Woke {
     /// 整个重收
     Collect,
-    /// 菜单开着或者菜单栏上挂着速度，走一秒
+    /// 菜单开着，或者有请求在跑、菜单栏上挂着速度：走一秒
     Tick,
 }
 
 /// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言、钟跳了）、
 /// core 换了状态、到了 `reset`（额度重置、本地零点，见 [`next_reset_in`]），立刻收。
-/// `ticking`（菜单开着，或者菜单栏上挂着速度）时每秒回来一次 [`Woke::Tick`]，**攒着的
-/// 那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
+/// `ticking`（菜单开着，或者有请求在跑、菜单栏上挂着速度）时每秒回来一次 [`Woke::Tick`]，
+/// **攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
 async fn wait(
     wake: &tokio::sync::Notify,
     now: &tokio::sync::Notify,
@@ -242,7 +249,7 @@ fn present(snap: &Snapshot) {
 }
 
 /// 只更新随时间走的那几样：现在几点、谁在跑、速率。**问 core 要**（`/live`）：
-/// 在跑的和最近的生成速率是 core 的事件总线数的，这边不再自己听事件去数。
+/// 在跑的和它们此刻的生成速度是 core 数的，这边不再自己听事件去数。
 /// 问不到（或者 [`ASK`] 之内没回话）时留着上一次的
 async fn refresh_live(state: &AppState, snap: &mut Snapshot) {
     snap.now_ms = notices::now_ms();
@@ -278,6 +285,7 @@ fn apply_live(snap: &mut Snapshot, live: tw_api::LiveView) {
             key: r.client,
             model: r.model,
             started_ms: now.saturating_sub(r.elapsed_ms),
+            rate: r.tokens_per_sec,
         })
         .collect();
     snap.rate = live.tokens_per_sec;
@@ -881,9 +889,29 @@ mod tests {
         assert_eq!(start.elapsed(), std::time::Duration::ZERO);
     }
 
-    /// core 给的在跑的请求照原样进菜单：谁、哪个模型、跑了多久，还有速率。**跑了多久
-    /// 以 core 算的为准**：它的时钟比这台机器快了一分钟（`at_ms` 在「将来」），菜单上
-    /// 照样是 12 秒
+    /// core 报的一个在跑的请求
+    fn running(id: u64, elapsed_ms: u64, tokens_per_sec: Option<u32>) -> tw_api::RunningView {
+        tw_api::RunningView {
+            id,
+            client: "default".into(),
+            client_hint: Some("codex".into()),
+            model: "gpt-5".into(),
+            provider: "openai".into(),
+            at_ms: 148_000,
+            elapsed_ms,
+            session: None,
+            route: "default".into(),
+            rule: "catch-all".into(),
+            group: Some("__all__".into()),
+            upstream: None,
+            tokens_per_sec,
+            output_tokens: tokens_per_sec.map(|_| 300),
+        }
+    }
+
+    /// core 给的在跑的请求照原样进菜单：谁、哪个模型、跑了多久、此刻多快，还有合计的速度。
+    /// **跑了多久以 core 算的为准**：它的时钟比这台机器快了一分钟（`at_ms` 在「将来」），
+    /// 菜单上照样是 12 秒
     #[test]
     fn the_live_numbers_come_from_core_as_they_are() {
         let mut snap = Snapshot {
@@ -893,38 +921,64 @@ mod tests {
         apply_live(
             &mut snap,
             tw_api::LiveView {
-                running: vec![tw_api::RunningView {
-                    id: 7,
-                    client: "default".into(),
-                    client_hint: Some("codex".into()),
-                    model: "gpt-5".into(),
-                    provider: "openai".into(),
-                    at_ms: 148_000,
-                    elapsed_ms: 12_000,
-                    session: None,
-                    route: "default".into(),
-                    rule: "catch-all".into(),
-                    group: Some("__all__".into()),
-                    upstream: None,
-                }],
+                running: vec![running(7, 12_000, Some(52)), running(8, 1_000, None)],
                 tokens_per_sec: Some(52),
             },
         );
         assert_eq!(
             snap.live,
-            vec![model::Live {
-                id: 7,
-                app: Some("codex".into()),
-                key: "default".into(),
-                model: "gpt-5".into(),
-                started_ms: 88_000,
-            }]
+            vec![
+                model::Live {
+                    id: 7,
+                    app: Some("codex".into()),
+                    key: "default".into(),
+                    model: "gpt-5".into(),
+                    started_ms: 88_000,
+                    rate: Some(52),
+                },
+                // 还在等第一个 token：没有速度
+                model::Live {
+                    id: 8,
+                    app: Some("codex".into()),
+                    key: "default".into(),
+                    model: "gpt-5".into(),
+                    started_ms: 99_000,
+                    rate: None,
+                },
+            ]
         );
         assert_eq!(snap.rate, Some(52));
-        // 下一次一个都不在跑、这一分钟也没有跑完的：都清掉，不留上一次的
+        // 在跑、却都还没开始生成：0，不是没有
+        apply_live(
+            &mut snap,
+            tw_api::LiveView {
+                running: vec![running(8, 2_000, None)],
+                tokens_per_sec: Some(0),
+            },
+        );
+        assert_eq!(snap.rate, Some(0));
+        // 下一次一个都不在跑：都清掉，不留上一次的
         apply_live(&mut snap, tw_api::LiveView::default());
         assert!(snap.live.is_empty());
         assert_eq!(snap.rate, None);
+    }
+
+    /// **有请求在跑、菜单栏上挂着速度时，菜单关着也每秒走**：速度是此刻的，每一秒都在变。
+    /// 都跑完了就停；只有标识、不显示的那两档菜单栏上没有速度，菜单关着不走
+    #[test]
+    fn the_bar_ticks_while_a_request_runs_and_stops_when_none_does() {
+        let mut snap = Snapshot::default();
+        for style in [Style::Full, Style::Numbers, Style::Icon, Style::Hidden] {
+            assert!(!ticks(false, &snap, style), "{style:?}");
+            assert!(ticks(true, &snap, style), "菜单开着总要走：{style:?}");
+        }
+        snap.live = vec![model::Live::default()];
+        // 还没开始生成（速度是 0、单个请求没有速度）也走：第一个 token 一到就要跟上
+        snap.rate = Some(0);
+        assert!(ticks(false, &snap, Style::Full));
+        assert!(ticks(false, &snap, Style::Numbers));
+        assert!(!ticks(false, &snap, Style::Icon));
+        assert!(!ticks(false, &snap, Style::Hidden));
     }
 
     /// core 接了连接却一直不回话：问一句最多等 [`ASK`]，等不到就当没问到。收数和每秒的

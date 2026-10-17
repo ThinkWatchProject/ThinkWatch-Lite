@@ -182,13 +182,19 @@ fn build(app: &tauri::AppHandle, rows: &[Row]) -> tauri::Result<Menu<tauri::Wry>
             Row::Live {
                 app: who,
                 model,
+                rate,
                 elapsed,
                 action,
             } => {
+                // 一行字：和 macOS 那一行同样的顺序，速度在时长前面，开口之前没有
+                let right = match rate {
+                    Some(r) => format!("{r}  {elapsed}"),
+                    None => elapsed.clone(),
+                };
                 items.push(Box::new(MenuItem::with_id(
                     app,
                     id(action),
-                    format!("{who}  {model}  {elapsed}"),
+                    format!("{who}  {model}  {right}"),
                     true,
                     None::<&str>,
                 )?));

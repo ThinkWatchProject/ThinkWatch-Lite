@@ -144,6 +144,8 @@ impl InfoView {
 
 /// 同一行里两段字之间至少空这么多
 const TEXT_GAP: f64 = 10.0;
+/// 「进行中」一行：速度和时长之间。比两段字之间窄一点：两样都是灰的等宽数字，挨着读
+const LIVE_GAP: f64 = 8.0;
 /// 自画的行最多把菜单撑到这么宽。再宽就收窄柱子、截字（见 [`today_fit`]）
 const MAX_WIDTH: f64 = 380.0;
 
@@ -475,22 +477,28 @@ pub(super) fn draw_row(row: &Row, b: NSRect, hl: bool) {
         Row::Live {
             app,
             model,
+            rate,
             elapsed,
             ..
         } => {
             if let Some(img) = symbol("circle.dashed", Some(&*ink.secondary)) {
                 img.drawInRect(rect(PAD, 4.0, 16.0, 16.0));
             }
-            let el = attributed(
-                elapsed,
-                &mono(12.0, weight(Weight::Regular)),
-                &ink.secondary,
-            );
+            let font = mono(12.0, weight(Weight::Regular));
+            let el = attributed(elapsed, &font, &ink.secondary);
             let ew = el.size().width;
             el.drawAtPoint(NSPoint::new(w - PAD - ew, 4.5));
-            // 应用名和模型都在时长左边。放不下先截模型；应用名（认不出应用时是密钥名，
-            // 多长都有）再长也截在时长前面
-            let right = w - PAD - ew - 10.0;
+            // 此刻的速度在时长左边，同一种字、同一个颜色：两样都是随时在走的数。等宽字，
+            // 数字变了位置不晃；开口之前没有速度，那一段空着、模型往右多占一点
+            let rw = rate.as_deref().map_or(0.0, |r| {
+                let a = attributed(r, &font, &ink.secondary);
+                let aw = a.size().width;
+                a.drawAtPoint(NSPoint::new(w - PAD - ew - LIVE_GAP - aw, 4.5));
+                aw + LIVE_GAP
+            });
+            // 应用名和模型都在速度和时长左边。放不下先截模型；应用名（认不出应用时是密钥名，
+            // 多长都有）再长也截在它们前面
+            let right = w - PAD - ew - rw - 10.0;
             let a = attributed(app, &NSFont::menuFontOfSize(0.0), &ink.label);
             let aw = match fit(&a, right - TEXT_X) {
                 Some(a) => {

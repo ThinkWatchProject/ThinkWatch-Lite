@@ -61,6 +61,8 @@ webview_endpoints![
     Overview,
     L1,
     InFlight,
+    // 在跑的请求此刻生成得多快：流量页在跑的那几行每秒问一次
+    Live,
     // 配置原文与历史
     GetConfig,
     PatchConfig,

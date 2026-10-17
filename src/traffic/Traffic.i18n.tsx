@@ -110,6 +110,9 @@ export const trafficText = messages(
       ...(speed != null ? [`生成速度 ${speed} token/秒`] : []),
     ],
     tokens: "token",
+    /** 在跑的那一行 token 那一格：此刻的生成速度，和菜单栏同一个写法 */
+    liveSpeed: (n: string) => `${n} t/s`,
+    liveSpeedTip: (n: string) => `当前生成速度 ${n} token/秒`,
     cost: "费用",
 
     // 密钥那一格的悬停说明：密钥、推测的应用、来源，一项一行
@@ -263,6 +266,8 @@ export const trafficText = messages(
       ...(speed != null ? [`Speed ${speed} tokens/s`] : []),
     ],
     tokens: "Tokens",
+    liveSpeed: (n: string) => `${n} t/s`,
+    liveSpeedTip: (n: string) => `Current speed ${n} tokens/s`,
     cost: "Cost",
 
     keyTip: (key: string) => `Key ${key}`,

@@ -15,7 +15,7 @@ import { flushSync } from "react-dom";
 import { textOf, useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
-import { latency, money, ms, statusTone, tokens, traffic, when } from "@/format";
+import { compact, latency, money, ms, statusTone, tokens, traffic, when } from "@/format";
 import { failureKind, notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
@@ -39,6 +39,7 @@ import { sessionsText } from "./Sessions.i18n";
 import { RowActions, TableMenus, type MenuTarget } from "./TableMenus";
 import { abortRequest, abortable } from "./abort";
 import { abortText } from "./abort.i18n";
+import { useLiveSpeed } from "./liveSpeed";
 import { trafficText } from "./Traffic.i18n";
 import { useViaConfig } from "./useModelVia";
 import {
@@ -446,7 +447,8 @@ function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | n
     upstreamMin: Math.max(nameMin, ...badges),
     // 在跑的：首 token 加上一个时钟（「0:42」）
     latency: r.state === "in_flight" ? (r.ttftMs != null ? String(r.ttftMs).length + 1 : 0) + 4 : textWidth(latency(r.ttftMs, r.durationMs)),
-    tokens: textWidth(tokens(promptTokens(r), r.outputTokens)),
+    // 在跑的：此刻的速度，至少七个字宽（见 `LiveSpeed`）
+    tokens: r.state === "in_flight" ? LIVE_SPEED_CH : textWidth(tokens(promptTokens(r), r.outputTokens)),
     cost: textWidth(money(r.costMicros, r.costEstimated)),
   };
 }
@@ -1343,6 +1345,7 @@ function TokensCell({ r }: { r: RequestRow }) {
   const t = useText(trafficText);
   const prompt = promptTokens(r);
   const text = tokens(prompt, r.outputTokens);
+  if (r.state === "in_flight") return <LiveSpeed id={r.id} fallback={text} />;
   if (prompt === undefined || r.outputTokens === undefined) return <>{text}</>;
   const n = (v: number | undefined) => (v ?? 0).toLocaleString();
   return (
@@ -1363,6 +1366,40 @@ function TokensCell({ r }: { r: RequestRow }) {
     >
       {/* 虚线只在指着时出现：延迟那一列已经整列带着虚线，两列挨着都带就太花了 */}
       <span className="decoration-dotted underline-offset-2 hover:underline">{text}</span>
+    </Tip>
+  );
+}
+
+/** 在跑的那一格至少多宽（字数）：「999 t/s」 */
+const LIVE_SPEED_CH = 7;
+
+/**
+ * 在跑的那一行 token 那一格：此刻的生成速度（`42 t/s`），每秒一换。
+ *
+ * **放在 token 这一格，不另占一列、不进悬停。**在跑的请求还没有用量，这一格本来是一道
+ * 破折号；速度说的正是输出此刻涨得多快，结局一到换成「输入→输出」。跑完的请求，速度
+ * 在延迟那一格的悬停里（见 `LatencyCell`）：表已经放满了，多一列，费用就出了视野。
+ *
+ * 灰的，和在跑的延迟一样：是走着的数，不是结果。**至少占七个字宽**，表头里垫的那一格
+ * （`Sizer`）也是：数字变长变短、第一个 token 到了，这一列都不跳。第一个 token 之前没有
+ * 速度，照旧是破折号。数每秒从 `liveSpeed` 来，只重画这一小块，行不重画。
+ */
+function LiveSpeed({ id, fallback }: { id: number; fallback: string }) {
+  const t = useText(trafficText);
+  const n = useLiveSpeed(id);
+  const box = "inline-block tw-num";
+  const style = { minWidth: `${LIVE_SPEED_CH}ch` };
+  if (n == null)
+    return (
+      <span className={box} style={style}>
+        {fallback}
+      </span>
+    );
+  return (
+    <Tip lazy text={t.liveSpeedTip(n.toLocaleString())}>
+      <span className={box} style={style}>
+        {t.liveSpeed(compact(n))}
+      </span>
     </Tip>
   );
 }

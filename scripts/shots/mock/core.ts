@@ -21,6 +21,7 @@ import {
 import {
   HISTORY,
   IN_FLIGHT,
+  liveView,
   SEC_EVENTS,
   bodies,
   historySearch,
@@ -77,6 +78,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
       .providers.filter((p) => !req.provider || p.name === req.provider)
       .map((p) => l1(p.name, p.proxy === "direct" || p.proxy === "system" ? null : p.proxy)),
   InFlight: () => ({ now_ms: Date.now(), requests: clone(IN_FLIGHT) }),
+  Live: () => liveView(),
 
   GetConfig: () => ({ path: "~/.thinkwatch/config.yaml", text: CONFIG_TEXT, version: configVersion() }),
   PatchConfig: refuse,
