@@ -139,7 +139,11 @@ async fn run(app: tauri::AppHandle) {
     let Some(st) = app.try_state::<AppState>() else {
         return;
     };
-    let (wake, now) = (st.menubar.clone(), st.menubar_now.clone());
+    let (wake, now, started) = (
+        st.menubar.clone(),
+        st.menubar_now.clone(),
+        st.menubar_started.clone(),
+    );
     let mut core_rx = st.supervisor.watch();
     let mut credits = Credits::default();
     let mut tick = tokio::time::interval(TICK);
@@ -168,19 +172,15 @@ async fn run(app: tauri::AppHandle) {
         // 菜单开着时每秒走一次：秒数、倒计时现算，在跑的和速率问 core 一次（很轻），
         // 汇总和额度不问。**菜单栏上挂着数字、有请求在跑时菜单关着也走**：速度是此刻的，
         // 请求跑着的每一秒都在变。都跑完了就停（最后那一问拿到的是破折号）；下一个请求开始
-        // 时事件叫醒这里，收一次就又走起来
+        // 时 `started` 叫醒这里，马上问一次就又走起来
         loop {
             let ticking = || ticks(open(), &snap, drawn_style());
-            if wait(
-                &wake,
-                &now,
-                &mut core_rx,
-                reset,
-                &mut tick,
-                ticking,
-                &mut due,
-            )
-            .await
+            let wakes = Wakes {
+                wake: &wake,
+                now: &now,
+                started: &started,
+            };
+            if wait(&wakes, &mut core_rx, reset, &mut tick, ticking, &mut due).await
                 == Woke::Collect
             {
                 break;
@@ -197,6 +197,13 @@ fn ticks(open: bool, snap: &Snapshot, style: Style) -> bool {
     open || (!snap.live.is_empty() && matches!(style, Style::Full | Style::Numbers))
 }
 
+/// 叫醒菜单栏的几种理由（见 [`wait`]）：有事件（攒一攒再收）、要立刻收、有请求开始了
+struct Wakes<'a> {
+    wake: &'a tokio::sync::Notify,
+    now: &'a tokio::sync::Notify,
+    started: &'a tokio::sync::Notify,
+}
+
 /// [`wait`] 为什么回来了
 #[derive(Debug, PartialEq, Eq)]
 enum Woke {
@@ -209,10 +216,11 @@ enum Woke {
 /// 等到该重收的时候。有事件就攒 [`SETTLE`] 再收；`now`（菜单打开、换了样式或语言、钟跳了）、
 /// core 换了状态、到了 `reset`（额度重置、本地零点，见 [`next_reset_in`]），立刻收。
 /// `ticking`（菜单开着，或者有请求在跑、菜单栏上挂着速度）时每秒回来一次 [`Woke::Tick`]，
-/// **攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里秒数会一卡几秒。`due` 是攒到什么时候，由调用方带着跨过这几次 tick
+/// **攒着的那几秒也走** —— 不然请求一个接一个落地时，开着的菜单里秒数会一卡几秒。`due` 是
+/// 攒到什么时候，由调用方带着跨过这几次 tick。`started`（有请求开始了）马上回来一次
+/// [`Woke::Tick`]：问到在跑的，`ticking` 就成立了，速度从第一秒起每秒走
 async fn wait(
-    wake: &tokio::sync::Notify,
-    now: &tokio::sync::Notify,
+    w: &Wakes<'_>,
     core_rx: &mut tokio::sync::watch::Receiver<CoreState>,
     reset: Option<tokio::time::Instant>,
     tick: &mut tokio::time::Interval,
@@ -222,11 +230,12 @@ async fn wait(
     loop {
         let settle = *due;
         tokio::select! {
-            _ = wake.notified(), if settle.is_none() => {
+            _ = w.wake.notified(), if settle.is_none() => {
                 *due = Some(tokio::time::Instant::now() + SETTLE);
             }
             _ = sleep_until(settle), if settle.is_some() => return Woke::Collect,
-            _ = now.notified() => return Woke::Collect,
+            _ = w.now.notified() => return Woke::Collect,
+            _ = w.started.notified() => return Woke::Tick,
             _ = core_rx.changed() => return Woke::Collect,
             _ = sleep_until(reset), if reset.is_some() => return Woke::Collect,
             _ = tick.tick(), if ticking() => return Woke::Tick,
@@ -842,9 +851,15 @@ mod tests {
         tick: &mut tokio::time::Interval,
         open: bool,
     ) -> usize {
+        let started = tokio::sync::Notify::new();
         let mut due = None;
         let mut ticks = 0;
-        while wait(wake, now, rx, reset, tick, || open, &mut due).await == Woke::Tick {
+        let w = Wakes {
+            wake,
+            now,
+            started: &started,
+        };
+        while wait(&w, rx, reset, tick, || open, &mut due).await == Woke::Tick {
             ticks += 1;
         }
         ticks
@@ -872,6 +887,30 @@ mod tests {
         let ticks = until_collect(&wake, &now, &mut rx, reset, &mut tick, false).await;
         assert_eq!(start.elapsed(), std::time::Duration::from_secs(600));
         assert_eq!(ticks, 0);
+    }
+
+    /// **请求一开始就问一次在跑的**，菜单关着、什么都没在走也是：不等攒够三秒
+    #[tokio::test(start_paused = true)]
+    async fn a_started_request_asks_for_the_live_numbers_at_once() {
+        let (wake, now, tx, mut tick) = setup();
+        let mut rx = tx.subscribe();
+        let started = tokio::sync::Notify::new();
+        let start = tokio::time::Instant::now();
+        wake.notify_one();
+        started.notify_one();
+        let w = Wakes {
+            wake: &wake,
+            now: &now,
+            started: &started,
+        };
+        let mut due = None;
+        let woke = wait(&w, &mut rx, None, &mut tick, || false, &mut due).await;
+        assert_eq!(woke, Woke::Tick);
+        assert_eq!(start.elapsed(), std::time::Duration::ZERO);
+        // 攒着的那次重收照旧在三秒后
+        let woke = wait(&w, &mut rx, None, &mut tick, || false, &mut due).await;
+        assert_eq!(woke, Woke::Collect);
+        assert_eq!(start.elapsed(), SETTLE);
     }
 
     #[tokio::test(start_paused = true)]

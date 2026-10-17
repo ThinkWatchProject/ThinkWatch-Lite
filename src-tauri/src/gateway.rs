@@ -440,6 +440,9 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                     )
                 {
                     st.menubar.notify_one();
+                    if matches!(ev, tw_api::Event::RequestStarted { .. }) {
+                        st.menubar_started.notify_one();
+                    }
                 }
                 // core 说这个订阅者掉过队：掉的那几条里可能有该提醒的事
                 if matches!(ev, tw_api::Event::EventsDropped { .. }) {

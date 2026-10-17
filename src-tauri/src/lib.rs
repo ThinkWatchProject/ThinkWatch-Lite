@@ -117,6 +117,9 @@ pub struct AppState {
     /// **立刻**重收一次，不等攒够三秒：菜单刚打开、换了菜单栏的样式或界面语言、
     /// 钟跳了（睡醒、改时钟、换时区，见 `clock`）
     pub menubar_now: Arc<tokio::sync::Notify>,
+    /// 有请求开始了：菜单栏马上问一次在跑的和速度（`/live`），不等攒够三秒。菜单栏上的
+    /// 速度从这一刻起每秒走，第一秒就是 0 而不是破折号
+    pub menubar_started: Arc<tokio::sync::Notify>,
 }
 
 pub fn run() {
@@ -413,6 +416,7 @@ pub fn run() {
                 supervising: supervising.clone(),
                 menubar: menubar_wake,
                 menubar_now: Arc::new(tokio::sync::Notify::new()),
+                menubar_started: Arc::new(tokio::sync::Notify::new()),
             });
             // 等另一个位置的程序请求切换（见 `single`）
             single::listen(&handle);
