@@ -187,7 +187,7 @@ fn main() {
     // 菜单栏上的那一块：一段菜单栏底色，模板图照系统的样子染成黑或白
     let (bar, _) = model::build(&snapshot(), model::Style::Full);
     for dark in [false, true] {
-        let item = macos::bar_image(&bar);
+        let item = macos::bar_image(&bar, Some(0.5));
         let size = item.size();
         let (w, h) = ((size.width + 28.0).ceil(), 32.0);
         let block = RcBlock::new(move |_: NSRect| -> Bool {

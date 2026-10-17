@@ -25,14 +25,19 @@ use objc2::{AnyThread, MainThreadMarker, MainThreadOnly, define_class, msg_send,
 use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
     NSAppearanceCustomization, NSApplication, NSAttributedStringNSStringDrawing, NSBezierPath,
-    NSColor, NSControlStateValueOff, NSControlStateValueOn, NSEvent, NSEventMask,
-    NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightMedium, NSFontWeightRegular,
-    NSFontWeightSemibold, NSForegroundColorAttributeName, NSImage, NSImageSymbolConfiguration,
-    NSLineCapStyle, NSLineJoinStyle, NSMenu, NSMenuDelegate, NSMenuItem, NSStatusBar, NSStatusItem,
-    NSVariableStatusItemLength,
+    NSColor, NSCompositingOperation, NSControlStateValueOff, NSControlStateValueOn, NSEvent,
+    NSEventMask, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightMedium,
+    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGradient,
+    NSGraphicsContext, NSImage, NSImageSymbolConfiguration, NSLineCapStyle, NSLineJoinStyle,
+    NSMenu, NSMenuDelegate, NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
+    NSWorkspace,
 };
 use objc2_foundation::{
-    NSAttributedString, NSDictionary, NSObject, NSObjectProtocol, NSPoint, NSRect, NSSize, NSString,
+    NSArray, NSAttributedString, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint,
+    NSRect, NSSize, NSString,
+};
+use objc2_quartz_core::{
+    CAAnimationGroup, CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming, CATransaction,
 };
 
 use super::model::{Action, Bar, Row, Style, SubItem};
@@ -78,6 +83,8 @@ struct Ui {
     /// 按菜单项的 tag 找到它做什么
     actions: Vec<Action>,
     bar: Option<Bar>,
+    /// 挂着的流光遮罩（见 [`glow`]）。没挂是 None
+    glow: Option<Glow>,
 }
 
 thread_local! {
@@ -114,6 +121,7 @@ pub fn install(
             rows: Vec::new(),
             actions: Vec::new(),
             bar: None,
+            glow: None,
         });
     });
 }
@@ -133,6 +141,7 @@ pub fn apply(mtm: MainThreadMarker, bar: &Bar, rows: &[Row]) {
             draw_bar(mtm, item, bar);
             ui.bar = Some(bar.clone());
         }
+        glow(mtm, ui);
         let shapes: Vec<String> = rows.iter().map(Row::shape).collect();
         if shapes == ui.shapes {
             refresh(mtm, ui, rows);
@@ -146,7 +155,7 @@ pub fn apply(mtm: MainThreadMarker, bar: &Bar, rows: &[Row]) {
 
 /// 拿掉菜单栏上的那一项（设置里选了不显示）。**菜单留着**：换回来时挂到新建的那一项上，
 /// 菜单行照旧就地改。已经拿掉了就什么都不做
-pub fn hide(_mtm: MainThreadMarker) {
+pub fn hide(mtm: MainThreadMarker) {
     UI.with(|cell| {
         let mut guard = cell.borrow_mut();
         let Some(ui) = guard.as_mut() else { return };
@@ -156,6 +165,7 @@ pub fn hide(_mtm: MainThreadMarker) {
             ui.menu.cancelTrackingWithoutAnimation();
         }
         NSStatusBar::systemStatusBar().removeStatusItem(&item);
+        glow(mtm, ui);
         // 再挂出来的是新的一项，那一块要整个重画
         ui.bar = None;
     });
@@ -181,12 +191,168 @@ fn draw_bar(mtm: MainThreadMarker, item: &NSStatusItem, bar: &Bar) {
     let Some(button) = item.button(mtm) else {
         return;
     };
-    let image = bar_image(bar);
+    let image = bar_image(bar, None);
     button.setImage(Some(&image));
     button.setToolTip(Some(&NSString::from_str(&bar.tooltip)));
     let label = NSString::from_str(&bar.tooltip);
     // 旁白读的就是悬停提示那一句
     let _: () = unsafe { msg_send![&*button, setAccessibilityLabel: &*label] };
+}
+
+/// 流光走一圈多久：[`SWEEP`] 秒扫过去，剩下的时间停在暗处，再从左边进来
+const GLOW_CYCLE: f64 = 1.8;
+const SWEEP: f64 = 1.3;
+
+/// 菜单栏上现在挂着的流光遮罩，和它是照什么尺寸搭的（按钮宽高、流光那一段的左右）
+struct Glow {
+    key: [f64; 4],
+}
+
+thread_local! {
+    /// 流光从哪一刻起算（Core Animation 的时钟）。遮罩换了尺寸重搭时接着这一刻走，
+    /// 亮带不从头来
+    static GLOW_EPOCH: f64 = CACurrentMediaTime();
+}
+
+/// 菜单开着、关上时调：开着时流光停下（见 [`glow`]）
+fn sync_glow(mtm: MainThreadMarker) {
+    UI.with(|cell| {
+        let Ok(mut guard) = cell.try_borrow_mut() else {
+            return;
+        };
+        if let Some(ui) = guard.as_mut() {
+            glow(mtm, ui);
+        }
+    });
+}
+
+/// 有请求在跑时给菜单栏按钮的图层挂上流光遮罩，没有了就摘掉。**动画交给 Core
+/// Animation**，在系统的渲染进程里走：每帧重画按钮的话（换图或者标脏），图层重新显示、
+/// 和系统的菜单栏场景同步一回，一秒二十帧就占好几个百分点的 CPU；挂一次遮罩之后这边
+/// 什么都不用做。
+///
+/// **菜单开着时摘掉**：旧系统上菜单栏的高亮底色是按钮自己画的，遮罩会把它也压暗。
+/// 系统设了减弱动态效果就不动，亮带停在正中间
+fn glow(mtm: MainThreadMarker, ui: &mut Ui) {
+    let Some(button) = ui.item.as_ref().and_then(|item| item.button(mtm)) else {
+        ui.glow = None;
+        return;
+    };
+    let want = ui.bar.as_ref().filter(|b| b.busy && !OPEN.with(Cell::get));
+    let layer = {
+        button.setWantsLayer(true);
+        button.layer()
+    };
+    let Some(layer) = layer else { return };
+    let Some(bar) = want else {
+        if ui.glow.take().is_some() {
+            unsafe { layer.setMask(None) };
+        }
+        return;
+    };
+    let bounds = button.bounds();
+    let image = match (button.cell(), button.image()) {
+        (Some(cell), Some(_)) => cell.imageRectForBounds(bounds),
+        _ => return,
+    };
+    let (x0, x1) = glow_span(bar, image.size.width);
+    let key = [
+        bounds.size.width,
+        bounds.size.height,
+        image.origin.x + x0,
+        image.origin.x + x1,
+    ];
+    if ui.glow.as_ref().is_some_and(|g| g.key == key) {
+        return;
+    }
+    CATransaction::begin();
+    CATransaction::setDisableActions(true);
+    // 新建的图层，没有父图层，也不是别的图层的遮罩
+    unsafe { layer.setMask(Some(&glow_mask(bounds, key[2], key[3]))) };
+    CATransaction::commit();
+    ui.glow = Some(Glow { key });
+}
+
+/// 流光遮罩：`x0..x1` 那一段压到 [`GLOW_BASE`]、上面一条亮带来回扫，别处原样（不透明）
+fn glow_mask(bounds: NSRect, x0: f64, x1: f64) -> Retained<CALayer> {
+    let h = bounds.size.height;
+    let mask = CALayer::layer();
+    mask.setFrame(bounds);
+    let opaque = NSColor::blackColor().CGColor();
+    for (x, w) in [(0.0, x0), (x1, bounds.size.width - x1)] {
+        let side = CALayer::layer();
+        side.setFrame(rect(x, 0.0, w.max(0.0), h));
+        side.setBackgroundColor(Some(&opaque));
+        mask.addSublayer(&side);
+    }
+    let track = CALayer::layer();
+    track.setFrame(rect(x0, 0.0, x1 - x0, h));
+    track.setMasksToBounds(true);
+    track.setBackgroundColor(Some(
+        &NSColor::colorWithWhite_alpha(0.0, GLOW_BASE).CGColor(),
+    ));
+    let band = CALayer::layer();
+    band.setFrame(rect(-2.0 * GLOW_HALF, 0.0, 2.0 * GLOW_HALF, h));
+    let image = band_image();
+    let contents: &AnyObject = &image;
+    unsafe { band.setContents(Some(contents)) };
+    if NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion() {
+        band.setPosition(NSPoint::new((x1 - x0) / 2.0, h / 2.0));
+    } else {
+        // 模型上的位置在左边外面：一趟扫完、停在暗处的那一段，亮带就在那儿
+        let sweep = CABasicAnimation::animationWithKeyPath(Some(&NSString::from_str("position.x")));
+        let from = NSNumber::new_f64(-GLOW_HALF);
+        let to = NSNumber::new_f64(x1 - x0 + GLOW_HALF);
+        unsafe {
+            sweep.setFromValue(Some(&from));
+            sweep.setToValue(Some(&to));
+        }
+        sweep.setDuration(SWEEP);
+        let cycle = CAAnimationGroup::animation();
+        cycle.setAnimations(Some(&NSArray::from_retained_slice(&[
+            Retained::into_super(Retained::into_super(sweep)),
+        ])));
+        cycle.setDuration(GLOW_CYCLE);
+        cycle.setRepeatCount(f32::INFINITY);
+        cycle.setBeginTime(GLOW_EPOCH.with(|t| *t));
+        band.addAnimation_forKey(&cycle, Some(&NSString::from_str("glow")));
+    }
+    track.addSublayer(&band);
+    mask.addSublayer(&track);
+    mask
+}
+
+/// 亮带：中间不透明、两边透明，余弦过渡。拉伸着贴在遮罩里，横向的过渡不怕缩放
+fn band_image() -> Retained<NSImage> {
+    let block = RcBlock::new(|r: NSRect| -> Bool {
+        let stops: Vec<Retained<NSColor>> = (0..=24)
+            .map(|i| {
+                let d = (i as f64 / 12.0 - 1.0).abs();
+                NSColor::colorWithWhite_alpha(0.0, lift(d))
+            })
+            .collect();
+        if let Some(g) =
+            NSGradient::initWithColors(NSGradient::alloc(), &NSArray::from_retained_slice(&stops))
+        {
+            g.drawInRect_angle(r, 0.0);
+        }
+        Bool::YES
+    });
+    NSImage::imageWithSize_flipped_drawingHandler(NSSize::new(2.0 * GLOW_HALF, 4.0), false, &block)
+}
+
+/// 离亮带中心 `d`（以半宽为 1）处亮多少：中心 1，到半宽处落到 0
+fn lift(d: f64) -> f64 {
+    (1.0 + (d.min(1.0) * std::f64::consts::PI).cos()) / 2.0
+}
+
+/// 流光走在图里的哪一段：有标识就是标识，只显示数字时是两行数字
+fn glow_span(bar: &Bar, image_w: f64) -> (f64, f64) {
+    if bar.style == Style::Numbers {
+        (EDGE, image_w - EDGE)
+    } else {
+        (EDGE, EDGE + MARK_W)
+    }
 }
 
 /// 标识的尺寸：高 15pt，按应用图标 32 格坐标里 TW 字形所在的 22×20 那一块取宽
@@ -197,8 +363,12 @@ const EDGE: f64 = 3.0;
 
 /// 画成一张图。**正常时是模板图**：系统按菜单栏的深浅自动着色；网关不在的时候要
 /// 画红色角标，只能关掉模板，用跟着外观走的系统颜色自己画。**额度不改这一块的颜色**
-/// （见 `Tone`）：紧张、用完都在菜单里的那一行说
-pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
+/// （见 `Tone`）：紧张、用完都在菜单里的那一行说。
+///
+/// 有请求在跑时标识上走流光：整个标识压暗，一条亮带从左往右扫过（只显示数字时走在
+/// 两行数字上）。菜单栏上的流光是图层遮罩（见 [`glow`]），图本身照常画，`phase` 给 None；
+/// 预览和截图没有图层，给 `phase`（扫到哪儿，0 刚进来、1 刚出去）就把那一帧画进图里
+pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
     let show_mark = bar.style != Style::Numbers;
     let show_numbers = bar.style != Style::Icon;
     let (top, bottom) = bar
@@ -218,8 +388,7 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
     } else {
         0.0
     };
-    let dot_w = if !show_mark && bar.dot { 7.0 } else { 0.0 };
-    let mut width = EDGE * 2.0 + dot_w + numbers_w;
+    let mut width = EDGE * 2.0 + numbers_w;
     if show_mark {
         width += MARK_W;
     }
@@ -228,6 +397,9 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
     }
     let height = thickness();
     let template = !bar.alert;
+    let glow = phase
+        .filter(|_| bar.busy)
+        .map(|p| (glow_span(bar, width), p));
     let bar = bar.clone();
     let block = RcBlock::new(move |_rect: NSRect| -> Bool {
         let fg = if template {
@@ -243,9 +415,6 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
                 (height - MARK_H) / 2.0,
                 &fg.colorWithAlphaComponent(alpha),
             );
-            if bar.dot {
-                fill_oval(x + MARK_W - 1.5, (height - MARK_H) / 2.0 - 1.5, 5.0, &fg);
-            }
             if bar.alert {
                 fill_oval(
                     x + MARK_W - 2.0,
@@ -264,10 +433,6 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
                 (fg.clone(), alpha)
             };
             let color = color.colorWithAlphaComponent(alpha);
-            if dot_w > 0.0 {
-                fill_oval(x, height / 2.0 - 2.5, 5.0, &color);
-                x += dot_w;
-            }
             // 两行都右对齐：数字变长时向左伸，右边缘不动
             let a = attributed(&top, &top_font, &color);
             let b = attributed(&bottom, &bottom_font, &color);
@@ -276,6 +441,9 @@ pub fn bar_image(bar: &Bar) -> Retained<NSImage> {
             let y0 = (height - line * 2.0) / 2.0 - 0.5;
             a.drawAtPoint(NSPoint::new(right - a.size().width, y0));
             b.drawAtPoint(NSPoint::new(right - b.size().width, y0 + line));
+        }
+        if let Some(((x0, x1), phase)) = glow {
+            glow_paint(x0, x1, height, phase);
         }
         Bool::YES
     });
@@ -304,6 +472,37 @@ fn draw_mark(x: f64, y: f64, color: &NSColor) {
     path.setLineJoinStyle(NSLineJoinStyle::Round);
     color.setStroke();
     path.stroke();
+}
+
+/// 流光：暗处的透明度，和亮带的半宽（pt）
+const GLOW_BASE: f64 = 0.4;
+const GLOW_HALF: f64 = 6.0;
+
+/// 把图里 `x0..x1` 这一段已经画好的东西按流光的那一帧裁一遍透明度（DestinationIn）：
+/// 和菜单栏上的遮罩（[`glow_mask`]）同一个样子，给预览和截图用。**模板图只认透明度**，
+/// 系统按菜单栏深浅着色，所以「亮」就是不透明：深色菜单栏上是一条白光，浅色上是一条黑影
+fn glow_paint(x0: f64, x1: f64, height: f64, phase: f64) {
+    let Some(ctx) = NSGraphicsContext::currentContext() else {
+        return;
+    };
+    let (start, end) = (x0.floor(), x1.ceil());
+    let center = start - GLOW_HALF + (end - start + 2.0 * GLOW_HALF) * phase;
+    let steps = ((end - start) * 4.0) as usize;
+    let stops: Vec<Retained<NSColor>> = (0..=steps)
+        .map(|i| {
+            let x = start + (end - start) * i as f64 / steps as f64;
+            let d = (x - center).abs() / GLOW_HALF;
+            NSColor::colorWithWhite_alpha(0.0, GLOW_BASE + (1.0 - GLOW_BASE) * lift(d))
+        })
+        .collect();
+    let Some(gradient) =
+        NSGradient::initWithColors(NSGradient::alloc(), &NSArray::from_retained_slice(&stops))
+    else {
+        return;
+    };
+    ctx.setCompositingOperation(NSCompositingOperation::DestinationIn);
+    gradient.drawInRect_angle(rect(start, 0.0, end - start, height), 0.0);
+    ctx.setCompositingOperation(NSCompositingOperation::SourceOver);
 }
 
 fn fill_oval(x: f64, y: f64, d: f64, color: &NSColor) {
@@ -571,6 +770,7 @@ define_class!(
             let mtm = MainThreadMarker::from(self);
             menu.setAppearance(Some(&NSApplication::sharedApplication(mtm).effectiveAppearance()));
             OPEN.with(|o| o.set(true));
+            sync_glow(mtm);
             if let Some(f) = ON_OPEN.with(|o| o.borrow().clone()) {
                 f(true);
             }
@@ -579,6 +779,7 @@ define_class!(
         #[unsafe(method(menuDidClose:))]
         fn menu_did_close(&self, _menu: &NSMenu) {
             OPEN.with(|o| o.set(false));
+            sync_glow(MainThreadMarker::from(self));
             if let Some(f) = ON_OPEN.with(|o| o.borrow().clone()) {
                 f(false);
             }

@@ -99,6 +99,11 @@ pub fn describe_menu() -> Vec<String> {
 /// （`examples/menubar_preview.rs`）。**标准菜单项画的是近似的样子** —— 真的由
 /// AppKit 画；自定义的几行和菜单栏那一块是真的。
 pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
+    preview_frame(bar, rows, dark, 0.5)
+}
+
+/// 同 [`preview_image`]，流光停在 `phase`（见 `glow_phase`）：导出一串帧看流光怎么走
+pub fn preview_frame(bar: &Bar, rows: &[Row], dark: bool, phase: f64) -> Retained<NSImage> {
     use objc2_app_kit::{
         NSAffineTransformNSAppKitAdditions, NSAppearance, NSAppearanceNameAqua,
         NSAppearanceNameDarkAqua, NSGraphicsContext,
@@ -119,7 +124,7 @@ pub fn preview_image(bar: &Bar, rows: &[Row], dark: bool) -> Retained<NSImage> {
         .filter(|r| !matches!(r, Row::Separator | Row::Item(_)))
         .map(row_width)
         .fold(MENU_WIDTH, f64::max);
-    let bar_img = bar_image(bar);
+    let bar_img = bar_image(bar, Some(phase));
     let bar_h = thickness() + 8.0;
     let total = bar_h + 10.0 + heights.iter().sum::<f64>() + 10.0;
     let width = menu_w + 24.0;

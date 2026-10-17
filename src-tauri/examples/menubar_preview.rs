@@ -5,6 +5,8 @@
 //! cargo run --manifest-path src-tauri/Cargo.toml --example menubar_preview -- --png <目录>
 //! # 再加上菜单栏那一块的三档
 //! cargo run --manifest-path src-tauri/Cargo.toml --example menubar_preview -- --png <目录> --bars
+//! # 只导出有请求在跑时的流光，一圈 54 帧（30 帧/秒）
+//! cargo run --manifest-path src-tauri/Cargo.toml --example menubar_preview -- --png <目录> --glow
 //! # 挂到菜单栏上，点开看真的菜单。Ctrl-C 退出
 //! cargo run --manifest-path src-tauri/Cargo.toml --example menubar_preview -- busy
 //! ```
@@ -61,6 +63,24 @@ fn main() {
                     println!("{} {}", if ok { "wrote" } else { "FAILED" }, path.display());
                 }
             }
+        }
+        if args.iter().any(|a| a == "--glow") {
+            // 有请求在跑时菜单栏那一块的流光，一圈按 30 帧/秒导出成一串
+            let bar = model::build(&snapshot("busy"), style).0;
+            for i in 0..54 {
+                let phase = f64::from(i) / 30.0 / 1.3;
+                for dark in [true, false] {
+                    let path = dir.join(format!(
+                        "glow-{}-{i:02}.png",
+                        if dark { "dark" } else { "light" }
+                    ));
+                    macos::preview::write_png(
+                        &macos::preview::preview_frame(&bar, &[], dark, phase),
+                        &path,
+                    );
+                }
+            }
+            return;
         }
         if !args.iter().any(|a| a == "--bars") {
             return;

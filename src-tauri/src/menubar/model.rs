@@ -304,8 +304,8 @@ pub struct Bar {
     pub numbers: Option<(String, String)>,
     /// 正在启动，或者不在运行
     pub dim: bool,
-    /// 有请求在跑
-    pub dot: bool,
+    /// 有请求在跑：标识上走流光
+    pub busy: bool,
     /// 不在运行：红色角标（仅数值时破折号变红）
     pub alert: bool,
     /// 悬停提示，旁白读的也是它
@@ -573,7 +573,7 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
             None
         },
         dim: !running,
-        dot: running && !s.live.is_empty(),
+        busy: running && !s.live.is_empty(),
         alert: !running && !matches!(s.gateway, Gateway::Starting),
         tooltip: tooltip(s, tight),
     }

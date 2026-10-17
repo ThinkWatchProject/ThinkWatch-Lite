@@ -131,6 +131,8 @@ objc2-foundation = "0.3"
 objc2-user-notifications = "0.3"
 # 菜单栏自己持有 NSStatusItem 和 NSMenu（见 `menubar/macos.rs`）。和 Tauri 用的是同一版
 objc2-app-kit = "0.3"
+# 菜单栏上的流光是图层遮罩上的动画（见 `menubar/macos.rs` 的 `glow`）
+objc2-quartz-core = { version = "0.3", default-features = false, features = ["std", "objc2-core-graphics", "CABase", "CALayer", "CAAnimation", "CAMediaTiming", "CATransaction"] }
 # 菜单开着时主线程在事件跟踪模式，更新要走 GCD 的主队列才执行得到
 dispatch2 = "0.3"
 # 更新包是 DMG，而更新器插件只装 `.app.tar.gz`：挂上映像，把里面的 `.app`

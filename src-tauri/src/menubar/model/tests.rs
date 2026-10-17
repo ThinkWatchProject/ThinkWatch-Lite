@@ -354,7 +354,7 @@ fn the_bar_shows_todays_tokens_over_the_generation_speed() {
     s.rate = Some(42);
     let (bar, _) = build(&s, Style::Full);
     assert_eq!(bar.numbers, Some(("3.1M".into(), "42 t/s".into())));
-    assert!(!bar.dim && !bar.alert && !bar.dot);
+    assert!(!bar.dim && !bar.alert && !bar.busy);
     with_lang(Lang::En, || {
         let tip = build(&s, Style::Full).0.tooltip;
         assert!(tip.contains("$41.20 cost, 42 tokens/s"), "{tip}");
@@ -735,7 +735,7 @@ fn requests_in_progress_put_a_dot_on_the_mark_and_list_at_most_five() {
         })
         .collect();
     let (bar, rows) = build(&s, Style::Full);
-    assert!(bar.dot);
+    assert!(bar.busy);
     let live: Vec<_> = rows
         .iter()
         .filter_map(|r| match r {
@@ -786,7 +786,7 @@ fn a_gateway_that_is_not_running_says_why_and_offers_a_restart() {
     s.live = vec![Live::default()];
     let (bar, rows) = build(&s, Style::Full);
     assert_eq!(bar.numbers, None, "不在运行时还显示一个凝固的旧数字");
-    assert!(bar.dim && bar.alert && !bar.dot);
+    assert!(bar.dim && bar.alert && !bar.busy);
     assert!(
         matches!(&rows[2], Row::Status { state, tone: StateTone::Bad, .. } if state == "无法启动")
     );
