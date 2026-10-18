@@ -380,6 +380,11 @@ pub fn adoptable() -> Vec<Client> {
                     code!("adopt.cost.codex.chatgpt_desktop"),
                     "The ChatGPT desktop app reads the same configuration file, so its local Codex sessions go through the gateway as well; the app has to be restarted for that to take effect.",
                 ),
+                // 账号身份恒为空（见 [`CODEX_DETAIL_MODE`]），桌面版里要 ChatGPT 账号的都用不了
+                (
+                    code!("adopt.cost.codex.account_features"),
+                    "In the ChatGPT desktop app, Codex features that require a ChatGPT account, such as the work browser, are unavailable while connected.",
+                ),
                 (
                     code!("adopt.cost.codex.reopen_terminal"),
                     "The terminal has to be reopened afterwards.",
@@ -1189,14 +1194,40 @@ pub const MODEL_PLACEHOLDER: &str = "<model>";
 ///
 /// opencode 看样子：文件里已经有一条 v2 原生的 `providers.thinkwatch` 时，改那一条 ——
 /// v1 写法的那一条会被它整条盖掉。Grok Build 看此刻选着哪个模型，好挑默认模型。
+/// Codex 看 ChatGPT 桌面版的显示方式（[`CODEX_DETAIL_MODE`]）。
 pub fn edits_for(client: &Client, gw: &Gateway, current: &str) -> Vec<Edit> {
     match client.id {
         "opencode" => crate::opencode::edits(gw, crate::opencode::shape_in(current)),
         "grok-build" => crate::grok::edits(gw, current),
         "qwen-code" => crate::qwen::edits(gw, current),
         "hermes-agent" => crate::hermes::edits(gw, current),
+        "codex" => {
+            let mut v = edits(client, gw);
+            v.extend(codex_detail_mode(current));
+            v
+        }
         _ => edits(client, gw),
     }
+}
+
+/// ChatGPT 桌面版里 Codex 的对话显示方式。
+///
+/// `STEPS_PROSE` 是 ChatGPT 工作模式用的那一种。选着它时，桌面版每次提交消息都要拿
+/// ChatGPT 账号的身份去配工作浏览器，拿不到就不让发（「Work browser access requires an
+/// authenticated account」）。身份只来自 Codex 后台答的登录方式，而接管写的
+/// `requires_openai_auth = false` 让它恒答「没有」—— API 密钥登录本来也没有身份。于是
+/// **不管用户实际登没登录，每条消息都发不出去**（26.1013 的 app.asar 和 openai/codex
+/// `get_auth_status_response` 读出来的，本机实测过）。
+///
+/// 所以接管期间改成桌面版的缺省值 `STEPS_COMMANDS`，还原时照接管记录改回。别的值、
+/// 没有这一项的，不碰。
+pub const CODEX_DETAIL_MODE: [&str; 2] = ["desktop", "conversationDetailMode"];
+
+fn codex_detail_mode(current: &str) -> Option<Edit> {
+    let now = crate::toml::get(current, &CODEX_DETAIL_MODE)
+        .ok()
+        .flatten()?;
+    (now == Val::s("STEPS_PROSE")).then(|| e(&CODEX_DETAIL_MODE, Val::s("STEPS_COMMANDS")))
 }
 
 /// 上一次接管写过、这一次不写了的字段，要连同它所在的那一段整个拿掉时，是哪一段。

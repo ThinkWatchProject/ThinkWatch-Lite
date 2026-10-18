@@ -340,6 +340,17 @@ pub fn plan_adopt(
     notes.extend(cloud_notes(c, home, &current, &on, around));
     // Pi 访问网关也会走代理（NO_PROXY 不列这个地址的话）：接管之前说
     notes.extend(crate::pi::proxy_notes(c.id, home, &gw.base, around));
+    // 改的是用户自己在 ChatGPT 桌面版里选的显示方式：在确认之前说
+    if edits
+        .iter()
+        .any(|e| e.path == crate::clients::CODEX_DETAIL_MODE)
+    {
+        notes.push(msg!(
+            "adopt.plan.codex.detail_mode" =>
+            "Codex in the ChatGPT desktop app shows conversation details in the default way \
+             while connected; the previous setting is put back on restore."
+        ));
+    }
     // 原来直连 Bedrock 的：按那一套设置新建上游要填的，和凭据上要说的话
     let off = |cloud: Cloud| {
         on.iter()

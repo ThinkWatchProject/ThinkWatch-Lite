@@ -353,6 +353,68 @@ fn restoring_codex_puts_the_file_back_plus_only_the_shadow_openai() {
     assert_nothing_of_ours_is_left(&after);
 }
 
+fn codex_detail_mode(text: &str) -> Option<tw_adopt::json::Val> {
+    tw_adopt::toml::get(text, &tw_adopt::clients::CODEX_DETAIL_MODE).unwrap()
+}
+
+#[test]
+fn codex_work_mode_display_is_set_to_the_default_while_connected() {
+    // 选着工作模式的显示方式，接管后 ChatGPT 桌面版每条消息都发不出去
+    // （见 `clients::CODEX_DETAIL_MODE`）
+    let seed = format!(
+        "{CODEX}\n[desktop]\nfollowUpQueueMode = \"queue\"\nconversationDetailMode = \"STEPS_PROSE\"\n"
+    );
+    let b = bed("codex", &seed);
+    let c = client("codex");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    let codes: Vec<_> = p.notes.iter().map(|n| n.code.as_str()).collect();
+    assert!(codes.contains(&"adopt.plan.codex.detail_mode"), "{codes:?}");
+    apply(&c, &p, &b.backups).unwrap();
+    let path = b.home.join(".codex/config.toml");
+    let after = read(&path);
+    assert_eq!(
+        codex_detail_mode(&after),
+        Some(tw_adopt::json::Val::s("STEPS_COMMANDS")),
+        "{after}"
+    );
+    assert!(after.contains("followUpQueueMode = \"queue\""), "{after}");
+
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(read(&path), restored_codex(&seed));
+}
+
+#[test]
+fn other_codex_display_settings_are_left_alone() {
+    for seed in [
+        format!("{CODEX}\n[desktop]\nconversationDetailMode = \"STEPS_EXECUTION\"\n"),
+        format!("{CODEX}\n[desktop]\nfollowUpQueueMode = \"queue\"\n"),
+        CODEX.to_string(),
+    ] {
+        let b = bed("codex", &seed);
+        let c = client("codex");
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+        assert!(
+            !p.notes
+                .iter()
+                .any(|n| n.code == "adopt.plan.codex.detail_mode"),
+            "{seed}"
+        );
+        apply(&c, &p, &b.backups).unwrap();
+        let after = read(&b.home.join(".codex/config.toml"));
+        assert_eq!(
+            codex_detail_mode(&after),
+            codex_detail_mode(&seed),
+            "{after}"
+        );
+        assert_eq!(
+            after.matches("[desktop]").count(),
+            seed.matches("[desktop]").count(),
+            "{after}"
+        );
+    }
+}
+
 #[test]
 fn the_shadow_openai_follows_the_users_own_openai_base_url() {
     // 顶层的 `openai_base_url` 只管内置的 `openai`，管不到影子那一段：
