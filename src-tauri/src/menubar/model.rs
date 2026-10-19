@@ -571,10 +571,10 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
         style,
         numbers: if running {
             // 费用不上菜单栏（用户说金额没什么用），在点开的菜单和悬停提示里。速度是此刻的：
-            // 没有在跑的请求写破折号，不是 0 t/s；在跑却都还没开始生成的是 0 t/s
+            // 没有在跑的请求、在跑却都还没开始生成，都是 0 t/s，不写破折号
             s.today
                 .as_ref()
-                .map(|t| (tokens_short(t.tokens), rate_short(s.rate)))
+                .map(|t| (tokens_short(t.tokens), rate_short(s.rate.unwrap_or(0))))
         } else {
             // 不在运行时，上一次的数字已经不代表现在：画破折号，不画一个凝固的旧值
             None
@@ -812,7 +812,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     .unwrap_or(&l.key)
                     .to_string(),
                 model: l.model.clone(),
-                rate: l.rate.map(|r| rate_short(Some(r))),
+                rate: l.rate.map(rate_short),
                 elapsed: elapsed(s.now_ms.saturating_sub(l.started_ms)),
                 action: Action::OpenRequest(l.id),
             });
@@ -1212,11 +1212,10 @@ pub fn tokens_short(n: i64) -> String {
     }
 }
 
-/// 菜单栏上的生成速度：`42 t/s`、`2.2k t/s`，数字和 token 数同一套写法。没有速度是 `— t/s`。
+/// 菜单栏上的生成速度：`0 t/s`、`42 t/s`、`2.2k t/s`，数字和 token 数同一套写法。
 /// 菜单里「进行中」每一行右边的速度也是这个写法：那一行要放下应用、模型和时长
-pub fn rate_short(rate: Option<u32>) -> String {
-    let n = rate.map_or_else(|| "—".to_string(), |r| tokens_short(r.into()));
-    format!("{n} t/s")
+pub fn rate_short(rate: u32) -> String {
+    format!("{} t/s", tokens_short(rate.into()))
 }
 
 /// 菜单和悬停提示里的生成速度：「42 token/秒」

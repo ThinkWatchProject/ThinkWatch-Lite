@@ -361,12 +361,11 @@ fn the_bar_shows_todays_tokens_over_the_generation_speed() {
     });
     s.rate = Some(2_215);
     assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "2.2k t/s");
-    // 有请求在跑、却都还没开始生成：0，不是破折号
+    // 有请求在跑、却都还没开始生成，和没有在跑的请求一样：0，不写破折号
     s.rate = Some(0);
     assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "0 t/s");
-    // 没有在跑的请求：没有速度，不是 0
     s.rate = None;
-    assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "— t/s");
+    assert_eq!(build(&s, Style::Full).0.numbers.unwrap().1, "0 t/s");
 }
 
 /// **估算不能冒充实测，算不出钱的也不能当成零**：和界面上同一套记号，菜单里和悬停
@@ -443,7 +442,7 @@ fn an_unknown_day_is_two_dashes_and_a_quiet_day_is_zero() {
     s.today = Some(Today::default());
     assert_eq!(
         build(&s, Style::Full).0.numbers,
-        Some(("0".into(), "— t/s".into()))
+        Some(("0".into(), "0 t/s".into()))
     );
 }
 

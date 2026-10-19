@@ -37,7 +37,8 @@ use objc2_foundation::{
     NSRect, NSSize, NSString,
 };
 use objc2_quartz_core::{
-    CAAnimationGroup, CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming, CATransaction,
+    CAAnimationGroup, CABasicAnimation, CACurrentMediaTime, CALayer, CAMediaTiming,
+    CAMediaTimingFunction, CATransaction, kCAMediaTimingFunctionEaseInEaseOut,
 };
 
 use super::model::{Action, Bar, Row, Style, SubItem};
@@ -83,7 +84,7 @@ struct Ui {
     /// 按菜单项的 tag 找到它做什么
     actions: Vec<Action>,
     bar: Option<Bar>,
-    /// 挂着的流光遮罩（见 [`glow`]）。没挂是 None
+    /// 挂着的遮罩（流光或者圆点呼吸，见 [`glow`]）。没挂是 None
     glow: Option<Glow>,
 }
 
@@ -203,14 +204,27 @@ fn draw_bar(mtm: MainThreadMarker, item: &NSStatusItem, bar: &Bar) {
 const GLOW_CYCLE: f64 = 1.8;
 const SWEEP: f64 = 1.3;
 
-/// 菜单栏上现在挂着的流光遮罩，和它是照什么尺寸搭的（按钮宽高、流光那一段的左右）
+/// 圆点呼吸：[`BREATHE`] 秒从全亮渐暗到 [`BREATHE_LOW`]，再同样慢慢亮回来
+const BREATHE: f64 = 1.0;
+const BREATHE_LOW: f32 = 0.25;
+
+/// 有请求在跑时菜单栏那一块怎么动：有标识就是标识上走流光，只显示数字时是数字
+/// 左边的圆点呼吸
+#[derive(Clone, Copy, PartialEq)]
+enum Motion {
+    Sweep,
+    Breathe,
+}
+
+/// 菜单栏上现在挂着的遮罩，和它是照什么搭的（哪一种动法；按钮宽高、动的那一段的左右）
 struct Glow {
+    motion: Motion,
     key: [f64; 4],
 }
 
 thread_local! {
-    /// 流光从哪一刻起算（Core Animation 的时钟）。遮罩换了尺寸重搭时接着这一刻走，
-    /// 亮带不从头来
+    /// 流光、呼吸从哪一刻起算（Core Animation 的时钟）。遮罩换了尺寸重搭时接着这一刻
+    /// 走，不从头来
     static GLOW_EPOCH: f64 = CACurrentMediaTime();
 }
 
@@ -226,14 +240,14 @@ fn sync_glow(mtm: MainThreadMarker) {
     });
 }
 
-/// 有请求在跑时给菜单栏按钮的图层挂上流光遮罩，没有了就摘掉。**只走在标识上**：
-/// 只显示数字时不走流光，数字左边画一个圆点（见 [`bar_image`]）。**动画交给 Core
-/// Animation**，在系统的渲染进程里走：每帧重画按钮的话（换图或者标脏），图层重新显示、
-/// 和系统的菜单栏场景同步一回，一秒二十帧就占好几个百分点的 CPU；挂一次遮罩之后这边
-/// 什么都不用做。
+/// 有请求在跑时给菜单栏按钮的图层挂上遮罩，没有了就摘掉。**流光只走在标识上**：
+/// 只显示数字时不走流光，数字左边画一个圆点（见 [`bar_image`]），遮罩让它呼吸。
+/// **动画交给 Core Animation**，在系统的渲染进程里走：每帧重画按钮的话（换图或者
+/// 标脏），图层重新显示、和系统的菜单栏场景同步一回，一秒二十帧就占好几个百分点的
+/// CPU；挂一次遮罩之后这边什么都不用做。
 ///
 /// **菜单开着时摘掉**：旧系统上菜单栏的高亮底色是按钮自己画的，遮罩会把它也压暗。
-/// 系统设了减弱动态效果就不动，亮带停在正中间
+/// 系统设了减弱动态效果就不动：亮带停在正中间，圆点常亮
 fn glow(mtm: MainThreadMarker, ui: &mut Ui) {
     let Some(button) = ui.item.as_ref().and_then(|item| item.button(mtm)) else {
         ui.glow = None;
@@ -242,43 +256,63 @@ fn glow(mtm: MainThreadMarker, ui: &mut Ui) {
     let want = ui
         .bar
         .as_ref()
-        .is_some_and(|b| b.busy && b.style != Style::Numbers)
-        && !OPEN.with(Cell::get);
+        .filter(|b| b.busy && !OPEN.with(Cell::get))
+        .map(|b| {
+            if b.style == Style::Numbers {
+                Motion::Breathe
+            } else {
+                Motion::Sweep
+            }
+        });
     let layer = {
         button.setWantsLayer(true);
         button.layer()
     };
     let Some(layer) = layer else { return };
-    if !want {
+    let Some(motion) = want else {
         if ui.glow.take().is_some() {
             unsafe { layer.setMask(None) };
         }
         return;
-    }
+    };
     let bounds = button.bounds();
     let image = match (button.cell(), button.image()) {
         (Some(cell), Some(_)) => cell.imageRectForBounds(bounds),
         _ => return,
     };
+    // 圆点那一段左右各多留 1pt，抗锯齿的边也跟着呼吸；右边离数字还有 1pt
+    let (x0, x1) = match motion {
+        Motion::Sweep => (EDGE, EDGE + MARK_W),
+        Motion::Breathe => (EDGE - 1.0, EDGE + DOT + 1.0),
+    };
     let key = [
         bounds.size.width,
         bounds.size.height,
-        image.origin.x + EDGE,
-        image.origin.x + EDGE + MARK_W,
+        image.origin.x + x0,
+        image.origin.x + x1,
     ];
-    if ui.glow.as_ref().is_some_and(|g| g.key == key) {
+    if ui
+        .glow
+        .as_ref()
+        .is_some_and(|g| g.motion == motion && g.key == key)
+    {
         return;
     }
+    let mask = match motion {
+        Motion::Sweep => glow_mask(bounds, key[2], key[3]),
+        Motion::Breathe => breathe_mask(bounds, key[2], key[3]),
+    };
     CATransaction::begin();
     CATransaction::setDisableActions(true);
     // 新建的图层，没有父图层，也不是别的图层的遮罩
-    unsafe { layer.setMask(Some(&glow_mask(bounds, key[2], key[3]))) };
+    unsafe { layer.setMask(Some(&mask)) };
     CATransaction::commit();
-    ui.glow = Some(Glow { key });
+    ui.glow = Some(Glow { motion, key });
 }
 
-/// 流光遮罩：`x0..x1` 那一段压到 [`GLOW_BASE`]、上面一条亮带来回扫，别处原样（不透明）
-fn glow_mask(bounds: NSRect, x0: f64, x1: f64) -> Retained<CALayer> {
+/// 遮罩的底子：`x0..x1` 以外原样（不透明），返回整个遮罩和中间那一段，那一段怎么动
+/// 由调用方往上挂
+fn mask_around(bounds: NSRect, x0: f64, x1: f64) -> (Retained<CALayer>, Retained<CALayer>) {
     let h = bounds.size.height;
     let mask = CALayer::layer();
     mask.setFrame(bounds);
@@ -291,6 +325,38 @@ fn glow_mask(bounds: NSRect, x0: f64, x1: f64) -> Retained<CALayer> {
     }
     let track = CALayer::layer();
     track.setFrame(rect(x0, 0.0, x1 - x0, h));
+    mask.addSublayer(&track);
+    (mask, track)
+}
+
+/// 圆点呼吸的遮罩：`x0..x1` 那一段的透明度在 1 和 [`BREATHE_LOW`] 之间缓进缓出地来回
+fn breathe_mask(bounds: NSRect, x0: f64, x1: f64) -> Retained<CALayer> {
+    let (mask, track) = mask_around(bounds, x0, x1);
+    track.setBackgroundColor(Some(&NSColor::blackColor().CGColor()));
+    if !NSWorkspace::sharedWorkspace().accessibilityDisplayShouldReduceMotion() {
+        let fade = CABasicAnimation::animationWithKeyPath(Some(&NSString::from_str("opacity")));
+        let from = NSNumber::new_f32(1.0);
+        let to = NSNumber::new_f32(BREATHE_LOW);
+        unsafe {
+            fade.setFromValue(Some(&from));
+            fade.setToValue(Some(&to));
+            fade.setTimingFunction(Some(&CAMediaTimingFunction::functionWithName(
+                kCAMediaTimingFunctionEaseInEaseOut,
+            )));
+        }
+        fade.setDuration(BREATHE);
+        fade.setAutoreverses(true);
+        fade.setRepeatCount(f32::INFINITY);
+        fade.setBeginTime(GLOW_EPOCH.with(|t| *t));
+        track.addAnimation_forKey(&fade, Some(&NSString::from_str("breathe")));
+    }
+    mask
+}
+
+/// 流光遮罩：`x0..x1` 那一段压到 [`GLOW_BASE`]、上面一条亮带来回扫，别处原样（不透明）
+fn glow_mask(bounds: NSRect, x0: f64, x1: f64) -> Retained<CALayer> {
+    let h = bounds.size.height;
+    let (mask, track) = mask_around(bounds, x0, x1);
     track.setMasksToBounds(true);
     track.setBackgroundColor(Some(
         &NSColor::colorWithWhite_alpha(0.0, GLOW_BASE).CGColor(),
@@ -322,7 +388,6 @@ fn glow_mask(bounds: NSRect, x0: f64, x1: f64) -> Retained<CALayer> {
         band.addAnimation_forKey(&cycle, Some(&NSString::from_str("glow")));
     }
     track.addSublayer(&band);
-    mask.addSublayer(&track);
     mask
 }
 
@@ -355,15 +420,18 @@ const MARK_H: f64 = 15.0;
 const MARK_W: f64 = MARK_H * 22.0 / 20.0;
 const GAP: f64 = 5.0;
 const EDGE: f64 = 3.0;
+/// 只显示数字时有请求在跑，数字左边的圆点：直径，和离数字多远
+const DOT: f64 = 5.0;
+const DOT_GAP: f64 = 2.0;
 
 /// 画成一张图。**正常时是模板图**：系统按菜单栏的深浅自动着色；网关不在的时候要
 /// 画红色角标，只能关掉模板，用跟着外观走的系统颜色自己画。**额度不改这一块的颜色**
 /// （见 `Tone`）：紧张、用完都在菜单里的那一行说。
 ///
 /// 有请求在跑时标识上走流光：整个标识压暗，一条亮带从左往右扫过。**数字上不走**：
-/// 只显示数字时在数字左边画一个圆点。菜单栏上的流光是图层遮罩（见 [`glow`]），
-/// 图本身照常画，`phase` 给 None；预览和截图没有图层，给 `phase`（扫到哪儿，0 刚进来、
-/// 1 刚出去）就把那一帧画进图里
+/// 只显示数字时在数字左边画一个圆点。菜单栏上的流光和圆点的呼吸是图层遮罩
+/// （见 [`glow`]），图本身照常画，`phase` 给 None；预览和截图没有图层，给 `phase`
+/// （扫到哪儿，0 刚进来、1 刚出去）就把流光的那一帧画进图里，圆点照常全亮
 pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
     let show_mark = bar.style != Style::Numbers;
     let show_numbers = bar.style != Style::Icon;
@@ -384,7 +452,11 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
     } else {
         0.0
     };
-    let dot_w = if !show_mark && bar.busy { 7.0 } else { 0.0 };
+    let dot_w = if !show_mark && bar.busy {
+        DOT + DOT_GAP
+    } else {
+        0.0
+    };
     let mut width = EDGE * 2.0 + dot_w + numbers_w;
     if show_mark {
         width += MARK_W;
@@ -429,7 +501,7 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
             };
             let color = color.colorWithAlphaComponent(alpha);
             if dot_w > 0.0 {
-                fill_oval(x, height / 2.0 - 2.5, 5.0, &color);
+                fill_oval(x, (height - DOT) / 2.0, DOT, &color);
                 x += dot_w;
             }
             // 两行都右对齐：数字变长时向左伸，右边缘不动
