@@ -1,0 +1,91 @@
+import { messages } from "@/i18n";
+
+/** 同步里各处共用的词：对象的种类、合并单位、时间 */
+export const syncLabelsText = messages(
+  {
+    kind: {
+      provider: "上游",
+      proxy: "代理",
+      key: "网关密钥",
+      alias: "别名",
+      group: "策略组",
+      route: "路由",
+      price_sheet: "价目表",
+      security_rule: "安全规则",
+      plugin: "插件",
+      provider_order: "上游顺序",
+      route_order: "路由顺序",
+      plugin_order: "插件顺序",
+      global: "全局设置",
+      client_prefs: "通用偏好",
+    },
+    /** 全局设置的一节，按节名 */
+    global: {
+      failover: "故障转移",
+      security: "安全防护",
+      default_route: "默认路由",
+      default_key: "默认密钥",
+      client_probes: "辅助请求",
+      pricing: "价目表设置",
+    } as Record<string, string>,
+    /** 合并单位 */
+    unit: {
+      conn: "连接",
+      models: "模型",
+      billing: "计费",
+      other: "其他",
+      script: "脚本",
+      settings: "设置",
+      enabled: "启用状态",
+    } as Record<string, string>,
+    /** 「上游「公司中转」」 */
+    named: (kind: string, name: string) => `${kind}「${name}」`,
+    /** 「上游「公司中转」· 连接」：引号后面不再空一格 */
+    withUnits: (what: string, units: string) => `${what}${what.endsWith("」") ? "" : " "}· ${units}`,
+    unitSep: "、",
+    justNow: "刚刚",
+    minutesAgo: (n: number) => `${n} 分钟前`,
+    today: (hm: string) => `今天 ${hm}`,
+  },
+  {
+    kind: {
+      provider: "Upstream",
+      proxy: "Proxy",
+      key: "Gateway key",
+      alias: "Alias",
+      group: "Group",
+      route: "Route",
+      price_sheet: "Price sheet",
+      security_rule: "Security rule",
+      plugin: "Plugin",
+      provider_order: "Upstream order",
+      route_order: "Route order",
+      plugin_order: "Plugin order",
+      global: "Global settings",
+      client_prefs: "General preferences",
+    },
+    global: {
+      failover: "Failover",
+      security: "Protection",
+      default_route: "Default route",
+      default_key: "Default key",
+      client_probes: "Auxiliary requests",
+      pricing: "Price sheet settings",
+    } as Record<string, string>,
+    unit: {
+      conn: "connection",
+      models: "models",
+      billing: "billing",
+      other: "other",
+      script: "script",
+      settings: "settings",
+      enabled: "on/off",
+    } as Record<string, string>,
+    named: (kind: string, name: string) => `${kind} “${name}”`,
+    withUnits: (what: string, units: string) => `${what} · ${units}`,
+    unitSep: ", ",
+    justNow: "just now",
+    minutesAgo: (n: number) => (n === 1 ? "1 minute ago" : `${n} minutes ago`),
+    today: (hm: string) => `today ${hm}`,
+  },
+);

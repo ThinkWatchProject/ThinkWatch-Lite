@@ -38,7 +38,7 @@ export function describeCore(raw: string): CoreLine {
   }
 }
 
-/** 编辑 config.yaml 的几页。工具栏上的「配置文件」「版本历史」只在这几页出现 */
+/** 编辑 config.yaml 的几页。工具栏上的「配置文件」「备份」只在这几页出现 */
 export const CONFIG_PAGES = new Set<Surface>(["upstreams", "keys", "routing", "security", "plugins"]);
 
 /** 配置文件里的一段由哪一页管理 */

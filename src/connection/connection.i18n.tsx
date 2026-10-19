@@ -165,13 +165,13 @@ export const connText = messages(
     // 安全模式、配置文件读不了
     configBroken: "配置文件有误，网关未启动",
     safeMode: "安全模式",
-    configBrokenLead: "core 无法读取配置文件，客户端的请求暂不转发。修正配置文件或回滚到可用的版本即可恢复。",
+    configBrokenLead: "core 无法读取配置文件，客户端的请求暂不转发。修正配置文件或从备份恢复可用的版本即可恢复转发。",
     file: "文件",
     location: "位置",
     lineAt: (line: number, stage: string) => `第 ${line} 行 · ${stage}错误`,
     stageOnly: (stage: string) => `${stage}错误`,
     openConfigFile: "打开配置文件",
-    versionHistory: "版本历史",
+    restoreFromBackup: "从备份恢复…",
     configBrokenResume: "保存修正后的配置后，网关自动恢复。",
 
     // 断线横幅
@@ -320,13 +320,13 @@ export const connText = messages(
     configBroken: "The configuration file has an error; the gateway is not running",
     safeMode: "Safe mode",
     configBrokenLead:
-      "Core cannot read its configuration file, so client requests are not forwarded. Fix the file or roll back to a working version to recover.",
+      "Core cannot read its configuration file, so client requests are not forwarded. Fix the file or restore a working version from the backups to recover.",
     file: "File",
     location: "Location",
     lineAt: (line: number, stage: string) => `Line ${line} · ${stage} error`,
     stageOnly: (stage: string) => `${stage} error`,
     openConfigFile: "Open configuration file",
-    versionHistory: "Version history",
+    restoreFromBackup: "Restore from backup…",
     configBrokenResume: "Once a corrected configuration is saved, the gateway resumes on its own.",
 
     lostBanner: (name: string, attempt: number) =>

@@ -83,12 +83,31 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   GetConfig: () => ({ path: "~/.thinkwatch/config.yaml", text: CONFIG_TEXT, version: configVersion() }),
   PatchConfig: refuse,
   PutConfig: refuse,
-  ConfigHistory: () => [{ version: configVersion(), at_ms: NOW - 2 * DAY, origin: "ui", bytes: 2_714, current: true }],
   ConfigAt: () => ({ section: null, name: null }),
-  ConfigRollback: refuse,
   ConfigRepairPlan: () => ({ base_version: configVersion(), fixes: [] }),
   RepairConfig: refuse,
   SaveListen: refuse,
+  // 导入导出与备份：只读的列一份当前版本，写的拒绝
+  ConfigItems: () => overview(lastSeen()).providers.map((p) => ({ item: { kind: "provider", name: p.name }, refs: [] })),
+  ExportConfig: refuse,
+  ImportPreview: refuse,
+  ImportConfig: refuse,
+  Backups: () => [
+    {
+      id: "0000000001-00000000",
+      at_ms: NOW - 2 * DAY,
+      origin: "ui",
+      device: null,
+      local: true,
+      sync: false,
+      counts: { providers: overview(lastSeen()).providers.length, plugins: 0 },
+      core_version: "0.77.0",
+      current: true,
+    },
+  ],
+  BackupFile: refuse,
+  RestorePreview: refuse,
+  Restore: refuse,
 
   History: (req) => {
     const from = req.from_ms ?? -Infinity;
@@ -228,6 +247,33 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   ReorderPlugins: refuse,
   TrialPlugin: refuse,
   PluginLogs: () => [],
+  // 同步（协议 50）：截图里没开同步，改的一律拒绝
+  SyncStatus: () => ({
+    state: "off",
+    target: null,
+    encrypted: true,
+    device: null,
+    last_synced_ms: null,
+    failing_since_ms: null,
+    error: null,
+    devices: [],
+    conflicts: 0,
+    skipped: 0,
+    notices: [],
+    excluded: [],
+    excluded_cascade: [],
+  }),
+  SyncTest: refuse,
+  SyncJoinPreview: refuse,
+  SyncEnable: refuse,
+  SyncSave: refuse,
+  SyncNow: refuse,
+  SyncConflicts: () => [],
+  SyncResolve: refuse,
+  SyncEncryption: refuse,
+  SyncUnlock: refuse,
+  SyncDisable: refuse,
+  SyncRepublish: refuse,
 };
 
 /** ChatGPT Plus 的两个额度窗口：5 小时用了一半多，每周的三成 */

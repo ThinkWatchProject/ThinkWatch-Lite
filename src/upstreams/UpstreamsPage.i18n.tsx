@@ -29,6 +29,11 @@ export const upstreamsPageText = messages(
     linkTest: "链路测速",
     speedTest: "推理测速",
     newUpstream: "新建上游",
+    /** 多选之后工具条上的那一个：所选上游导出为部分配置包 */
+    exportSelected: (n: number) => `导出所选 ${n} 个上游…`,
+    /** 空状态里「新建上游」旁边的两个（新安装时） */
+    importConfig: "导入配置…",
+    joinSync: "加入同步…",
     checkAll: "检测全部",
     newProxy: "新建代理",
     autoUpdate: "自动更新",
@@ -55,9 +60,9 @@ export const upstreamsPageText = messages(
     saved: (name: string) => `已保存 ${name}`,
     /** 交给删除对话框、嵌在句子中间的名词 */
     what: { upstream: "上游", proxy: "代理", sheet: "价目表" },
-    upstreamGone: "删除后，此上游的地址、凭据与设置将从配置文件中移除，可在版本历史中恢复。",
-    proxyGone: "删除后，此代理的地址与认证信息将从配置文件中移除，可在版本历史中恢复。",
-    sheetGone: "删除后，此价目表的倍率与模型覆盖将从配置文件中移除，可在版本历史中恢复。",
+    upstreamGone: "删除后，此上游的地址、凭据与设置将从配置文件中移除，可从备份中恢复。",
+    proxyGone: "删除后，此代理的地址与认证信息将从配置文件中移除，可从备份中恢复。",
+    sheetGone: "删除后，此价目表的倍率与模型覆盖将从配置文件中移除，可从备份中恢复。",
   },
   {
     hero: {
@@ -83,6 +88,9 @@ export const upstreamsPageText = messages(
     linkTest: "Connection test",
     speedTest: "Inference test",
     newUpstream: "New upstream",
+    exportSelected: (n: number) => (n === 1 ? "Export 1 selected upstream…" : `Export ${n} selected upstreams…`),
+    importConfig: "Import config…",
+    joinSync: "Join sync…",
     checkAll: "Check all",
     newProxy: "New proxy",
     autoUpdate: "Auto-update",
@@ -112,10 +120,10 @@ export const upstreamsPageText = messages(
     saved: (name: string) => `${name} saved`,
     what: { upstream: "upstream", proxy: "proxy", sheet: "price sheet" },
     upstreamGone:
-      "Deleting removes this upstream's address, credentials and settings from the config file. They can be restored from version history.",
+      "Deleting removes this upstream's address, credentials and settings from the config file. They can be restored from the backups.",
     proxyGone:
-      "Deleting removes this proxy's address and authentication details from the config file. They can be restored from version history.",
+      "Deleting removes this proxy's address and authentication details from the config file. They can be restored from the backups.",
     sheetGone:
-      "Deleting removes this price sheet's multiplier and model overrides from the config file. They can be restored from version history.",
+      "Deleting removes this price sheet's multiplier and model overrides from the config file. They can be restored from the backups.",
   },
 );

@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIcon, NetworkIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
+import { ExportDialog } from "@/backup/ExportDialog";
+import { useImport } from "@/backup/useImport";
+import { ShareDialog } from "./ShareDialog";
 import type { ConfigFocus } from "@/configLocate";
 import { invalidate, type Resource } from "@/lib/resource";
 import { useWriteQueue } from "@/lib/writeQueue";
@@ -45,11 +48,12 @@ import { upstreamsPageText } from "./UpstreamsPage.i18n";
 import { CostFigure } from "@/CostFigure";
 import { UpstreamTable, problemsOf } from "./UpstreamTable";
 import { NextClientsHint } from "@/guide/PageHints";
+import { SyncConflictBanner } from "@/sync/Notices";
 import { releaseImportLink } from "@/import/link";
 import { AliasesTab, AliasTabLabel, type AliasDialogMode } from "@/aliases/AliasesTab";
 import { AliasDialog } from "@/aliases/AliasDialog";
 import { aliasesText } from "@/aliases/aliases.i18n";
-import type { AliasInput } from "@/types";
+import type { AliasInput, ItemRef } from "@/types";
 
 export type UpstreamTab = "upstreams" | "aliases" | "proxies" | "pricing";
 
@@ -73,7 +77,11 @@ type DialogState =
   | { kind: "sheet"; mode: PriceSheetDialogMode }
   | { kind: "delete-sheet"; name: string }
   /** 新建、编辑别名（`AliasDialog`） */
-  | { kind: "alias"; mode: AliasDialogMode };
+  | { kind: "alias"; mode: AliasDialogMode }
+  /** 分享一个上游：导入链接（`ShareDialog`） */
+  | { kind: "share"; name: string }
+  /** 导出所选的上游，或者分享里的「导出为配置包…」（`ExportDialog`，预先勾上这几个） */
+  | { kind: "export"; preselect: ItemRef[] };
 
 /**
  * 上游页：上游、别名、代理、价目表四个标签。
@@ -111,6 +119,9 @@ export default function UpstreamsPage({
     setTabState(next);
   };
   const [dialog, setDialog] = useState<DialogState>(null);
+  /** 上游表里勾选的（「导出所选…」）。删掉了的上游不算 */
+  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set());
+  const importer = useImport(() => onChanged());
   const { stats, since } = useUpstreamStats();
   const health = useUpstreamHealth();
   const pricing = usePricingStatus(configVersion);
@@ -197,6 +208,10 @@ export default function UpstreamsPage({
     onChanged();
     void stats.reload();
   };
+
+  const picked = ov.providers.filter((p) => selected.has(p.name)).map((p) => p.name);
+  const exportProviders = (names: string[]) =>
+    setDialog({ kind: "export", preselect: names.map((name) => ({ kind: "provider", name })) });
 
   async function toggle(p: ProviderView) {
     const saved = ov.providers.find((x) => x.name === p.name);
@@ -341,6 +356,11 @@ export default function UpstreamsPage({
             />
           </>
         )}
+        {picked.length > 0 && (
+          <Button size="sm" variant="outline" onClick={() => exportProviders(picked)}>
+            {t.exportSelected(picked.length)}
+          </Button>
+        )}
         <Button size="sm" onClick={createUpstream}>
           <PlusIcon />
           {t.newUpstream}
@@ -436,6 +456,8 @@ export default function UpstreamsPage({
           >
             {stats.error !== undefined ? errorText(stats.error) : null}
           </Banner>
+          {/* 同步有冲突：和设置里同一条提示，可以忽略 */}
+          <SyncConflictBanner />
           <NextClientsHint upstreams={providers.length} />
           {providers.length === 0 ? (
             <EmptyState
@@ -443,10 +465,23 @@ export default function UpstreamsPage({
               title={t.noUpstreams}
               description={t.noUpstreamsDesc}
               action={
-                <Button size="sm" onClick={createUpstream}>
-                  <PlusIcon />
-                  {t.newUpstream}
-                </Button>
+                // 新安装（还没有上游）：也可以把别处导出的配置导进来，或者加入已有的同步
+                <div className="flex flex-wrap justify-center gap-2">
+                  <Button size="sm" onClick={createUpstream}>
+                    <PlusIcon />
+                    {t.newUpstream}
+                  </Button>
+                  <Button size="sm" variant="outline" pending={importer.picking} onClick={importer.start}>
+                    {t.importConfig}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => nav.open("settings", { section: "sync-backup", action: "join-sync" })}
+                  >
+                    {t.joinSync}
+                  </Button>
+                </div>
               }
             />
           ) : (
@@ -460,6 +495,8 @@ export default function UpstreamsPage({
               focus={focus}
               configVersion={configVersion}
               onChanged={changed}
+              selected={selected}
+              onSelect={setSelected}
               actions={{
                 edit: (name) => setDialog({ kind: "upstream", mode: { kind: "edit", name } }),
                 test: (name) => setDialog({ kind: "test", name }),
@@ -486,6 +523,7 @@ export default function UpstreamsPage({
                 toggle: (p) => void toggle(p),
                 locate: (name) => onOpenConfigFile({ section: "providers", name }),
                 remove: (name) => setDialog({ kind: "delete-upstream", name }),
+                share: (name) => setDialog({ kind: "share", name }),
               }}
             />
           )}
@@ -664,6 +702,21 @@ export default function UpstreamsPage({
           }}
         />
       )}
+      {dialog?.kind === "share" &&
+        (() => {
+          const p = ov.providers.find((x) => x.name === dialog.name);
+          return p ? (
+            <ShareDialog
+              provider={p}
+              onClose={() => setDialog(null)}
+              onExportPack={() => exportProviders([p.name])}
+            />
+          ) : null;
+        })()}
+      {dialog?.kind === "export" && (
+        <ExportDialog providers={ov.providers} preselect={dialog.preselect} onClose={() => setDialog(null)} />
+      )}
+      {importer.dialog}
       {dialog?.kind === "delete-sheet" && (
         <DeleteDialog
           what={t.what.sheet}

@@ -12,10 +12,10 @@ export { repairText };
  * 写回（`RepairConfig`）。
  *
  * **只修两种**：取值不在可选范围里的（回到默认值）、不认识的字段（删掉）。修完整份配置读得
- * 进来 core 才给；给不了的时候不出现这个按钮，只剩「打开配置文件」和「版本历史」。
+ * 进来 core 才给；给不了的时候不出现这个按钮，只剩「打开配置文件」和「从备份恢复…」。
  *
  * `active` 为真时才去问（出错页、配置被拒的横幅在的时候）；`key` 变了重问 —— 被拒的那一处
- * 换了、配置又换了一份，修法就不一样了。修完写回走的是和保存同一条路：进版本历史，可以回滚。
+ * 换了、配置又换了一份，修法就不一样了。修完写回走的是和保存同一条路：进备份，可以恢复。
  */
 export function useRepair(active: boolean, key: unknown) {
   const [plan, setPlan] = useState<ConfigRepair | null>(null);

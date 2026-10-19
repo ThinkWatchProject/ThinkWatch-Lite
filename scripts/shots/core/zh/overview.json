@@ -178,7 +178,8 @@
           "kind": "group"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     },
     {
       "auth_header": "x-api-key",
@@ -211,7 +212,8 @@
           "kind": "group"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     },
     {
       "auth_header": "authorization",
@@ -250,7 +252,8 @@
           "rule": "兜底"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     },
     {
       "auth_header": "authorization",
@@ -284,7 +287,8 @@
           "rule": "Qwen 模型"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     },
     {
       "auth_header": "x-api-key",
@@ -314,7 +318,8 @@
           "rule": "DeepSeek 模型"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     },
     {
       "auth_header": "x-goog-api-key",
@@ -349,7 +354,8 @@
           "rule": "Gemini 模型"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     },
     {
       "auth_header": "authorization",
@@ -380,7 +386,8 @@
           "rule": "本地模型"
         }
       ],
-      "signed_in": null
+      "signed_in": null,
+      "sync_excluded": false
     }
   ],
   "proxies": [

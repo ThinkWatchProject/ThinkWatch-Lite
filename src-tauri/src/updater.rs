@@ -44,6 +44,7 @@ pub fn update_state(app: tauri::AppHandle) -> UpdateView {
 #[tauri::command]
 pub async fn set_update_check(app: tauri::AppHandle, on: bool) -> Out<UpdateView> {
     prefs::change(move |p| p.check_updates = on).await?;
+    crate::client_prefs::changed(&app);
     Ok(update_view(&app))
 }
 

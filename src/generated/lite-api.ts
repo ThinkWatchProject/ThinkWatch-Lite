@@ -184,6 +184,11 @@ managed?: Msg | null, };
 export type DraftAuth = { "kind": "key", key: string, } | { "kind": "keys", access_key_id: string, secret_access_key: string, session_token?: string | null, } | { "kind": "profile", profile: string, } | { "kind": "none" };
 
 /**
+ * 拖进主窗口的文件（`import-file` 事件）：读到的配置包，或者读不了的原因
+ */
+export type DroppedFile = { "kind": "file", file: PickedFile, } | { "kind": "failed", error: Msg, };
+
+/**
  * 配置文件里的一处改动。
  */
 export type FieldChange = { 
@@ -604,6 +609,16 @@ third_party: boolean, };
 export type ModelChoice = { model: string, providers: Array<string>, };
 
 /**
+ * 打开的、拖进窗口的配置包（`open_import`、`import-file` 事件）。内容按 Base64 交给界面，
+ * 界面原样交给 core 的导入预览
+ */
+export type PickedFile = { 
+/**
+ * 文件名（不含目录）
+ */
+name: string, data_b64: string, };
+
+/**
  * 算好但还没落盘的改动。**UI 拿它画 diff 让用户确认。**
  */
 export type PlanView = { client: string, path: string, 
@@ -737,6 +752,13 @@ unreadable: Array<string>, scanned: number, };
  * 扫描发现出在客户端配置面的哪一类东西里。
  */
 export type ScanSource = "hooks" | "mcp" | "skill" | "command" | "agent" | "instructions";
+
+/**
+ * 分享一个上游时生成的导入链接（`share_import_link`）。界面按上游的配置拼一份提议交过来，
+ * 这里写成链接、再按同一套规矩解析一遍：**交回去的是解析出来的那一份**，和接收方点开链接
+ * 之后看到的完全一样
+ */
+export type ShareLink = { "kind": "ready", app: string, web: string, proposal: ImportProposal, } | { "kind": "too_long", length: number, } | { "kind": "invalid", param: string | null, };
 
 export type SkillView = { name: string, client: string, path: string, allowed_tools: Array<string>, };
 

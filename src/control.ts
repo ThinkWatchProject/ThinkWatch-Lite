@@ -23,6 +23,9 @@ import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
  * `ApprovePluginFileConfirmed`）**有意不在这里**：只能请 Rust 弹系统的确认框
  * （`src/plugins/write.ts`）。不必点头的装、存、批准（`CreatePlugin`、`SavePlugin`、
  * `ApprovePluginFile`）在这里，core 说要点头时答 403。
+ *
+ * 同步的那几个（`Sync…`）在这里；固定密钥（`PinKeys`）和通用偏好
+ * （`GetClientPrefs` / `PutClientPrefs`）只经过 Rust（`src-tauri/src/sync.rs`、`client_prefs.rs`）。
  */
 export const WEBVIEW_ENDPOINTS = [
   "Interfaces",
@@ -33,9 +36,7 @@ export const WEBVIEW_ENDPOINTS = [
   "GetConfig",
   "PatchConfig",
   "PutConfig",
-  "ConfigHistory",
   "ConfigAt",
-  "ConfigRollback",
   "ConfigRepairPlan",
   "RepairConfig",
   "SaveListen",
@@ -122,6 +123,26 @@ export const WEBVIEW_ENDPOINTS = [
   "ReorderPlugins",
   "TrialPlugin",
   "PluginLogs",
+  "ConfigItems",
+  "ExportConfig",
+  "ImportPreview",
+  "ImportConfig",
+  "Backups",
+  "BackupFile",
+  "RestorePreview",
+  "Restore",
+  "SyncStatus",
+  "SyncTest",
+  "SyncJoinPreview",
+  "SyncEnable",
+  "SyncSave",
+  "SyncNow",
+  "SyncConflicts",
+  "SyncResolve",
+  "SyncEncryption",
+  "SyncUnlock",
+  "SyncDisable",
+  "SyncRepublish",
 ] as const;
 
 export type WebviewEndpoint = (typeof WEBVIEW_ENDPOINTS)[number];

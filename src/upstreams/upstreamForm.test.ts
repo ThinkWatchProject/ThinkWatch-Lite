@@ -62,6 +62,7 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
     balance_setting: "auto",
     balance: null,
     signed_in: null,
+    sync_excluded: false,
     ...patch,
   };
 }
@@ -127,6 +128,20 @@ describe("编辑时回填原样", () => {
       );
       expect(toInput({ ...f, maxConcurrent: bad }).max_concurrent).toBeUndefined();
     }
+  });
+
+  it("地址里有反斜杠、主机前带用户名或密码的，和 core 一样不收", () => {
+    const f = formFromView(view());
+    expect(connectionMissing({ ...f, baseUrl: "https://relay.example\\v1" }, "relay", ["relay"])).toBe(
+      "接口地址中不能含反斜杠，请使用正斜杠 /",
+    );
+    for (const bad of ["https://user:pw@relay.example/v1", "https://user@relay.example"]) {
+      expect(connectionMissing({ ...f, baseUrl: bad }, "relay", ["relay"])).toBe(
+        "接口地址的主机前不能带用户名或密码，凭据请填在密钥或请求头中",
+      );
+    }
+    // 路径、查询里的 @ 不算
+    expect(connectionMissing({ ...f, baseUrl: "https://relay.example/v1/@team" }, "relay", ["relay"])).toBeNull();
   });
 
   it("清空密钥就是不要密钥；清空请求头的值要补上", () => {

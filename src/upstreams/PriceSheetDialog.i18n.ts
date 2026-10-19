@@ -57,7 +57,7 @@ export const priceSheetDialogText = messages(
     nameTaken: (name: string) => `价目表名称「${name}」已被使用`,
     done: "完成",
     deleteTitle: (name: string) => `删除价目表「${name}」`,
-    deleteDesc: "删除后此价目表的倍率与模型覆盖将从配置文件中移除，可在版本历史中恢复。",
+    deleteDesc: "删除后此价目表的倍率与模型覆盖将从配置文件中移除，可从备份中恢复。",
   },
   {
     defaultSheet: "Default price sheet",
@@ -116,6 +116,6 @@ export const priceSheetDialogText = messages(
     nameTaken: (name: string) => `The price sheet name “${name}” is already in use`,
     done: "Done",
     deleteTitle: (name: string) => `Delete price sheet “${name}”`,
-    deleteDesc: "The price sheet's multiplier and model overrides will be removed from the config file. It can be restored from version history.",
+    deleteDesc: "The price sheet's multiplier and model overrides will be removed from the config file. It can be restored from the backups.",
   },
 );

@@ -1160,6 +1160,29 @@ pub(crate) fn adopted_owner(keys: &[tw_api::ClientView], name: &str) -> Result<O
     )
 }
 
+/// 接管着的客户端此刻在用的密钥（同步与恢复据此保留它们，见 `sync`）。阻塞。
+///
+/// 这台电脑上的按接管记录算，和删密钥前问的是同一件事（[`ops::adopted_owner`]）。**为 WSL
+/// 发的那几把，发行版还在就算**：读它要唤醒发行版，而这一步在启动、文件一动就跑。多算一把
+/// 的代价是同步删它时多一条冲突、恢复时留下它；少算一把，客户端下一个请求就是 401
+pub(crate) fn pinned_keys(keys: &[tw_api::ClientView]) -> Vec<String> {
+    let (home, backups) = (home_dir(), backups());
+    let distros = wsl::distros();
+    keys.iter()
+        .filter(|k| {
+            ops::adopted_owner(&home, &backups, keys, &k.name).is_some()
+                || k.client.as_deref().is_some_and(|id| {
+                    tw_adopt::wsl::split_key_id(id).is_some_and(|(client, _)| {
+                        distros
+                            .iter()
+                            .any(|d| tw_adopt::wsl::same_distro(client, &d.name, id))
+                    })
+                })
+        })
+        .map(|k| k.name.clone())
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

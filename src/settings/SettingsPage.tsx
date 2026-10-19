@@ -38,7 +38,10 @@ import { failoverText } from "./FailoverSection.i18n";
 import { RetentionSection } from "./RetentionSection";
 import { retentionText } from "./RetentionSection.i18n";
 import { settingsText } from "./SettingsPage.i18n";
+import { SYNC_BACKUP, SyncBackupSection } from "./SyncBackupSection";
+import { syncBackupText } from "./SyncBackupSection.i18n";
 import { UninstallSection } from "./UninstallSection";
+// TEMP：「同步与备份」一节的外壳（settings/SyncBackupSection.tsx）合进来之前，先挂同步那一半
 
 /**
  * 设置。
@@ -81,6 +84,7 @@ export function SettingsPage({
   const lt = useText(listenText);
   const et = useText(retentionText);
   const ft = useText(failoverText);
+  const st = useText(syncBackupText);
   const remote = useRemote();
   const local = linkStatus(localCore);
 
@@ -114,6 +118,7 @@ export function SettingsPage({
         { id: "listen", label: lt.title, caption: remote.name },
         { id: "failover", label: ft.title },
         { id: "retention", label: et.title },
+        { id: SYNC_BACKUP, label: st.title },
       ]
     : [
         { id: "connections", label: ct.title },
@@ -121,6 +126,7 @@ export function SettingsPage({
         { id: "listen", label: lt.title },
         { id: "failover", label: ft.title },
         { id: "retention", label: et.title },
+        { id: SYNC_BACKUP, label: st.title },
         { id: "about", label: t.about },
         { id: "uninstall", label: t.uninstall },
       ];
@@ -154,6 +160,11 @@ export function SettingsPage({
         <RetentionSection retention={view.retention} configVersion={view.config_version} onChanged={onChanged} />
       ) : (
         <Placeholder id="retention" title={et.title} description={et.intro} state={pending} rows={3} />
+      )}
+      {view ? (
+        <SyncBackupSection providers={view.providers} onChanged={onChanged} />
+      ) : (
+        <Placeholder id={SYNC_BACKUP} title={st.title} state={pending} rows={4} />
       )}
     </fieldset>
   );

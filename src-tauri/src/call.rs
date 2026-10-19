@@ -63,13 +63,11 @@ webview_endpoints![
     InFlight,
     // 在跑的请求此刻生成得多快：流量页在跑的那几行每秒问一次
     Live,
-    // 配置原文与历史
+    // 配置原文。光标在哪一段（`ConfigAt`）；修改记录由备份取代（下面）
     GetConfig,
     PatchConfig,
     PutConfig,
-    ConfigHistory,
     ConfigAt,
-    ConfigRollback,
     // 一键修复：修的是磁盘上那一份，界面只交版本号
     ConfigRepairPlan,
     RepairConfig,
@@ -173,6 +171,30 @@ webview_endpoints![
     ReorderPlugins,
     TrialPlugin,
     PluginLogs,
+    // 导入导出与备份：配置里有哪些项目、导出、导入的预览与写入；备份版本的列表、另存、
+    // 恢复的预览与写入。备份的几个在安全模式下照样能用
+    ConfigItems,
+    ExportConfig,
+    ImportPreview,
+    ImportConfig,
+    Backups,
+    BackupFile,
+    RestorePreview,
+    Restore,
+    // 同步。固定密钥、通用偏好只经过 Rust（`sync`、`client_prefs`）
+    SyncStatus,
+    SyncTest,
+    SyncJoinPreview,
+    SyncEnable,
+    SyncSave,
+    SyncNow,
+    SyncConflicts,
+    SyncResolve,
+    SyncEncryption,
+    SyncUnlock,
+    SyncDisable,
+    // 同步位置空了、keyring 不见了之后，由人选的「重新上传本机配置」
+    SyncRepublish,
 ];
 
 /// 请求按这个端点的类型读一遍再发：**界面发来的形状不对，在这里就停下**，
@@ -214,6 +236,11 @@ mod tests {
             "CreatePluginConfirmed",
             "SavePluginConfirmed",
             "ApprovePluginFileConfirmed",
+            // 哪几把密钥被接管着的客户端用着，由 Rust 这边算（它看得见这台机器上的客户端）；
+            // 通用偏好由 Rust 这边读写（`client_prefs`）
+            "PinKeys",
+            "GetClientPrefs",
+            "PutClientPrefs",
         ] {
             assert!(!ALLOWED.contains(&name), "{name}");
         }
@@ -248,6 +275,17 @@ mod tests {
             "ApprovePluginFile",
             "PluginRewrite",
         ] {
+            assert!(ALLOWED.contains(&name), "{name}");
+        }
+    }
+
+    /// 修改记录由备份取代（同步与备份约定 2.1）：旧的两个端点不再给界面
+    #[test]
+    fn the_config_history_is_replaced_by_backups() {
+        for name in ["ConfigHistory", "ConfigRollback"] {
+            assert!(!ALLOWED.contains(&name), "{name}");
+        }
+        for name in ["Backups", "BackupFile", "RestorePreview", "Restore"] {
             assert!(ALLOWED.contains(&name), "{name}");
         }
     }

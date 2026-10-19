@@ -402,6 +402,8 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 // **每次接上都按现状对一次账**：接上之前 core 报过的（启动时的凭据
                 // 失效、断线那段里被拒的配置），事件流不会再说一遍
                 reconcile_notices(&b);
+                // 同步那几样也是：固定密钥报一次、通用偏好读回来、同步的状态对一次
+                crate::sync::on_link(&b);
                 if resumed {
                     let lost = tw_api::Event::EventsDropped {
                         id: 0,
@@ -466,6 +468,8 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                         }
                     });
                 }
+                // 同步的三种：要人处理的状态发通知、改写接管着的客户端的密钥、读回通用偏好
+                crate::sync::on_event(&a, &ev);
                 let _ = a.emit("core-event", &ev);
             },
         );

@@ -14,7 +14,6 @@ import {
   type Msg,
   type BalanceBy,
   type ConditionView,
-  type ConfigOrigin,
   type ConfigStage,
   type GroupKind,
   type MismatchView,
@@ -237,24 +236,6 @@ export function quoteText(q: ReplayQuote): string {
 }
 
 // ---------------------------------------------------------------- 配置
-
-export function originLabel(origin: ConfigOrigin): string {
-  const t = textOf(labelsText).origins;
-  switch (origin) {
-    case "ui":
-      return t.ui;
-    case "cli":
-      return t.cli;
-    case "external":
-      return t.external;
-    case "rollback":
-      return t.rollback;
-    case "rotation":
-      return t.rotation;
-    case "defaults":
-      return t.defaults;
-  }
-}
 
 /** 配置在哪一层没通过，后面接「错误」 */
 export function stageLabel(stage: ConfigStage): string {

@@ -102,6 +102,8 @@ pub(crate) mod relaunch_token {
 ///
 /// 冷启动（core 还没到运行中）照旧马上出现，由启动画面说网关走到了哪一步。
 pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
+    // 打开主窗口时立刻检查一次同步位置（方案 6.5）
+    crate::sync::nudge(app);
     if let Some(w) = app.get_webview_window("main") {
         // 热启动还藏着的时候又点了一次，也是这里：不等了，直接出来
         return reveal(app, &w);

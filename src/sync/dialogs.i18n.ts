@@ -1,0 +1,71 @@
+import { messages } from "@/i18n";
+
+export const syncDialogsText = messages(
+  {
+    enableTitle: "开启加密",
+    enableDesc: "设置同步口令后，重新上传最新版本并删除未加密的版本。其他设备在下次同步时须输入口令。",
+    enable: "开启加密",
+    disableTitle: "关闭加密",
+    disableDesc:
+      "重新上传未加密的版本，各设备保存的同步口令保留。之后同步位置的服务商可读取配置与密钥，对同步位置有写入权限的任何人也可以改动配置。",
+    disable: "关闭加密",
+    changeTitle: "更改同步口令",
+    changeDesc: "只重新加密同步密钥，已有版本不变。其他设备在下次同步时须输入新口令。",
+    change: "更改口令",
+    current: "当前口令",
+    fresh: "新口令",
+    freshAgain: "再次输入",
+    enterCurrent: "输入当前口令。",
+    failed: "未能完成",
+    unlockTitle: "输入同步口令",
+    unlockDesc: "同步口令已在其他设备上更改。输入新口令后继续同步。",
+    unlock: "继续同步",
+    stopTitle: "停止同步",
+    stopDesc: "本机保留当前配置，删除本机的同步设置，并从同步位置移除本设备的设备记录。其他设备不受影响。",
+    stop: "停止同步",
+    stopPurge: "停止同步并删除同步数据…",
+    purgeTitle: "删除同步数据",
+    purgeDesc:
+      "删除同步位置上的全部版本、设备记录与同步密钥。其他设备随后提示同步位置为空，可重新上传各自的配置或停止同步。此操作无法撤销；本机配置与本机备份不受影响。",
+    purge: "删除并停止同步",
+    excludeTitle: "不同步的上游",
+    excludeDesc: "所选上游不上传，也不被其他设备的同名上游覆盖，适用于本机地址的 Ollama 等。引用它们的路由、别名、策略组随之不同步。",
+    noUpstreams: "尚无上游。",
+    done: "完成",
+  },
+  {
+    enableTitle: "Turn on encryption",
+    enableDesc:
+      "Once the sync passphrase is set, the latest version is uploaded again and the unencrypted versions are deleted. Other devices ask for the passphrase on their next sync.",
+    enable: "Turn on encryption",
+    disableTitle: "Turn off encryption",
+    disableDesc:
+      "An unencrypted version is uploaded again; the sync passphrase saved on each device is kept. From then on the storage provider can read the configuration and its keys, and anyone who can write to the sync location can change the configuration.",
+    disable: "Turn off encryption",
+    changeTitle: "Change sync passphrase",
+    changeDesc: "Only the sync key is encrypted again; existing versions stay as they are. Other devices ask for the new passphrase on their next sync.",
+    change: "Change passphrase",
+    current: "Current passphrase",
+    fresh: "New passphrase",
+    freshAgain: "Repeat",
+    enterCurrent: "Enter the current passphrase.",
+    failed: "This could not be completed",
+    unlockTitle: "Enter sync passphrase",
+    unlockDesc: "The sync passphrase was changed on another device. Enter the new passphrase to continue syncing.",
+    unlock: "Continue syncing",
+    stopTitle: "Stop syncing",
+    stopDesc:
+      "This device keeps its current configuration; its sync settings are removed and its device record is removed from the sync location. Other devices are not affected.",
+    stop: "Stop syncing",
+    stopPurge: "Stop and delete sync data…",
+    purgeTitle: "Delete sync data",
+    purgeDesc:
+      "Every version, device record and the sync key are deleted from the sync location. The other devices then report an empty sync location, where their configuration can be uploaded again or syncing stopped. This cannot be undone. This device's configuration and local backups are not affected.",
+    purge: "Delete and stop syncing",
+    excludeTitle: "Upstreams not synced",
+    excludeDesc:
+      "The chosen upstreams are not uploaded and are not replaced by upstreams of the same name from other devices — for example a local Ollama. Routes, aliases and groups that use them are not synced either.",
+    noUpstreams: "No upstreams yet.",
+    done: "Done",
+  },
+);

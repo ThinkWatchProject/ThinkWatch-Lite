@@ -64,7 +64,7 @@ export const aliasesText = messages(
     usedByRule: (route: string, rule: string) => `路由「${route}」· 规则「${rule}」`,
     usedByClients: (names: readonly string[]) => `已接管的 ${names.join("、")} 的模型列表`,
     show: "查看",
-    kept: (models: readonly string[]) => `上游模型 ${models.join("、")} 照常可用。可在版本历史中恢复。`,
+    kept: (models: readonly string[]) => `上游模型 ${models.join("、")} 照常可用。可从备份中恢复。`,
   },
   {
     tab: "Aliases",
@@ -124,6 +124,6 @@ export const aliasesText = messages(
       `The model ${names.length === 1 ? "list" : "lists"} of ${enList(names)} (connected)`,
     show: "Show",
     kept: (models: readonly string[]) =>
-      `The upstream ${models.length === 1 ? "model" : "models"} ${enList(models)} remain${models.length === 1 ? "s" : ""} available. The alias can be restored from version history.`,
+      `The upstream ${models.length === 1 ? "model" : "models"} ${enList(models)} remain${models.length === 1 ? "s" : ""} available. The alias can be restored from the backups.`,
   },
 );

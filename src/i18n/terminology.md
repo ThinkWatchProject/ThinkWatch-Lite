@@ -34,7 +34,7 @@ known colloquialisms.
 ## English
 
 - **Sentence case** everywhere in the window: headings, buttons, tabs,
-  labels, menu items ("New upstream", "Version history"). The native tray menu
+  labels, menu items ("New upstream", "Restore from backup"). The native tray menu
   follows the macOS convention and uses title case.
 - **Declarative and neutral.** State facts and results; avoid "we"; prefer an
   impersonal sentence over addressing the user. Actions are imperative verbs
@@ -120,7 +120,8 @@ known colloquialisms.
 | 本地应答 | answered locally | |
 | 提醒 | Notices | the bell |
 | 系统通知 / 仅在应用内 | System notification / In app only | |
-| 配置文件 / 版本历史 | Config file / Version history | |
+| 配置文件 / 备份 | Config file / Backups | 备份 replaced 版本历史 (version history): every config change is a version |
+| 同步与备份 / 导入配置 / 导出配置 / 配置包 | Sync and backup / Import config / Export config / config pack | `.twconfig` files |
 | 安全模式 | safe mode | |
 | 运行中 / 启动中 / 重启中 / 已停止 | Running / Starting / Restarting / Stopped | |
 | 开机启动 | Launch at login | |

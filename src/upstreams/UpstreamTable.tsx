@@ -6,6 +6,7 @@ import { Badge } from "@/ui/badge";
 import { AnimatedNumber, rowMotion, usePresentList } from "@/ui/motion";
 import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
+import { Checkbox } from "@/ui/checkbox";
 import { Skeleton } from "@/ui/skeleton";
 import { Sparkline, sparklineWidth } from "@/ui/sparkline";
 import { Spinner } from "@/ui/spinner";
@@ -43,6 +44,7 @@ import { balanceFace, balanceTip, billingLine, sourceLabel, type BalanceFace } f
 import { balanceText } from "./balance.i18n";
 import { overviewText } from "@/overview/overview.i18n";
 import { rankCost } from "@/overview/series";
+import { SyncBadges } from "@/sync/UpstreamBadges";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -63,6 +65,8 @@ export interface UpstreamActions {
   toggle: (p: ProviderView) => void;
   locate: (name: string) => void;
   remove: (name: string) => void;
+  /** 分享这个上游：导入链接或配置包（`ShareDialog`）。不给就没有这一项 */
+  share?: (name: string) => void;
 }
 
 /**
@@ -88,6 +92,8 @@ export function UpstreamTable({
   configVersion,
   onChanged,
   actions,
+  selected,
+  onSelect,
 }: {
   providers: ProviderView[];
   stats: Resource<UpstreamStats>;
@@ -106,8 +112,24 @@ export function UpstreamTable({
   /** 在这张表里写了配置（手写模型规格）：外面重读概览 */
   onChanged: () => void;
   actions: UpstreamActions;
+  /**
+   * 多选（工具条上的「导出所选…」）：选中的上游名。给了 `onSelect` 才有最前面那一列勾选框；
+   * 勾选框不打开编辑对话框
+   */
+  selected?: ReadonlySet<string>;
+  onSelect?: (next: ReadonlySet<string>) => void;
 }) {
   const t = useText(upstreamTableText);
+  const picked = selected ?? new Set<string>();
+  const pickedHere = providers.filter((p) => picked.has(p.name)).length;
+  const toggle = (names: string[], on: boolean) => {
+    const next = new Set(picked);
+    for (const n of names) {
+      if (on) next.add(n);
+      else next.delete(n);
+    }
+    onSelect?.(next);
+  };
   // 额度的「多久后重置」随时间走：重画就行，不用再问 core
   const now = useNow();
   const shown = usePresentList(providers, (p) => p.name);
@@ -133,6 +155,15 @@ export function UpstreamTable({
     <Table>
       <TableHeader>
         <TableRow className="hover:bg-transparent">
+          {onSelect && (
+            <TableHead className="w-8 pr-0">
+              <Checkbox
+                aria-label={t.selectAll}
+                checked={pickedHere === 0 ? false : pickedHere === providers.length ? true : "indeterminate"}
+                onCheckedChange={(v) => toggle(providers.map((p) => p.name), v === true)}
+              />
+            </TableHead>
+          )}
           <TableHead className="w-full">{t.upstream}</TableHead>
           <TableHead className="text-right">{t.models}</TableHead>
           {/* 订阅额度和按量计费是同一个问题的两种答案：还能用多少 */}
@@ -153,6 +184,15 @@ export function UpstreamTable({
                 data-row={p.name}
                 {...openRow(() => actions.edit(p.name), rowMotion(flash === p.name ? "enter" : presence))}
               >
+                {onSelect && (
+                  <TableCell className="pr-0" {...keepInRow}>
+                    <Checkbox
+                      aria-label={t.select(p.name)}
+                      checked={picked.has(p.name)}
+                      onCheckedChange={(v) => toggle([p.name], v === true)}
+                    />
+                  </TableCell>
+                )}
                 <NameCell
                   p={p}
                   found={found.get(p.name)}
@@ -198,6 +238,7 @@ function menu(p: ProviderView, a: UpstreamActions): MenuItems {
       ? ([{ kind: "item", label: t.account, onSelect: () => a.account(p.name) }] as MenuItems)
       : []),
     { kind: "item", label: t.traffic, onSelect: () => a.traffic(p.name) },
+    ...(a.share ? ([{ kind: "item", label: t.share, onSelect: () => a.share?.(p.name) }] as MenuItems) : []),
     { kind: "sep" },
     { kind: "item", label: p.disabled ? t.enable : t.disable, onSelect: () => a.toggle(p) },
     { kind: "item", label: t.locate, onSelect: () => a.locate(p.name) },
@@ -345,6 +386,8 @@ function NameCell({
                 {plan}
               </Badge>
             )}
+            {/* 同步：不同步的上游、地址经同步变更（提示一次） */}
+            <SyncBadges p={p} />
             {problem && (
               <Tip
                 text={

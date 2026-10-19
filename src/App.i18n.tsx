@@ -45,7 +45,8 @@ export const appText = messages(
     collapseRail: "收起源列表",
     expandRail: "展开源列表",
     configFile: "配置文件",
-    versionHistory: "版本历史",
+    /** 原来的「版本历史」：备份取代了修改记录（`src/backup/BackupsDialog.tsx`） */
+    versionHistory: "备份",
 
     // 配置没通过校验。`rejectedAt` 后面直接接 core 给的那句错误
     rejectedTitle: "配置校验未通过，仍在使用上一版本",
@@ -91,7 +92,7 @@ export const appText = messages(
     collapseRail: "Collapse sidebar",
     expandRail: "Expand sidebar",
     configFile: "Config file",
-    versionHistory: "Version history",
+    versionHistory: "Backups",
 
     rejectedTitle: "Config validation failed; the previous version is still in use",
     rejectedAt: (stage: string, line: number | null) => `${stage} error${line != null ? ` (line ${line})` : ""}: `,

@@ -41,6 +41,11 @@ pub struct Prefs {
     /// 只写和默认位置不一样的几项。**没写就是都在默认位置**，见 `clients::locations`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub client_locations: BTreeMap<String, tw_adopt::locations::Places>,
+    /// 这一份 Lite 的标识：16 个十六进制字符，第一次要用时生成（[`instance_id`]）。core 按它分开
+    /// 记各个 Lite 报的固定密钥（几个 Lite 连着同一个远程 core 时各报各的）。**不是通用偏好**：
+    /// 不导出、不同步
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instance: Option<String>,
 }
 
 impl Default for Prefs {
@@ -52,6 +57,7 @@ impl Default for Prefs {
             notices: Mode::System,
             menubar: crate::menubar::Style::Full,
             client_locations: BTreeMap::new(),
+            instance: None,
         }
     }
 }
@@ -108,6 +114,32 @@ fn from_fields(fields: &Fields) -> Prefs {
                     .collect()
             })
             .unwrap_or(d.client_locations),
+        instance: field::<String>(fields, "instance").filter(|s| valid_instance(s)),
+    }
+}
+
+/// 写着的标识像不像样（手改坏了的当没有，重新生成一个）
+fn valid_instance(s: &str) -> bool {
+    s.len() == 16 && s.bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// 这一份 Lite 的标识（[`Prefs::instance`]）。没有就生成一个、存进 `app.json`；存不进去也照样
+/// 交回这一次生成的（下次再生成一个新的，core 那边旧来源 30 天后自己作废）
+pub fn instance_id(dir: &Path) -> String {
+    if let Some(id) = load(dir).instance {
+        return id;
+    }
+    let fresh = crate::connection::store::new_id();
+    match update(dir, |p| {
+        if p.instance.is_none() {
+            p.instance = Some(fresh.clone());
+        }
+    }) {
+        Ok(p) => p.instance.unwrap_or(fresh),
+        Err(e) => {
+            tracing::debug!("实例标识没存上：{e:#}");
+            fresh
+        }
     }
 }
 
@@ -173,6 +205,25 @@ mod tests {
             .unwrap();
         let p = d.path().to_path_buf();
         (d, p)
+    }
+
+    /// 这一份 Lite 的标识：第一次要用时生成、存下，之后一直是它；手改坏了的重新生成。改别的设置
+    /// 不会把它冲掉
+    #[test]
+    fn the_instance_id_is_made_once_and_kept() {
+        let (_d, dir) = tmp();
+        let a = instance_id(&dir);
+        assert!(valid_instance(&a), "{a}");
+        assert_eq!(instance_id(&dir), a);
+        update(&dir, |p| p.check_updates = false).unwrap();
+        assert_eq!(load(&dir).instance.as_deref(), Some(a.as_str()));
+        std::fs::write(
+            dir.join(PREFS_FILE),
+            r#"{"check_updates":true,"instance":"not-hex"}"#,
+        )
+        .unwrap();
+        let b = instance_id(&dir);
+        assert!(valid_instance(&b) && b != "not-hex", "{b}");
     }
 
     #[test]
@@ -245,6 +296,7 @@ mod tests {
                     scan: Some("/work/claude".into()),
                 },
             )]),
+            instance: Some("0123456789abcdef".into()),
         };
         save(&dir, &want).unwrap();
         assert_eq!(load(&dir), want);

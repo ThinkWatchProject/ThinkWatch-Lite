@@ -237,6 +237,10 @@ pub fn restart_client_watch(handle: &tauri::AppHandle) {
     let h = handle.clone();
     let notices = state.notices.clone();
     let emit = move |ev: wire::LocalEvent| {
+        // 客户端的配置动了（接管、还原、手改）：在用的密钥可能变了，报给 core
+        if let wire::LocalEvent::ClientsChanged { .. } = &ev {
+            crate::sync::pinned_soon(&h);
+        }
         if let wire::LocalEvent::ScanAlert { alerts, .. } = &ev
             && let Some(signal) = crate::notices::rules::scan_alert(alerts.len())
         {

@@ -26,12 +26,12 @@ license = "MIT"
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.77.0" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.77.0" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.77.0" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.77.0" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.77.0" }
-tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.77.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "bcc90042d6edc63df4370074a62e4ce854d7334a" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "bcc90042d6edc63df4370074a62e4ce854d7334a" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "bcc90042d6edc63df4370074a62e4ce854d7334a" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "bcc90042d6edc63df4370074a62e4ce854d7334a" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "bcc90042d6edc63df4370074a62e4ce854d7334a" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "bcc90042d6edc63df4370074a62e4ce854d7334a" }
 
 [lib]
 name = "thinkwatch_lite_lib"
@@ -70,6 +70,8 @@ tw-guard = { workspace = true }
 tw-link = { workspace = true }
 
 anyhow = "1"
+# 配置包（`.twconfig`）在网页和这一侧之间按 Base64 交接（`export`）。锁里本来就有的那一版
+base64 = "0.22"
 # 新连接的 id、诊断包的临时目录名
 rand = "0.10"
 libc = "0.2"

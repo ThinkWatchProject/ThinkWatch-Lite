@@ -8,7 +8,7 @@ import { notify } from "@/ui/notify";
 import { guideText } from "@/guide/guide.i18n";
 import { resetHints, useAnyDismissed } from "@/guide/hints";
 import { resetIgnored, useAnyIgnored } from "@/ignore";
-import { useResource } from "@/lib/resource";
+import { invalidate, useResource } from "@/lib/resource";
 import { useTauriEvent } from "@/lib/tauriEvent";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
 import { isMac } from "@/platform";
@@ -32,6 +32,8 @@ import { Loaded, SettingsCard, SettingsGroup, SettingsRow, useWrite } from "./ki
  */
 export function GeneralSection() {
   const t = useText(generalText);
+  // 通用偏好经同步从别的设备过来、Rust 那边已经换上了：这几项重读（`src-tauri/src/client_prefs.rs`）
+  useTauriEvent<null>("client-prefs-applied", () => invalidate("app:"));
   return (
     <SettingsGroup id="general" title={t.title}>
       <SettingsCard>

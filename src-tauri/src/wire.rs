@@ -837,7 +837,7 @@ pub enum ImportLink {
 
 /// 导入链接能选的服务类型：新建对话框第一步的那几格（`src/upstreams/presets.ts`，顺序也
 /// 一样）。线上是那一格的 ID
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum ImportService {
     Anthropic,
@@ -855,7 +855,7 @@ pub enum ImportService {
 }
 
 /// 导入链接能选的认证方式。AWS profile 不在里面：它让应用读这台机器上的凭证文件
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum ImportAuth {
     Key,
@@ -866,7 +866,7 @@ pub enum ImportAuth {
 }
 
 /// OAuth 凭据（`auth=oauth`）
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ImportOAuth {
     /// Token 端点，规范化之后（主机名是 ASCII）
     pub endpoint: String,
@@ -876,7 +876,7 @@ pub struct ImportOAuth {
 }
 
 /// Bedrock 的访问密钥（`auth=aws-keys`）
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ImportAwsKeys {
     pub access_key_id: String,
     pub secret_access_key: String,
@@ -884,14 +884,14 @@ pub struct ImportAwsKeys {
 }
 
 /// 一行请求头
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ImportHeader {
     pub name: String,
     pub value: String,
 }
 
 /// 一个模型的规格。空着的一项不写（用价目表的）；至少有一项
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 pub struct ImportSpec {
     pub model: String,
     pub context_window: Option<u32>,
@@ -901,7 +901,7 @@ pub struct ImportSpec {
 }
 
 /// 新价目表里一个模型的覆盖价，美元 / 百万 tokens。链接里没写的缓存价已经按输入价补上
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImportPrice {
     pub model: String,
     pub input: f64,
@@ -912,7 +912,7 @@ pub struct ImportPrice {
 }
 
 /// 链接带来的新价目表：和上游一起创建，名称跟着上游
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImportSheet {
     /// 作用于默认价目表的倍率。链接没写是 1
     pub multiplier: f64,
@@ -923,7 +923,7 @@ pub struct ImportSheet {
 /// 每一项都是这种服务、这种认证方式的新建对话框里显示的一栏，值合规矩，不含 `$`、`{`、`}`
 /// （不会被当成 `${变量名}` 展开）。界面拿它预填新建对话框；之后由人决定，按「下一步」
 /// 或开始登录之前不写配置、不发任何请求。没给的一项是 null（或空的），由对话框照常填
-#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImportProposal {
     pub service: ImportService,
     pub auth: ImportAuth,
@@ -956,6 +956,42 @@ pub struct ImportProposal {
     pub billing: Option<tw_api::Billing>,
     /// 新价目表。链接里有 `price_multiplier` 或 `prices` 时才有
     pub price_sheet: Option<ImportSheet>,
+}
+
+/// 分享一个上游时生成的导入链接（`share_import_link`）。界面按上游的配置拼一份提议交过来，
+/// 这里写成链接、再按同一套规矩解析一遍：**交回去的是解析出来的那一份**，和接收方点开链接
+/// 之后看到的完全一样
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum ShareLink {
+    /// `app` 是 `thinkwatch://import?…`，`web` 是官网的 `https://thinkwat.ch/import#…`（`#` 之后
+    /// 的参数和 `app` 的一样，不发给网站的服务器）
+    Ready {
+        app: String,
+        web: String,
+        proposal: Box<ImportProposal>,
+    },
+    /// 超过链接的上限（8192 个字符）：改用配置包
+    TooLong { length: u32 },
+    /// 这一项写不进链接（值不合链接的规矩）。`param` 是那一项的参数名
+    Invalid { param: Option<String> },
+}
+
+/// 打开的、拖进窗口的配置包（`open_import`、`import-file` 事件）。内容按 Base64 交给界面，
+/// 界面原样交给 core 的导入预览
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, TS)]
+pub struct PickedFile {
+    /// 文件名（不含目录）
+    pub name: String,
+    pub data_b64: String,
+}
+
+/// 拖进主窗口的文件（`import-file` 事件）：读到的配置包，或者读不了的原因
+#[derive(Debug, Clone, PartialEq, Serialize, TS)]
+#[serde(tag = "kind", rename_all = "snake_case")]
+pub enum DroppedFile {
+    File { file: PickedFile },
+    Failed { error: Msg },
 }
 
 // ---------------------------------------------------------- 插件：在系统的确认框里点头的几步

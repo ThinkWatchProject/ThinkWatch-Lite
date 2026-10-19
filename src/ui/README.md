@@ -100,7 +100,7 @@ export default function KeysPage() {
 - **`PageSection`**: a titled block inside the page (tw-head title, optional one-line
   description and actions). Sections are 32px apart; the first one after the header
   is 4px below it.
-- Toolbar-level page actions (Config file / Version history) are the shell's; pages do
+- Toolbar-level page actions (Config file / Backups) are the shell's; pages do
   not repeat them.
 
 ### Spacing scale

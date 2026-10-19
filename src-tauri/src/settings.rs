@@ -60,6 +60,7 @@ pub fn app_language() -> LanguageView {
 #[tauri::command]
 pub async fn set_language(app: tauri::AppHandle, setting: Option<i18n::Lang>) -> Out<LanguageView> {
     prefs::change(move |p| p.language = setting).await?;
+    crate::client_prefs::changed(&app);
     i18n::set(i18n::effective(setting));
     // 菜单栏的文案跟着换，不等下一个事件
     if let Some(state) = app.try_state::<AppState>() {
@@ -98,6 +99,7 @@ pub fn app_theme() -> ThemeView {
 #[tauri::command]
 pub async fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> Out<ThemeView> {
     prefs::change(move |p| p.theme = setting).await?;
+    crate::client_prefs::changed(&app);
     theme::apply(&app, setting);
     Ok(theme_view())
 }
@@ -197,6 +199,7 @@ pub async fn set_notice_mode(
     mode: notices::Mode,
 ) -> Out<notices::Mode> {
     prefs::change(move |p| p.notices = mode).await?;
+    crate::client_prefs::changed(&app);
     // 关掉时要清空列表，清空也要落盘
     let n = notices.inner().clone();
     crate::clients::blocking(move || n.set_mode(mode)).await?;
@@ -218,6 +221,7 @@ pub async fn set_menubar_style(
     style: menubar::Style,
 ) -> Out<menubar::Style> {
     prefs::change(move |p| p.menubar = style).await?;
+    crate::client_prefs::changed(&app);
     menubar::set_style(style);
     state.menubar_now.notify_one();
     let _ = app.emit("menubar-style-changed", style);

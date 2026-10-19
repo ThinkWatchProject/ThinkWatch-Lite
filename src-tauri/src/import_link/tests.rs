@@ -1828,3 +1828,258 @@ fn sub2api_import_button_links_are_accepted() {
     );
     assert_eq!(antigravity.protocol, Some(Protocol::Anthropic));
 }
+
+// ---------------------------------------------------------- 生成（分享）与往返
+
+/// 生成的链接按同一版解析出来的就是原来那一份；再写一遍还是同一条链接
+#[track_caller]
+fn round_trip(q: &ImportProposal) {
+    let link = generate(q);
+    assert!(link.len() <= MAX_LINK, "{link}");
+    let back = p(&link).unwrap_or_else(|why| panic!("{why:?}: {link}"));
+    assert_eq!(&back, q, "{link}");
+    assert_eq!(generate(&back), link);
+    // 网页形式的 `#` 之后和 `?` 之后是同一串
+    assert_eq!(
+        web_link(q).strip_prefix(WEB_PREFIX),
+        link.strip_prefix(&format!("{PREFIX}?"))
+    );
+}
+
+/// 一批各种写法的链接（每种服务、每种认证方式、高级设置、模型、规格、价目表）：解析出来的
+/// 每一份都能原样写回去
+#[test]
+fn every_proposal_the_parser_accepts_round_trips() {
+    let links: Vec<Vec<(&str, &str)>> = vec![
+        vec![
+            ("url", "https://api.relay.example/v1"),
+            ("key", "sk-abc123"),
+        ],
+        vec![("service", "anthropic"), ("key", "sk-ant-1")],
+        vec![
+            ("service", "openai"),
+            ("protocol", "openai-responses"),
+            ("key", "sk-1"),
+        ],
+        vec![
+            ("service", "openai"),
+            ("auth", "account"),
+            ("name", "chatgpt"),
+        ],
+        vec![("service", "gemini"), ("key", "AIza-1")],
+        vec![("service", "deepseek"), ("key", "sk-ds")],
+        vec![("service", "zai"), ("key", "z-1")],
+        vec![("service", "zai"), ("site", "zai"), ("key", "z-1")],
+        vec![("service", "zai"), ("url", ZAI_ZAI), ("key", "z-1")],
+        vec![("service", "zai"), ("auth", "account"), ("site", "zai")],
+        vec![("service", "zai"), ("auth", "account")],
+        vec![
+            ("service", "bedrock"),
+            ("region", "ap-northeast-1"),
+            ("key", "ABSK-1"),
+        ],
+        vec![
+            ("service", "bedrock"),
+            ("auth", "aws-keys"),
+            (
+                "url",
+                "https://vpce-1.bedrock-runtime.us-west-2.vpce.amazonaws.com",
+            ),
+            ("region", "us-west-2"),
+            ("aws_access_key_id", "AKIAIOSFODNN7EXAMPLE"),
+            (
+                "aws_secret_access_key",
+                "wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY",
+            ),
+            ("aws_session_token", "FQoGZXIvYXdzE+token="),
+        ],
+        vec![
+            ("service", "openrouter"),
+            ("key", "sk-or-1"),
+            ("models", "anthropic/claude-sonnet-5"),
+        ],
+        vec![
+            ("service", "thinkwatch"),
+            ("url", "http://gateway.corp"),
+            ("key", "tw-1"),
+        ],
+        vec![
+            ("service", "sub2api"),
+            ("name", "公司中转"),
+            ("url", "https://relay.example/antigravity"),
+            ("protocol", "anthropic"),
+            ("key", "sk-a+b/c=="),
+            ("client_identity", "on"),
+            ("concurrency", "8"),
+            ("models", "claude-opus-5-5,claude-sonnet-5-5"),
+            ("models_only", "claude-*,gpt-5?"),
+        ],
+        vec![
+            ("service", "newapi"),
+            ("url", "https://new.example"),
+            ("key", "sk-n"),
+        ],
+        vec![("service", "ollama")],
+        vec![
+            ("service", "ollama"),
+            ("url", "http://192.168.1.20:11434"),
+            ("billing", "per-token"),
+        ],
+        vec![
+            ("service", "custom"),
+            ("auth", "oauth"),
+            ("url", "https://relay.example"),
+            ("oauth_endpoint", "https://auth.relay.example/oauth/token"),
+            ("oauth_refresh", "rt-1"),
+            ("oauth_client_id", "cid"),
+            ("oauth_client_secret", "csec"),
+            ("headers", "X-Team: core\nX-Trace: on"),
+            ("balance", "sub2api"),
+        ],
+        vec![
+            ("service", "custom"),
+            ("url", "https://relay.example"),
+            ("specs", "m-1|200000|32000|y|n;m-2||8192||y"),
+            ("billing", "free"),
+        ],
+        vec![
+            ("service", "custom"),
+            ("url", "https://relay.example"),
+            ("price_multiplier", "1.055"),
+        ],
+        vec![
+            ("service", "custom"),
+            ("url", "https://relay.example"),
+            ("prices", "m-1|3|15|0.3|3.75|6;m-2|0.5|1.5;m-3|1|2||1.25"),
+        ],
+        vec![
+            ("service", "custom"),
+            ("url", "https://relay.example"),
+            ("price_multiplier", "0.8"),
+            ("prices", "m-1|3.000001|15"),
+        ],
+    ];
+    for l in &links {
+        let q = pp(l).unwrap_or_else(|why| panic!("{why:?}: {l:?}"));
+        round_trip(&q);
+    }
+}
+
+/// 和对话框自己会填的一样的不写：服务自己的地址、固定的协议、默认的认证方式、默认的站点、
+/// 没开的转发客户端身份
+#[test]
+fn defaults_are_left_out_of_the_link() {
+    let q = pp(&[("service", "anthropic"), ("key", "sk-ant-1")]).unwrap();
+    assert_eq!(
+        generate(&q),
+        "thinkwatch://import?service=anthropic&key=sk-ant-1"
+    );
+    let z = pp(&[("service", "zai"), ("url", ZAI_BIGMODEL), ("key", "z")]).unwrap();
+    assert_eq!(
+        generate(&z),
+        "thinkwatch://import?service=zai&url=https%3A%2F%2Fopen.bigmodel.cn%2Fapi%2Fanthropic&key=z"
+    );
+    let z = pp(&[
+        ("service", "zai"),
+        ("auth", "account"),
+        ("site", "bigmodel"),
+    ])
+    .unwrap();
+    assert_eq!(generate(&z), "thinkwatch://import?service=zai&auth=account");
+    // 价目表：倍率是 1 不写；缓存价和输入价一样的那几格空着、末尾的省掉
+    let s = pp(&[
+        ("service", "custom"),
+        ("url", "https://r.example"),
+        ("prices", "m|3|15|3|3.75|3"),
+    ])
+    .unwrap();
+    assert!(
+        generate(&s).ends_with("&prices=m%7C3%7C15%7C%7C3.75"),
+        "{}",
+        generate(&s)
+    );
+}
+
+/// 分享：交回解析出来的那一份。地址规范化过（主机名小写、末尾没有 `/`）
+#[test]
+fn sharing_hands_back_what_the_receiver_will_see() {
+    let mut q = blank("https://Relay.Example/v1/");
+    q.service = ImportService::Sub2api;
+    q.key = Some("sk-1".into());
+    q.name = Some("公司中转".into());
+    let ShareLink::Ready { app, web, proposal } = share(&q) else {
+        panic!("{:?}", share(&q));
+    };
+    assert_eq!(
+        proposal.base_url.as_deref(),
+        Some("https://relay.example/v1")
+    );
+    assert_eq!(
+        app,
+        "thinkwatch://import?service=sub2api&name=%E5%85%AC%E5%8F%B8%E4%B8%AD%E8%BD%AC&url=https%3A%2F%2Frelay.example%2Fv1&key=sk-1"
+    );
+    assert_eq!(
+        web,
+        "https://thinkwat.ch/import#service=sub2api&name=%E5%85%AC%E5%8F%B8%E4%B8%AD%E8%BD%AC&url=https%3A%2F%2Frelay.example%2Fv1&key=sk-1"
+    );
+    round_trip(&proposal);
+}
+
+/// 写不进链接的值（`${变量名}`、链接不收的字符）说是哪一项；整条超过上限说多长
+#[test]
+fn values_a_link_cannot_carry_are_named_and_long_links_refused() {
+    let mut q = blank("https://relay.example");
+    q.key = Some("${OPENAI_API_KEY}".into());
+    assert_eq!(
+        share(&q),
+        ShareLink::Invalid {
+            param: Some("key".into())
+        }
+    );
+    let mut q = blank("https://relay.example");
+    q.name = Some("a/b".into());
+    assert_eq!(
+        share(&q),
+        ShareLink::Invalid {
+            param: Some("name".into())
+        }
+    );
+    let mut q = blank("https://relay.example");
+    q.price_sheet = Some(ImportSheet {
+        multiplier: 1.0,
+        prices: (0..64)
+            .map(|i| ImportPrice {
+                model: format!("vendor/{}-{i:03}", "m".repeat(100)),
+                input: 123.456789,
+                output: 234.567891,
+                cache_read: 12.345678,
+                cache_write_5m: 156.789012,
+                cache_write_1h: 246.801357,
+            })
+            .collect(),
+    });
+    match share(&q) {
+        ShareLink::TooLong { length } => assert!(length as usize > MAX_LINK),
+        other => panic!("{other:?}"),
+    }
+}
+
+/// 价格、倍率的写法：至多六位小数，末尾的 0 不写
+#[test]
+fn decimals_are_written_without_trailing_zeros() {
+    assert_eq!(decimal_text(3.0), "3");
+    assert_eq!(decimal_text(10.0), "10");
+    assert_eq!(decimal_text(0.375), "0.375");
+    assert_eq!(decimal_text(1.055), "1.055");
+    assert_eq!(decimal_text(0.0), "0");
+    assert_eq!(decimal_text(0.000_000_4), "0");
+    assert_eq!(decimal_text(3.000_001), "3.000001");
+}
+
+/// 编码之后只剩链接里安全的字符：`&`、`=`、`+`、`#`、`%`、空格、中文都编码
+#[test]
+fn every_value_is_encoded_so_it_stays_one_parameter() {
+    assert_eq!(encode("a&b=c+d #%"), "a%26b%3Dc%2Bd%20%23%25");
+    assert_eq!(encode("中"), "%E4%B8%AD");
+    assert_eq!(encode("m-1,m_2.x~"), "m-1,m_2.x~");
+}

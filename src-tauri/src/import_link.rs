@@ -37,7 +37,7 @@ use tw_api::{BalanceSetting, Billing, Protocol, ZaiFamily};
 
 use crate::wire::{
     ImportAuth, ImportAwsKeys, ImportHeader, ImportLink, ImportOAuth, ImportPrice, ImportProposal,
-    ImportService, ImportSheet, ImportSpec,
+    ImportService, ImportSheet, ImportSpec, ShareLink,
 };
 
 /// 链接的前缀。主机名那一段不分大小写
@@ -196,6 +196,16 @@ pub enum Rejected {
     NotOffered(Param),
     /// 少了必填的一项
     Missing(Param),
+}
+
+impl Rejected {
+    /// 这一条落在哪一项上（整条的毛病是 None）
+    pub fn param(self) -> Option<Param> {
+        match self {
+            Self::Invalid(p) | Self::NotOffered(p) | Self::Missing(p) => Some(p),
+            _ => None,
+        }
+    }
 }
 
 // ---------------------------------------------------------- 服务类型
@@ -1306,6 +1316,234 @@ fn check_prices(s: &str) -> Result<Vec<ImportPrice>, Rejected> {
         });
     }
     Ok(out)
+}
+
+// ---------------------------------------------------------- 生成（分享一个上游）
+//
+// 上游行的「分享…」：界面按这个上游的配置拼一份提议，这里写成链接。**生成和解析在同一个
+// 模块里**：写出去的每一项都是 [`parse`] 收的写法，和对话框自己会填的一样的不写（服务自己的
+// 地址、固定的协议、默认的认证方式、站点、计费方式）。写完再解析一遍，交回解析出来的那一份
+// （[`share`]）—— 接收方点开之后看到的就是它。
+
+/// 网页形式的链接：官网读完 `#` 之后的片段，打开同样参数的 `thinkwatch://import?…`。片段不发给
+/// 网站的服务器
+pub const WEB_PREFIX: &str = "https://thinkwat.ch/import#";
+
+/// 链接里一个值的编码：字母、数字和 `-_.~,` 原样，别的一律 `%XX`（`+` 也编码：解析时它是空格）
+fn encode(v: &str) -> String {
+    let mut out = String::with_capacity(v.len());
+    for b in v.bytes() {
+        if b.is_ascii_alphanumeric() || b"-_.~,".contains(&b) {
+            out.push(b as char);
+        } else {
+            out.push_str(&format!("%{b:02X}"));
+        }
+    }
+    out
+}
+
+/// 价格、倍率写成的十进制数：至多六位小数，末尾的 0 不写（`3`、`0.375`）
+fn decimal_text(x: f64) -> String {
+    let s = format!("{x:.6}");
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s.is_empty() || s == "-0" {
+        "0".into()
+    } else {
+        s.into()
+    }
+}
+
+fn auth_slug(a: ImportAuth) -> &'static str {
+    match a {
+        ImportAuth::Key => "key",
+        ImportAuth::Oauth => "oauth",
+        ImportAuth::Account => "account",
+        ImportAuth::AwsKeys => "aws-keys",
+    }
+}
+
+/// 一个模型的规格：`模型|上下文窗口|输出上限|推理|图片输入`，没写的一格空着
+fn spec_text(s: &ImportSpec) -> String {
+    let n = |v: Option<u32>| v.map(|n| n.to_string()).unwrap_or_default();
+    let f = |v: Option<bool>| match v {
+        Some(true) => "y",
+        Some(false) => "n",
+        None => "",
+    };
+    format!(
+        "{}|{}|{}|{}|{}",
+        s.model,
+        n(s.context_window),
+        n(s.max_output_tokens),
+        f(s.reasoning),
+        f(s.image_input)
+    )
+}
+
+/// 一个模型的价格：`模型|输入|输出|缓存读|5 分钟缓存写|1 小时缓存写`。缓存价和输入价一样的那一格
+/// 空着（解析时按输入价补），末尾空着的几格整个省掉
+fn price_text(p: &ImportPrice) -> String {
+    let mut f = vec![
+        p.model.clone(),
+        decimal_text(p.input),
+        decimal_text(p.output),
+    ];
+    let input = decimal_text(p.input);
+    for c in [p.cache_read, p.cache_write_5m, p.cache_write_1h] {
+        let c = decimal_text(c);
+        f.push(if c == input { String::new() } else { c });
+    }
+    while f.len() > 3 && f.last().is_some_and(String::is_empty) {
+        f.pop();
+    }
+    f.join("|")
+}
+
+/// 一份提议写成链接的参数（`k=v&…`，值已编码），按 [`Param::ALL`] 的顺序
+pub fn query(p: &ImportProposal) -> String {
+    let mut out: Vec<(Param, String)> = vec![(Param::Service, p.service.slug().into())];
+    let mut put = |k: Param, v: String| out.push((k, v));
+    if p.auth != ImportAuth::Key {
+        put(Param::Auth, auth_slug(p.auth).into());
+    }
+    // 站点：地址是哪一边的标准地址就是哪一边，没有地址是 BigModel。和它一样就不写
+    if p.service == ImportService::Zai
+        && let Some(site) = p.site
+    {
+        let implied = p
+            .base_url
+            .as_deref()
+            .and_then(zai_site_of)
+            .unwrap_or(ZaiFamily::Bigmodel);
+        if site != implied {
+            put(Param::Site, site.slug().into());
+        }
+    }
+    if let Some(n) = &p.name {
+        put(Param::Name, n.clone());
+    }
+    if let Some(u) = &p.base_url {
+        put(Param::Url, u.clone());
+    }
+    if let Some(x) = p.protocol {
+        put(Param::Protocol, x.slug().into());
+    }
+    if let Some(k) = &p.key {
+        put(Param::Key, k.clone());
+    }
+    if let Some(o) = &p.oauth {
+        put(Param::OauthEndpoint, o.endpoint.clone());
+        put(Param::OauthRefresh, o.refresh.clone());
+        if let Some(v) = &o.client_id {
+            put(Param::OauthClientId, v.clone());
+        }
+        if let Some(v) = &o.client_secret {
+            put(Param::OauthClientSecret, v.clone());
+        }
+    }
+    if let Some(r) = &p.region {
+        put(Param::Region, r.clone());
+    }
+    if let Some(a) = &p.aws {
+        put(Param::AwsAccessKeyId, a.access_key_id.clone());
+        put(Param::AwsSecretAccessKey, a.secret_access_key.clone());
+        if let Some(t) = &a.session_token {
+            put(Param::AwsSessionToken, t.clone());
+        }
+    }
+    if !p.headers.is_empty() {
+        let lines: Vec<String> = p
+            .headers
+            .iter()
+            .map(|h| format!("{}: {}", h.name, h.value))
+            .collect();
+        put(Param::Headers, lines.join("\n"));
+    }
+    if p.client_identity {
+        put(Param::ClientIdentity, "on".into());
+    }
+    if let Some(c) = p.concurrency {
+        put(Param::Concurrency, c.to_string());
+    }
+    if let Some(b) = p.balance {
+        put(Param::Balance, b.slug().into());
+    }
+    if !p.models.is_empty() {
+        put(Param::Models, p.models.join(","));
+    }
+    // 空的启用范围写不进链接（空值整条作废）：不写，按全部模型
+    if let Some(m) = p.models_only.as_ref().filter(|m| !m.is_empty()) {
+        put(Param::ModelsOnly, m.join(","));
+    }
+    if !p.specs.is_empty() {
+        let s: Vec<String> = p.specs.iter().map(spec_text).collect();
+        put(Param::Specs, s.join(";"));
+    }
+    if let Some(b) = p.billing {
+        put(Param::Billing, b.slug().into());
+    }
+    if let Some(sheet) = &p.price_sheet {
+        // 只有倍率、或者倍率不是 1 才写倍率：两项都不写就没有这张价目表
+        if sheet.multiplier != 1.0 || sheet.prices.is_empty() {
+            put(Param::PriceMultiplier, decimal_text(sheet.multiplier));
+        }
+        if !sheet.prices.is_empty() {
+            let s: Vec<String> = sheet.prices.iter().map(price_text).collect();
+            put(Param::Prices, s.join(";"));
+        }
+    }
+    let pairs: Vec<String> = out
+        .iter()
+        .map(|(k, v)| format!("{}={}", k.name(), encode(v)))
+        .collect();
+    pairs.join("&")
+}
+
+/// `thinkwatch://import?…`
+pub fn generate(p: &ImportProposal) -> String {
+    format!("{PREFIX}?{}", query(p))
+}
+
+/// `https://thinkwat.ch/import#…`：参数和 [`generate`] 的一样
+pub fn web_link(p: &ImportProposal) -> String {
+    format!("{WEB_PREFIX}{}", query(p))
+}
+
+/// 写成链接，再按 [`parse`] 读一遍：读不了是 [`ShareLink::Invalid`]，写出来超过 [`MAX_LINK`] 是
+/// [`ShareLink::TooLong`]。**交回读出来的那一份、按它重写的链接**：地址规范化过（主机名小写、
+/// IDN 转 ASCII、去掉末尾的 `/`），同一份提议总是同一条链接
+pub fn share(p: &ImportProposal) -> ShareLink {
+    let read = |link: &str| match parse(link) {
+        Ok(ImportLink::Proposal { proposal }) => Ok(*proposal),
+        Ok(ImportLink::Unsupported { .. }) => Err(None),
+        Err(why) => Err(why.param().map(|p| p.name().to_string())),
+    };
+    let too_long = |link: &str| ShareLink::TooLong {
+        length: u32::try_from(link.len()).unwrap_or(u32::MAX),
+    };
+    let first = generate(p);
+    if first.len() > MAX_LINK {
+        return too_long(&first);
+    }
+    let canonical = match read(&first) {
+        Ok(q) => q,
+        Err(param) => return ShareLink::Invalid { param },
+    };
+    let app = generate(&canonical);
+    if app.len() > MAX_LINK {
+        return too_long(&app);
+    }
+    ShareLink::Ready {
+        web: web_link(&canonical),
+        app,
+        proposal: Box::new(canonical),
+    }
+}
+
+/// 分享一个上游：界面按它的配置拼好的提议写成链接（[`share`]）。不写配置、不发请求
+#[tauri::command]
+pub fn share_import_link(proposal: ImportProposal) -> ShareLink {
+    share(&proposal)
 }
 
 // ---------------------------------------------------------- 一次只处理一条

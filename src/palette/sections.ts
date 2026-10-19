@@ -5,6 +5,7 @@ import { settingsText } from "@/settings/SettingsPage.i18n";
 import { listenText } from "@/settings/ListenSection.i18n";
 import { retentionText } from "@/settings/RetentionSection.i18n";
 import { connText } from "@/connection/connection.i18n";
+import { syncBackupText } from "@/settings/SyncBackupSection.i18n";
 
 /**
  * 命令面板里能搜到的设置，按设置页上的顺序。选中一项是
@@ -33,6 +34,7 @@ export type SettingsSection =
   | "autostart"
   | "listen"
   | "retention"
+  | "sync-backup"
   | "updates"
   | "notices"
   | "about"
@@ -58,6 +60,7 @@ export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: "notices", title: pick(generalText, (t) => t.notices) },
   { id: "listen", title: pick(listenText, (t) => t.title), core: true },
   { id: "retention", title: pick(retentionText, (t) => t.title), core: true },
+  { id: "sync-backup", title: pick(syncBackupText, (t) => t.title), core: true },
   { id: "about", title: pick(settingsText, (t) => t.about) },
   { id: "updates", title: pick(settingsText, (t) => t.updates) },
   { id: "diagnostics", title: pick(settingsText, (t) => t.diagnostics), local: true },

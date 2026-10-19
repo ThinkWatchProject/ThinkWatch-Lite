@@ -140,6 +140,9 @@ fn lite_typescript() -> String {
     c.root::<wire::LocalEvent>();
     c.root::<wire::UninstallStep>();
     c.root::<wire::ImportLink>();
+    c.root::<wire::ShareLink>();
+    c.root::<wire::PickedFile>();
+    c.root::<wire::DroppedFile>();
     c.root::<wire::PluginInstallRequest>();
     c.root::<wire::PluginSaveRequest>();
     c.root::<wire::PluginApproveRequest>();

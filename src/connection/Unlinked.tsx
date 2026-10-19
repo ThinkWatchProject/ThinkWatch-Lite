@@ -244,7 +244,7 @@ export function ConfigBroken({
           {t.openConfigFile}
         </Button>
         <Button size="sm" variant="outline" onClick={onHistory}>
-          {t.versionHistory}
+          {t.restoreFromBackup}
         </Button>
         <Button size="sm" variant="ghost" pending={restarting} onClick={() => void run(() => invoke("restart_core"))}>
           {tt.restart}

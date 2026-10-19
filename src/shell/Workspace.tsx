@@ -20,6 +20,7 @@ import { parseCoreState } from "@/coreState";
 import { useConnections } from "@/connection/ConnectionProvider";
 import { currentProfile } from "@/connection/api";
 import { useRepair } from "@/repair";
+import { DropImport } from "@/backup/DropImport";
 import { NavContext, SURFACES, type Nav, type NavDelivery, type NavParams, type Surface } from "@/nav";
 import { paletteText } from "@/palette/palette.i18n";
 import { COMBOS, DIGIT_PAGES, Keys, isTyping, modalOpen } from "@/palette/keys";
@@ -32,12 +33,12 @@ import { SourceList, drag } from "./SourceList";
 import type { CoreLink } from "./useCoreLink";
 
 /*
-  只在打开时才用得到的几块：命令面板（cmdk）、配置文件和版本历史、导入链接的「无法导入」。
+  只在打开时才用得到的几块：命令面板（cmdk）、配置文件和备份、导入链接的「无法导入」。
   **用到时才载入**，交接之后空闲下来时预先载入（见下面 `warmUp`）。
 */
 const Palette = lazyPart(() => import("@/palette/Palette").then((m) => m.Palette));
 const ConfigFileDialog = lazyPart(() => import("@/ConfigDialogs").then((m) => m.ConfigFileDialog));
-const VersionHistoryDialog = lazyPart(() => import("@/ConfigDialogs").then((m) => m.VersionHistoryDialog));
+const BackupsDialog = lazyPart(() => import("@/backup/BackupsDialog").then((m) => m.BackupsDialog));
 const CannotImportDialog = lazyPart(() =>
   import("@/import/CannotImportDialog").then((m) => m.CannotImportDialog),
 );
@@ -141,7 +142,8 @@ export default memo(function Workspace({
 
   /** 配置文件对话框。`focus`：打开时选中的那一项 */
   const [configFile, setConfigFile] = useState<{ focus: ConfigFocus | null } | null>(null);
-  const [historyOpen, setHistoryOpen] = useState(false);
+  /** 备份对话框。`restore`：从安全模式的出错页打开（标题写「从备份恢复」） */
+  const [backups, setBackups] = useState<{ restore: boolean } | null>(null);
   const [palette, setPalette] = useState(false);
   /** 快捷键一览（`?`，或者命令面板左下角） */
   const [shortcuts, setShortcuts] = useState(false);
@@ -348,13 +350,15 @@ export default memo(function Workspace({
 
   // 几个浮层：开着才载入那一块，载入完当场画（载入的那一下什么都不画）
   const ConfigFileView = usePart(ConfigFileDialog, configFile !== null);
-  const HistoryView = usePart(VersionHistoryDialog, historyOpen);
+  const BackupsView = usePart(BackupsDialog, backups !== null);
   const CannotImportView = usePart(CannotImportDialog, unsupported !== null);
   /*
     提议交给上游页：连上了、概览到了、配置能用（不是安全模式）才交。交出去之后对话框归那一页，
     关掉时由它报「关了」
   */
-  const importReady = importing !== null && linked && ov !== null && !remoteLost && broken === null;
+  /** 配置读得了、连着、概览到了：导入（链接、拖进来的配置包）才有得比 */
+  const configUsable = linked && ov !== null && !remoteLost && broken === null;
+  const importReady = importing !== null && configUsable;
   useEffect(() => {
     if (!importReady || !importing) return;
     setImporting(null);
@@ -368,7 +372,8 @@ export default memo(function Workspace({
   }, [importReady, importing, open]);
 
   const openConfigFile = useCallback((focus: ConfigFocus | null) => setConfigFile({ focus }), []);
-  const openHistory = useCallback(() => setHistoryOpen(true), []);
+  const openBackups = useCallback(() => setBackups({ restore: false }), []);
+  const openRestore = useCallback(() => setBackups({ restore: true }), []);
   /** 页面、提醒要落到别的页时用。`settings:listen`：设置页并滚到那一节 */
   const go = useCallback(
     (to: string) => {
@@ -385,7 +390,7 @@ export default memo(function Workspace({
       toggleRail: () => setRailOpen((v) => !v),
       refresh,
       configFile: () => setConfigFile({ focus: null }),
-      history: () => setHistoryOpen(true),
+      history: () => setBackups({ restore: false }),
       notices: () => setNoticesAsked((n) => n + 1),
     }),
     [refresh],
@@ -465,7 +470,7 @@ export default memo(function Workspace({
                     <Button variant="ghost" size="sm" onClick={() => setConfigFile({ focus: null })}>
                       {t.configFile}
                     </Button>
-                    <Button variant="ghost" size="sm" onClick={openHistory}>
+                    <Button variant="ghost" size="sm" onClick={openBackups}>
                       {t.versionHistory}
                     </Button>
                   </>
@@ -532,7 +537,7 @@ export default memo(function Workspace({
                 onChanged={changed}
                 onRetry={changed}
                 onOpenConfigFile={openConfigFile}
-                onOpenHistory={openHistory}
+                onOpenHistory={openRestore}
               />
             </div>
           </div>
@@ -552,16 +557,18 @@ export default memo(function Workspace({
               }}
             />
           )}
-          {historyOpen && HistoryView && (
-            <HistoryView
-              reloads={reloads}
-              onClose={() => setHistoryOpen(false)}
+          {backups && BackupsView && (
+            <BackupsView
+              restore={backups.restore}
+              onClose={() => setBackups(null)}
               onOpenPlugins={() => {
-                setHistoryOpen(false);
+                setBackups(null);
                 open("plugins");
               }}
             />
           )}
+          {/* 配置包拖进窗口：放下时打开导入对话框（读得了的配置才收） */}
+          <DropImport ready={configUsable} onImported={changed} />
           {unsupported && CannotImportView && (
             <CannotImportView param={unsupported.param} onClose={closeUnsupported} />
           )}

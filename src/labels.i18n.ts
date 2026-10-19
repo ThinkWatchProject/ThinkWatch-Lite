@@ -99,15 +99,6 @@ export const labelsText = messages(
       unpriced: (model: string) => `无法计价：${model} 不在价目表中。`,
     },
     // ------------------------------------------------------------ 配置
-    origins: {
-      ui: "界面",
-      cli: "命令行",
-      external: "外部编辑",
-      rollback: "回滚",
-      rotation: "凭据轮换",
-      /** core 装上它自带的默认插件，或者把没动过的默认插件换成新版 */
-      defaults: "默认插件",
-    },
     /** 后面接「错误」 */
     stages: {
       syntax: "语法",
@@ -213,14 +204,6 @@ export const labelsText = messages(
       free: "Free.",
       estimate: (amount: string) => `Estimated cost: about ${amount}.`,
       unpriced: (model: string) => `Unpriced: ${model} is not in the price sheet.`,
-    },
-    origins: {
-      ui: "App",
-      cli: "Command line",
-      external: "External edit",
-      rollback: "Rollback",
-      rotation: "Credential rotation",
-      defaults: "Default plugins",
     },
     stages: {
       syntax: "Syntax",

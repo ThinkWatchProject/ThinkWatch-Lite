@@ -813,6 +813,9 @@ export function connectionMissing(
   if (name === "") return t.name;
   if (name !== original && taken.includes(name)) return t.nameTaken(name);
   if (f.baseUrl.trim() === "") return t.baseUrl;
+  // core 不收的两种写法（`config.base_url_backslash`、`config.base_url_userinfo`）：在这里就说
+  if (f.baseUrl.includes("\\")) return t.baseUrlBackslash;
+  if (/^[a-z][a-z0-9+.-]*:\/\/[^/?#]*@/i.test(f.baseUrl.trim())) return t.baseUrlUserinfo;
   // 新建时才要求：已保存的上游可能用自己写的请求头鉴权，编辑它不该被一个空的密钥栏拦住
   if (!f.saved && mode === "key" && presetById(f.preset).key === "required" && f.key.trim() === "") return t.key;
   if (

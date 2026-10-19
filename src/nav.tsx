@@ -32,7 +32,8 @@ export type Surface = (typeof SURFACES)[number];
  * · `keys`：定位并高亮某把密钥（`key`）。
  * · `security`：日志定位到某个时间段。
  * · `upstreams`：定位某个上游（`upstream`，页面接上之前忽略）。
- * · `settings`：滚到某一节（`section`，设置页自己认；命令面板送的见 palette/sections.ts）。
+ * · `settings`：滚到某一节（`section`，设置页自己认；命令面板送的见 palette/sections.ts）；
+ *   `action: "join-sync"` 同时打开「开启同步」向导（上游页空状态的「加入同步…」）。
  * · `plugins`：定位某个插件（`plugin`）。
  *
  * **打开对话框**（命令面板、别的页上的入口用）：页面收到就打开它自己的那个对话框，
@@ -69,7 +70,11 @@ export interface NavParams {
   security: { focus?: LogFocus };
   mcp: undefined;
   plugins: { plugin?: string; add?: boolean; review?: string };
-  settings: { section?: string };
+  settings: {
+    section?: string;
+    /** 打开那一节里的对话框：`join-sync` 是开启同步的向导（上游页空状态的「加入同步…」） */
+    action?: "join-sync";
+  };
 }
 
 export interface Nav {

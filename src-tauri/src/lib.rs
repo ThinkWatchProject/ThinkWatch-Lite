@@ -19,6 +19,8 @@ pub mod autostart;
 pub mod call;
 pub mod chatgpt;
 pub mod cleanup;
+/// Lite 的通用偏好交给 core 保存、随同步走（方案 4.4），见模块头上
+pub mod client_prefs;
 pub mod clients;
 /// 系统睡醒、改时钟、换时区时叫醒定在钟点上的几处，见模块头上
 pub mod clock;
@@ -62,6 +64,8 @@ pub mod scan;
 pub mod settings;
 pub mod single;
 pub mod supervisor;
+/// 同步在这一侧的几件事：通知、改写接管着的客户端的密钥、固定密钥，见模块头上
+pub mod sync;
 pub mod theme;
 pub mod uninstall;
 pub mod update;
@@ -219,6 +223,7 @@ pub fn run() {
             live::live_subscribe,
             live::live_unsubscribe,
             export::save_export,
+            export::open_import,
             upstreams::upstream_stats,
             aliases::alias_hints,
             notices::commands::notices_list,
@@ -232,6 +237,7 @@ pub fn run() {
             notices::commands::take_pending_view,
             import_link::take_import_link,
             import_link::import_link_closed,
+            import_link::share_import_link,
             keys::copy_key,
             keys::copy_gateway_base,
             keys::gateway_base,
@@ -289,6 +295,11 @@ pub fn run() {
             plugins::plugin_approve_confirmed,
             scan::scan_clients,
             diagnostics::save_diagnostics,
+            sync::pick_sync_folder,
+            sync::sync_device_name,
+            sync::sync_pin_keys,
+            client_prefs::client_prefs,
+            client_prefs::apply_client_prefs,
         ])
         .setup(|app| {
             let handle = app.handle().clone();
@@ -591,6 +602,12 @@ pub fn run() {
             // 常驻 128 MB 不划算。销毁的代价是重开时要重新加载一次页面
             // （几百毫秒），`show_main_window` 本来就会在窗口不存在时
             // 重建它。
+            // 配置包拖进主窗口：放下时打开导入对话框（读文件在 `export` 这一侧）
+            if let tauri::WindowEvent::DragDrop(drop) = event
+                && window.label() == "main"
+            {
+                export::dropped(window, drop);
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 let app = window.app_handle().clone();

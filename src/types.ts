@@ -294,6 +294,10 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "auth_changed":
     case "credential_expired":
     case "events_dropped":
+    // 同步的状态、网关密钥换了值、通用偏好变了（协议 50）
+    case "sync_status":
+    case "gateway_keys_changed":
+    case "client_prefs_changed":
       // 都不进请求列表。配置事件、熔断、额度、余额、凭据、代理说的都是「现在什么情况」，
       // 而这张表装的是「刚才发生过什么」。App 单独接。
       break;
