@@ -308,7 +308,7 @@ pub struct Bar {
     pub numbers: Option<(String, String)>,
     /// 正在启动，或者不在运行
     pub dim: bool,
-    /// 有请求在跑：标识上走流光
+    /// 有请求在跑：标识上走流光，仅数值时数字左边一个圆点
     pub busy: bool,
     /// 不在运行：红色角标（仅数值时破折号变红）
     pub alert: bool,

@@ -226,7 +226,8 @@ fn sync_glow(mtm: MainThreadMarker) {
     });
 }
 
-/// 有请求在跑时给菜单栏按钮的图层挂上流光遮罩，没有了就摘掉。**动画交给 Core
+/// 有请求在跑时给菜单栏按钮的图层挂上流光遮罩，没有了就摘掉。**只走在标识上**：
+/// 只显示数字时不走流光，数字左边画一个圆点（见 [`bar_image`]）。**动画交给 Core
 /// Animation**，在系统的渲染进程里走：每帧重画按钮的话（换图或者标脏），图层重新显示、
 /// 和系统的菜单栏场景同步一回，一秒二十帧就占好几个百分点的 CPU；挂一次遮罩之后这边
 /// 什么都不用做。
@@ -238,29 +239,32 @@ fn glow(mtm: MainThreadMarker, ui: &mut Ui) {
         ui.glow = None;
         return;
     };
-    let want = ui.bar.as_ref().filter(|b| b.busy && !OPEN.with(Cell::get));
+    let want = ui
+        .bar
+        .as_ref()
+        .is_some_and(|b| b.busy && b.style != Style::Numbers)
+        && !OPEN.with(Cell::get);
     let layer = {
         button.setWantsLayer(true);
         button.layer()
     };
     let Some(layer) = layer else { return };
-    let Some(bar) = want else {
+    if !want {
         if ui.glow.take().is_some() {
             unsafe { layer.setMask(None) };
         }
         return;
-    };
+    }
     let bounds = button.bounds();
     let image = match (button.cell(), button.image()) {
         (Some(cell), Some(_)) => cell.imageRectForBounds(bounds),
         _ => return,
     };
-    let (x0, x1) = glow_span(bar, image.size.width);
     let key = [
         bounds.size.width,
         bounds.size.height,
-        image.origin.x + x0,
-        image.origin.x + x1,
+        image.origin.x + EDGE,
+        image.origin.x + EDGE + MARK_W,
     ];
     if ui.glow.as_ref().is_some_and(|g| g.key == key) {
         return;
@@ -346,15 +350,6 @@ fn lift(d: f64) -> f64 {
     (1.0 + (d.min(1.0) * std::f64::consts::PI).cos()) / 2.0
 }
 
-/// 流光走在图里的哪一段：有标识就是标识，只显示数字时是两行数字
-fn glow_span(bar: &Bar, image_w: f64) -> (f64, f64) {
-    if bar.style == Style::Numbers {
-        (EDGE, image_w - EDGE)
-    } else {
-        (EDGE, EDGE + MARK_W)
-    }
-}
-
 /// 标识的尺寸：高 15pt，按应用图标 32 格坐标里 TW 字形所在的 22×20 那一块取宽
 const MARK_H: f64 = 15.0;
 const MARK_W: f64 = MARK_H * 22.0 / 20.0;
@@ -365,9 +360,10 @@ const EDGE: f64 = 3.0;
 /// 画红色角标，只能关掉模板，用跟着外观走的系统颜色自己画。**额度不改这一块的颜色**
 /// （见 `Tone`）：紧张、用完都在菜单里的那一行说。
 ///
-/// 有请求在跑时标识上走流光：整个标识压暗，一条亮带从左往右扫过（只显示数字时走在
-/// 两行数字上）。菜单栏上的流光是图层遮罩（见 [`glow`]），图本身照常画，`phase` 给 None；
-/// 预览和截图没有图层，给 `phase`（扫到哪儿，0 刚进来、1 刚出去）就把那一帧画进图里
+/// 有请求在跑时标识上走流光：整个标识压暗，一条亮带从左往右扫过。**数字上不走**：
+/// 只显示数字时在数字左边画一个圆点。菜单栏上的流光是图层遮罩（见 [`glow`]），
+/// 图本身照常画，`phase` 给 None；预览和截图没有图层，给 `phase`（扫到哪儿，0 刚进来、
+/// 1 刚出去）就把那一帧画进图里
 pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
     let show_mark = bar.style != Style::Numbers;
     let show_numbers = bar.style != Style::Icon;
@@ -388,7 +384,8 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
     } else {
         0.0
     };
-    let mut width = EDGE * 2.0 + numbers_w;
+    let dot_w = if !show_mark && bar.busy { 7.0 } else { 0.0 };
+    let mut width = EDGE * 2.0 + dot_w + numbers_w;
     if show_mark {
         width += MARK_W;
     }
@@ -397,9 +394,7 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
     }
     let height = thickness();
     let template = !bar.alert;
-    let glow = phase
-        .filter(|_| bar.busy)
-        .map(|p| (glow_span(bar, width), p));
+    let glow = phase.filter(|_| show_mark && bar.busy);
     let bar = bar.clone();
     let block = RcBlock::new(move |_rect: NSRect| -> Bool {
         let fg = if template {
@@ -433,6 +428,10 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
                 (fg.clone(), alpha)
             };
             let color = color.colorWithAlphaComponent(alpha);
+            if dot_w > 0.0 {
+                fill_oval(x, height / 2.0 - 2.5, 5.0, &color);
+                x += dot_w;
+            }
             // 两行都右对齐：数字变长时向左伸，右边缘不动
             let a = attributed(&top, &top_font, &color);
             let b = attributed(&bottom, &bottom_font, &color);
@@ -442,8 +441,8 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
             a.drawAtPoint(NSPoint::new(right - a.size().width, y0));
             b.drawAtPoint(NSPoint::new(right - b.size().width, y0 + line));
         }
-        if let Some(((x0, x1), phase)) = glow {
-            glow_paint(x0, x1, height, phase);
+        if let Some(phase) = glow {
+            glow_paint(EDGE, EDGE + MARK_W, height, phase);
         }
         Bool::YES
     });
