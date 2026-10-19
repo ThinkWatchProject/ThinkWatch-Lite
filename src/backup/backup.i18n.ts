@@ -262,7 +262,7 @@ export const backupText = messages(
       syncFrom: (device: string) => `Synced from ${device}`,
       import: "Import",
       restore: "Restore",
-      repair: "One-click repair",
+      repair: "Repair",
       export: "Export",
       share: "Share",
       rotation: "Credential rotation",
@@ -403,8 +403,8 @@ export const backupText = messages(
     },
     repaired: (n: number) =>
       n === 1
-        ? "1 entry written by an older version was fixed the way one-click repair fixes it:"
-        : `${n} entries written by an older version were fixed the way one-click repair fixes them:`,
+        ? "1 entry written by an older version was fixed by the rules Repair uses:"
+        : `${n} entries written by an older version were fixed by the rules Repair uses:`,
     stale: "The config changed after the preview. Preview again.",
     previewAgain: "Preview again",
 

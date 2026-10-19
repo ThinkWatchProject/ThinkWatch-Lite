@@ -15,7 +15,7 @@ export const upstreamBadgesText = messages(
   {
     notSynced: "Not synced",
     notSyncedTip:
-      "This upstream is left out of sync: it is not uploaded and not replaced by an upstream of the same name from another device. Change this in Settings › Sync & backup.",
+      "This upstream is left out of sync: it is not uploaded and not replaced by an upstream of the same name from another device. Change this in Settings › Sync and backup.",
     urlChanged: "URL changed by sync",
     urlChangedTitle: "URL changed by sync",
     urlChangedBody: (from: string, to: string) => `The URL changed from ${from} to ${to}.`,
