@@ -13,8 +13,10 @@
 //! - writes `$XDG_CONFIG_HOME/autostart/<identifier>.desktop` (falling back to
 //!   `~/.config`), with `Exec` encoded per the Desktop Entry Specification
 //!   (section "The Exec key", plus the string escapes of "Possible value types");
-//! - points it at `$APPIMAGE` for an AppImage (the running binary lives under a
-//!   per-launch `/tmp/.mount_*` directory) and at the installed binary otherwise;
+//! - points it at `$APPIMAGE` when an AppImage runtime set it (the running
+//!   binary lives under a per-launch `/tmp/.mount_*` directory) and at the
+//!   installed binary otherwise — including an unpacked AppImage, which keeps
+//!   the bundler's marker but has no `$APPIMAGE`;
 //! - treats `Hidden=true` and `X-GNOME-Autostart-enabled=false` as off, which is
 //!   how GNOME and KDE record "disabled" without deleting the file;
 //! - rewrites the entry on every launch when it points somewhere else (the
@@ -48,7 +50,11 @@ impl Autostart {
         // there; a development build gets the desktop's generic icon.
         Self {
             file,
-            program: program(std::env::current_exe().ok()),
+            program: program(
+                tauri::utils::platform::bundle_type(),
+                std::env::var_os("APPIMAGE").as_deref(),
+                std::env::current_exe().ok(),
+            ),
             name: app.package_info().name.clone(),
             icon: app.config().identifier.clone(),
         }
@@ -162,28 +168,34 @@ impl Autostart {
 /// by everything an AppImage starts, so a development build launched from, say,
 /// an AppImage terminal emulator would see someone else's `$APPIMAGE`. The bundle
 /// type is patched into the binary by the bundler, so it cannot be inherited.
-fn program(exe: Option<PathBuf>) -> Result<String, String> {
+///
+/// **But the bundle type alone is not an AppImage either.** A package that
+/// unpacks the AppImage and starts its `AppRun` — the AUR `thinkwatch-lite-bin`,
+/// `--appimage-extract`, a deb built from one — keeps the marker the bundler
+/// patched into the binary, while no AppImage runtime ever set `$APPIMAGE` for
+/// it. There is no file to point the entry at, so it points at the running
+/// binary, exactly as `update::linux_kind` refuses to treat that copy as an
+/// AppImage for the updater.
+fn program(
+    bundle: Option<tauri::utils::config::BundleType>,
+    appimage: Option<&std::ffi::OsStr>,
+    exe: Option<PathBuf>,
+) -> Result<String, String> {
     use tauri::utils::config::BundleType;
-    let path = if tauri::utils::platform::bundle_type() == Some(BundleType::AppImage) {
-        std::env::var_os("APPIMAGE")
+    let path = match bundle {
+        Some(BundleType::AppImage) => appimage
             .map(PathBuf::from)
             .filter(|p| p.is_absolute())
-            .ok_or_else(|| {
-                tr!(
-                    "未能确定 AppImage 文件的位置（APPIMAGE 未设置）",
-                    "The location of the AppImage file could not be determined (APPIMAGE is not set)"
-                )
-                .to_string()
-            })?
-    } else {
-        exe.ok_or_else(|| {
-            tr!(
-                "未能确定应用程序的位置",
-                "The location of the application could not be determined"
-            )
-            .to_string()
-        })?
-    };
+            .or(exe),
+        _ => exe,
+    }
+    .ok_or_else(|| {
+        tr!(
+            "未能确定应用程序的位置",
+            "The location of the application could not be determined"
+        )
+        .to_string()
+    })?;
     path.into_os_string().into_string().map_err(|p| {
         tr!(
             format!("应用程序路径不是有效的 UTF-8：{}", p.to_string_lossy()),
@@ -480,6 +492,49 @@ mod tests {
         "/home/a/中文 目录/x.AppImage",
         "/home/a/\\\"$`%%\\/x.AppImage",
     ];
+
+    /// An AppImage the runtime started is pointed at by `$APPIMAGE`; a package
+    /// that unpacked the AppImage keeps the bundle marker but has no `$APPIMAGE`
+    /// (the AUR package, `--appimage-extract`), and the entry then points at the
+    /// running binary — the same line `update::linux_kind` draws for the updater.
+    #[test]
+    fn the_bundle_marker_alone_is_not_an_appimage() {
+        use std::ffi::OsStr;
+        use tauri::utils::config::BundleType;
+        let image = OsStr::new("/home/a/Apps/ThinkWatch-Lite.AppImage");
+        let exe = || {
+            Some(PathBuf::from(
+                "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite",
+            ))
+        };
+
+        // Started by the runtime: the entry starts the AppImage file
+        assert_eq!(
+            program(Some(BundleType::AppImage), Some(image), exe()).unwrap(),
+            "/home/a/Apps/ThinkWatch-Lite.AppImage"
+        );
+        // Unpacked: marker, no `$APPIMAGE` — the installed binary is the program
+        assert_eq!(
+            program(Some(BundleType::AppImage), None, exe()).unwrap(),
+            "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite"
+        );
+        // An empty or relative value is no location either
+        for bad in ["", "rel/x.AppImage"] {
+            assert_eq!(
+                program(Some(BundleType::AppImage), Some(OsStr::new(bad)), exe()).unwrap(),
+                "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite",
+                "{bad:?}"
+            );
+        }
+        // Not this bundle type: `$APPIMAGE` is somebody else's, never used
+        assert_eq!(
+            program(None, Some(image), exe()).unwrap(),
+            "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite"
+        );
+        // Neither a location nor a running binary
+        assert!(program(Some(BundleType::AppImage), None, None).is_err());
+        assert!(program(None, None, None).is_err());
+    }
 
     #[test]
     fn plain_paths_are_still_quoted_and_plain_args_are_not() {
