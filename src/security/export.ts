@@ -10,6 +10,7 @@
 import { textOf } from "@/i18n";
 import { appLabel } from "@/labels";
 import type {
+  Guard,
   HitLocation,
   OutcomeDetail,
   SecurityEventView,
@@ -32,13 +33,18 @@ type Page = (q: SecurityEventsQuery) => Promise<SecurityEventsPage>;
 
 /**
  * `[from, to)` 里的全部命中，按时间倒序（和日志一样）。按 `before` 往前翻，直到 core 说
- * 没有更多。
+ * 没有更多。给了 `guard` 就只要这一项的：日志按类型筛着，导出的就是看到的那些
  */
-export async function fetchAll(page: Page, from: number, to: number): Promise<SecurityEventView[]> {
+export async function fetchAll(
+  page: Page,
+  from: number,
+  to: number,
+  guard: Guard | null = null,
+): Promise<SecurityEventView[]> {
   const out: SecurityEventView[] = [];
   let before: number | null = null;
   for (;;) {
-    const p = await page({ from_ms: from, to_ms: to, before, limit: MAX_PAGE });
+    const p = await page({ guard, from_ms: from, to_ms: to, before, limit: MAX_PAGE });
     out.push(...p.events);
     const last = p.events[p.events.length - 1];
     if (!p.more || !last) return out;

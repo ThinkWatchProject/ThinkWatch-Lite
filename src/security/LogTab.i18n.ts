@@ -7,6 +7,12 @@ export const logTabText = messages(
   {
     time: "时间",
     type: "类型",
+    /** 「类型」列头的筛选：菜单第一项 */
+    allTypes: "全部类型",
+    /** 筛着一类、这段时间里没有这一类的。区间的写法同 `emptyIn` */
+    noneOfType: (guard: string, range: string, custom: boolean) =>
+      custom ? `${range}无${guard}记录` : `${range}内无${guard}记录`,
+    showAllTypes: "显示全部类型",
     hit: "命中",
     action: "处置",
     request: "请求",
@@ -36,6 +42,10 @@ export const logTabText = messages(
   {
     time: "Time",
     type: "Type",
+    allTypes: "All types",
+    noneOfType: (_guard: string, range: string, custom: boolean) =>
+      custom ? `No entries of this type ${lower(range)}` : `No entries of this type in the last ${range}`,
+    showAllTypes: "Show all types",
     hit: "Match",
     action: "Action",
     request: "Request",

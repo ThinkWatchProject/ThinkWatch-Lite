@@ -1,8 +1,16 @@
 import { Fragment, useCallback, useState } from "react";
-import { ArrowRightIcon, ChevronRightIcon, DownloadIcon, ShieldCheckIcon, ShieldOffIcon } from "lucide-react";
+import { ArrowRightIcon, ChevronDownIcon, ChevronRightIcon, DownloadIcon, ShieldCheckIcon, ShieldOffIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/ui/dropdown-menu";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/ui/dropdown-menu";
 import { UpstreamLogo, ClientLogo } from "@/ui/logos";
 import { rowMotion, usePresentList } from "@/ui/motion";
 import { notify, usePending } from "@/ui/notify";
@@ -39,7 +47,8 @@ export interface LogActions {
 }
 
 /**
- * 安全日志：一行是一次命中，三项防护的都在一张表里，「类型」一列分得开。
+ * 安全日志：一行是一次命中，三项防护的都在一张表里，「类型」一列分得开。**筛选在
+ * 「类型」的列头上**：点开选一项，只列这一项的；工具条只放区间和导出。
  *
  * **按天分组，读起来是一条时间线**：一天一个标题（今天、昨天、9月23日周三），
  * 行上只写时刻。每行先说处置（状态点：切断、拒绝红，删除、替换绿，仅记录琥珀），
@@ -49,18 +58,24 @@ export interface LogActions {
  * 具体做了什么。不换页、不开浮层 —— 排查时常要几条对照着看。那次请求本身在详情里的
  * 链接和行菜单的「查看请求」里，打开右侧的请求详情；会话的链接跳到流量页的那次会话。
  *
- * 工具条右边是导出：这段时间里的全部命中，JSON（完整细节）或 CSV（一条一行）。
+ * 工具条右边是导出：这段时间里的全部命中（按类型筛着就是这一类的），JSON（完整细节）
+ * 或 CSV（一条一行）。
  */
 export function LogTab({
   log,
   range,
   onRange,
+  guard,
+  onGuard,
   detail,
   actions,
 }: {
   log: SecurityLog;
   range: Range;
   onRange: (r: Range) => void;
+  /** 「类型」列头上筛着的那一项，`null` 是全部 */
+  guard: Guard | null;
+  onGuard: (g: Guard | null) => void;
   detail: SecurityDetail | undefined;
   actions: LogActions;
 }) {
@@ -82,14 +97,15 @@ export function LogTab({
       <div className="flex flex-wrap items-center gap-2">
         <RangePicker value={range} onChange={onRange} live={false} align="start" />
         <span className="flex-1" />
-        <ExportMenu range={range} disabled={!log.r.data || log.r.data.total === 0} />
+        <ExportMenu range={range} guard={guard} disabled={!log.r.data || log.r.data.total === 0} />
       </div>
 
       <Loadable
         r={log.r}
         loading={<TableSkeleton rows={7} cols={5} />}
         errorTitle={t.loadFailed}
-        isEmpty={(p) => p.events.length === 0}
+        // 筛着一类时空的是这一类：表照样画，列头上的筛选留在原处，空的那一句在表里说
+        isEmpty={(p) => p.events.length === 0 && guard === null}
         empty={
           allOff ? (
             <EmptyState
@@ -123,6 +139,9 @@ export function LogTab({
           <LogTable
             events={p.events}
             more={p.more}
+            range={range}
+            guard={guard}
+            onGuard={onGuard}
             detail={detail}
             actions={actions}
             onOpen={setOpen}
@@ -141,14 +160,14 @@ export function LogTab({
  * 导出这段时间里的全部命中。**从头读完整段**（不是已经翻出来的那几页），拼好交给 Rust
  * 弹「存储」对话框；取消了什么也不说，存好了说存在哪儿、几条。
  */
-function ExportMenu({ range, disabled }: { range: Range; disabled: boolean }) {
+function ExportMenu({ range, guard, disabled }: { range: Range; guard: Guard | null; disabled: boolean }) {
   const t = useText(logTabText);
   const [pending, run] = usePending();
   const go = (format: ExportFormat) =>
     void run(async () => {
       const from = windowStart(range);
       const to = Date.now();
-      const events = await fetchAll(api.events, from, to);
+      const events = await fetchAll(api.events, from, to, guard);
       const text = format === "json" ? toJson(events, from, to) : toCsv(events);
       const path = await api.saveExport(fileName(format), text);
       if (path !== null) notify.success(t.exported(events.length), path);
@@ -169,12 +188,50 @@ function ExportMenu({ range, disabled }: { range: Range; disabled: boolean }) {
   );
 }
 
+/**
+ * 「类型」的列头：点开选一项，只列这一项的。筛着时列头写的就是那一项（亮色），一眼看得出
+ * 表里不是全部；菜单第一项回到全部。
+ */
+function TypeHead({ guard, onGuard }: { guard: Guard | null; onGuard: (g: Guard | null) => void }) {
+  const t = useText(logTabText);
+  const lt = useText(securityLabelsText);
+  return (
+    <TableHead>
+      <DropdownMenu modal={false}>
+        <DropdownMenuTrigger asChild>
+          {/* `sm` 档的字和别的列头一样大（`xs` 小一号），高度压到 24 放进 32 的表头 */}
+          <Button variant="ghost" size="sm" className="-mx-1 h-6 max-w-[calc(100%+0.5rem)] px-1">
+            <span className={cn("truncate", guard && "text-foreground")}>
+              {guard ? lt.guardShort[guard] : t.type}
+            </span>
+            <ChevronDownIcon aria-hidden className="size-3" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start">
+          <DropdownMenuRadioGroup value={guard ?? ""} onValueChange={(v) => onGuard(v === "" ? null : (v as Guard))}>
+            <DropdownMenuRadioItem value="">{t.allTypes}</DropdownMenuRadioItem>
+            <DropdownMenuSeparator />
+            {GUARDS.map((g) => (
+              <DropdownMenuRadioItem key={g} value={g}>
+                {lt.guards[g]}
+              </DropdownMenuRadioItem>
+            ))}
+          </DropdownMenuRadioGroup>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </TableHead>
+  );
+}
+
 /** 一条命中的详情那一行的 id：展开的行用 `aria-controls` 指着它 */
 const detailId = (id: number) => `security-hit-${id}`;
 
 function LogTable({
   events,
   more,
+  range,
+  guard,
+  onGuard,
   detail,
   actions,
   onOpen,
@@ -183,6 +240,9 @@ function LogTable({
 }: {
   events: SecurityEventView[];
   more: boolean;
+  range: Range;
+  guard: Guard | null;
+  onGuard: (g: Guard | null) => void;
   detail: SecurityDetail | undefined;
   actions: LogActions;
   onOpen: (requestId: number) => void;
@@ -251,14 +311,14 @@ function LogTable({
   return (
     <>
       {/* 列宽是定死的：窗口再窄，「命中」一列也要留出能读的宽度，放不下就横向滚 */}
-      <Table className="table-fixed min-w-[760px]">
+      <Table className="table-fixed min-w-[780px]">
         <colgroup>
           {/* 时刻前面一个展开的箭头 */}
           <col className="w-[92px]" />
           {/* 「● Recorded」要 86 */}
           <col className="w-[92px]" />
-          {/* 类型：英文的「Redaction」「Tool call」 */}
-          <col className="w-[92px]" />
+          {/* 类型：「密钥与隐私」。列头筛着它时后面还跟一个箭头，Windows 的 14px 也放得下 */}
+          <col className="w-[112px]" />
           <col />
           {/* 时刻一列宽出来的那一截从这里让：放不下时先截的是密钥，见下 */}
           <col className="w-[288px]" />
@@ -268,13 +328,28 @@ function LogTable({
           <TableRow>
             <TableHead>{t.time}</TableHead>
             <TableHead>{t.action}</TableHead>
-            <TableHead>{t.type}</TableHead>
+            <TypeHead guard={guard} onGuard={onGuard} />
             <TableHead>{t.hit}</TableHead>
             <TableHead>{t.request}</TableHead>
             <TableHead />
           </TableRow>
         </TableHeader>
         <TableBody>
+          {guard !== null && shown.length === 0 && (
+            <TableRow className="hover:bg-transparent">
+              <TableCell colSpan={6} className="whitespace-normal">
+                <EmptyState
+                  icon={<ShieldCheckIcon />}
+                  title={t.noneOfType(lt.guards[guard], range.label, range.custom === true)}
+                  action={
+                    <Button size="sm" variant="outline" onClick={() => onGuard(null)}>
+                      {t.showAllTypes}
+                    </Button>
+                  }
+                />
+              </TableCell>
+            </TableRow>
+          )}
           {days.map((day, i) => {
             const head = dayHead(day.at);
             // 最后一天可能还没翻完：条数只写读全了的那几天

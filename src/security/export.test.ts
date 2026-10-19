@@ -63,6 +63,21 @@ describe("导出读完整段", () => {
     expect(got.map((e) => e.id)).toEqual(all.map((e) => e.id));
     expect(asked.map((q) => q.before)).toEqual([null, 704, 204]);
     expect(asked.every((q) => q.from_ms === 1000 && q.to_ms === 2000 && q.limit === 500)).toBe(true);
+    expect(asked.every((q) => q.guard === null)).toBe(true);
+  });
+
+  it("日志按类型筛着时，每一页都只要这一项的", async () => {
+    const asked: SecurityEventsQuery[] = [];
+    const zero = { recorded: 0, replaced: 0, cut: 0, stripped: 0, blocked: 0 };
+    const page = async (q: SecurityEventsQuery): Promise<SecurityEventsPage> => {
+      asked.push(q);
+      return q.before == null
+        ? { events: [hit({ id: 9, guard: "inspect_tools" })], more: true, total: 2, by_outcome: zero }
+        : { events: [hit({ id: 3, guard: "inspect_tools" })], more: false, total: 2, by_outcome: zero };
+    };
+    const got = await fetchAll(page, 1000, 2000, "inspect_tools");
+    expect(got.map((e) => e.id)).toEqual([9, 3]);
+    expect(asked.map((q) => q.guard)).toEqual(["inspect_tools", "inspect_tools"]);
   });
 });
 

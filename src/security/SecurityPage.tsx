@@ -19,7 +19,7 @@ import { securityLabelsText } from "./labels.i18n";
 import { LogTab, type LogActions } from "./LogTab";
 import { BuiltinRuleDialog, DeleteRuleDialog, patternOf, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { securityPageText } from "./SecurityPage.i18n";
-import { useSecurityLog, type SecurityLog } from "./useSecurityLog";
+import { narrowed, useSecurityLog, type SecurityLog } from "./useSecurityLog";
 import { ObserveHint } from "@/guide/PageHints";
 
 export type SecurityTab = "log" | Guard;
@@ -95,7 +95,15 @@ export default function SecurityPage({
   const detail = useResource<SecurityDetail>("security-detail", () => api.detail(), { deps: [configVersion] });
   // 日志的区间放在这一层：页头的命中次数和日志是同一次读取
   const [range, setRange] = useRange("tw-security-range", "1d");
-  const log = useSecurityLog(range, tick);
+  /** 日志「类型」列头上筛着的那一项。离开这一页就回到全部 */
+  const [guard, setGuard] = useState<Guard | null>(null);
+  /*
+    **页头说的一直是全部类型**：它是整页的全貌，不跟着日志的筛选变。全部的那一份一直
+    挂着，不筛时日志就用它（还是同一次读取）；筛着一类时另读那一类的
+  */
+  const all = useSecurityLog(range, tick);
+  const only = useSecurityLog(range, tick, guard, guard === null);
+  const log = guard === null ? all : narrowed(only, all, guard);
   const [dialog, setDialog] = useState<DialogState>(null);
 
   /*
@@ -106,6 +114,8 @@ export default function SecurityPage({
     if (!focus) return;
     setTab("log");
     setRange(focus.range);
+    // 概览上的数是全部类型的：点进来看到的条数要对得上
+    setGuard(null);
   }, [focus, setRange]);
 
   /*
@@ -289,7 +299,7 @@ export default function SecurityPage({
     <Tabs value={tab} onValueChange={(v) => setTab(v as SecurityTab)} className="gap-0">
       <Page>
         <PageHeader
-          summary={<Summary detail={d} loading={detail.loading} log={log} range={range} />}
+          summary={<Summary detail={d} loading={detail.loading} log={all} range={range} />}
           tabs={
             <TabsList variant="line">
               <TabsTrigger value="log">{t.log}</TabsTrigger>
@@ -308,7 +318,15 @@ export default function SecurityPage({
         <ObserveHint count={d ? GUARDS.filter((g) => d[g].mode === "observe").length : 0} className="mt-4" />
 
         <TabsContent value="log" className="pt-4">
-          <LogTab log={log} range={range} onRange={setRange} detail={d} actions={logActions} />
+          <LogTab
+            log={log}
+            range={range}
+            onRange={setRange}
+            guard={guard}
+            onGuard={setGuard}
+            detail={d}
+            actions={logActions}
+          />
         </TabsContent>
 
         {GUARDS.map((g) => (
