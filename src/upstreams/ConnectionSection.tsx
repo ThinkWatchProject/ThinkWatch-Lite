@@ -26,6 +26,7 @@ import { useSystemProxyLabel } from "@/connection/Remote";
 import { useRemote } from "@/connection/useRemote";
 import { remoteText } from "@/connection/remote.i18n";
 import { HeaderEditor, type AuthRow } from "./HeaderEditor";
+import { LimitsField } from "./LimitsField";
 import {
   BEDROCK_REGIONS,
   PROTOCOLS,
@@ -130,7 +131,7 @@ export interface ZaiAccount {
 
 /**
  * 连接：名称和出站代理一行，地址和协议、区域一行（协议、区域只在有得选时出现，地址下面一句说明），
- * 凭据，最后是收起的「高级设置」（请求头、转发客户端身份、代理不可用时、并发上限）。新建和
+ * 凭据，最后是收起的「高级设置」（请求头、转发客户端身份、代理不可用时、并发上限、用量上限）。新建和
  * 编辑是同一张表单；新建时第一步选的服务类型已经定了的几项（地址、协议、要不要密钥）不再问，
  * 见 `presets.ts`。
  *
@@ -285,7 +286,12 @@ export function ConnectionSection({
         </FormItem>
       )}
 
-      <AdvancedSettings form={form} set={set} rules={rules}>
+      <AdvancedSettings
+        form={form}
+        set={set}
+        rules={rules}
+        limits={<LimitsField form={form} set={set} editing={editing} rowDays={ov.retention.row_days} />}
+      >
         {/* 连着远程 core 时 `${变量名}` 读的是服务器上的环境 */}
         <FormItem label={t.headers} hint={remote ? rt.headersHint : t.headersHint}>
           <HeaderEditor
@@ -310,7 +316,7 @@ const BALANCE_SETTINGS: BalanceSetting[] = ["auto", "off", "openrouter", "deepse
 
 /**
  * 「高级设置」：请求头、转发客户端身份（中转站和自定义才有）、代理不可用时、并发上限、余额来源
- * （只有自定义：别的服务由服务类型定）。
+ * （只有自定义：别的服务由服务类型定），最后是整行的用量上限。
  *
  * **默认收起**，收起时那一行写着里面有哪几项；有一项不是默认值就自动展开（`advancedNonDefault`）
  * —— 收着的一节里藏着一项在起作用的设置，等于看不见它。展开与否在这一节出现时定，之后由
@@ -320,11 +326,14 @@ function AdvancedSettings({
   form,
   set,
   rules,
+  limits,
   children,
 }: {
   form: UpstreamForm;
   set: (patch: Partial<UpstreamForm>) => void;
   rules: FieldRules;
+  /** 用量上限那一块，在并发上限那几项下面 */
+  limits: ReactNode;
   /** 请求头那一项：它跟着连接一节里密钥的显示开关 */
   children: ReactNode;
 }) {
@@ -336,6 +345,7 @@ function AdvancedSettings({
     t.onProxyFail,
     t.concurrency,
     rules.balance ? t.balanceSource : null,
+    t.limits,
   ].filter((x): x is string => x !== null);
   return (
     <div className="flex flex-col gap-3">
@@ -353,7 +363,7 @@ function AdvancedSettings({
       </Button>
       {/*
         展开时一项接一项：请求头整行，转发客户端身份和它的说明，最后是几项短的（代理不可用时、
-        并发上限，自定义还有余额来源）两两并排
+        并发上限，自定义还有余额来源）两两并排，用量上限整行在最后
       */}
       {open && (
         <div id="up-advanced" className="flex flex-col gap-4 motion-fade">
@@ -402,6 +412,7 @@ function AdvancedSettings({
               </FormItem>
             )}
           </div>
+          {limits}
         </div>
       )}
     </div>

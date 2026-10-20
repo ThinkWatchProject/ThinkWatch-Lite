@@ -45,6 +45,7 @@ import { balanceText } from "./balance.i18n";
 import { overviewText } from "@/overview/overview.i18n";
 import { rankCost } from "@/overview/series";
 import { SyncBadges } from "@/sync/UpstreamBadges";
+import { LimitUsage, ThrottleTag } from "./ThrottleTag";
 
 export interface UpstreamActions {
   edit: (name: string) => void;
@@ -75,7 +76,8 @@ export interface UpstreamActions {
  * 单击一行（或 Enter）打开它的编辑对话框；行尾按钮和右键打开的是同一份操作。
  *
  * 名字旁边的状态只在异常时出现：先是转发不了的（停用、凭据、熔断），再是最近 7 天的
- * 体检标出的偏差（模型名、输入 token、缓存读取），证据在悬停里。
+ * 体检标出的偏差（模型名、输入 token、缓存读取），证据在悬停里。此刻发不了、会自己恢复的
+ * （限流中、用量已满）另起一个，带倒数（`ThrottleTag`）。
  *
  * 五列是定过的（lite#46）：上游、模型、额度 / 计费、24 小时、首 token / 速度。「24 小时」
  * 一格里多了一条按小时的走势：请求在一天里怎么分布、失败落在哪几个小时，一眼看得出，
@@ -414,6 +416,8 @@ function NameCell({
                 </span>
               </Tip>
             )}
+            {/* 限流中、用量已满：会自己恢复的状态，倒数到点就消失。停用的上游不转发，不说 */}
+            {p.throttle && !p.disabled && <ThrottleTag p={p} throttle={p.throttle} />}
           </div>
           <Where p={p} />
         </div>
@@ -587,6 +591,8 @@ function ModelsCell({
  */
 function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<UpstreamStats>; now: number }) {
   const t = useText(upstreamTableText);
+  // 设了用量上限的：悬停时每条上限此刻用了多少，接在额度、余额的悬停后面。停用的不说
+  const limits = !p.disabled && p.limits.length > 0 ? <LimitUsage limits={p.limits} now={now} /> : null;
   // **过了重置时刻的窗口不算数**：手上的百分比是重置之前的，下一个请求才会带来
   // 新的。拿它画一根满格的条，说的是一件已经不成立的事
   const windows = (stats.data?.quotas?.find((q) => q.provider === p.name)?.windows ?? []).filter(
@@ -603,7 +609,7 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
     const left = quotaLeft(tight);
     return (
       <TableCell>
-        <Tip text={<QuotaTip windows={windows} now={now} />}>
+        <Tip text={<QuotaTip windows={windows} now={now} extra={limits} />}>
           <div>
             <div className="flex items-baseline justify-between gap-2">
               {/* **要说清楚这个数是用掉的还是剩下的**：一根填了一半的条，两种读法都成立 */}
@@ -632,18 +638,19 @@ function QuotaCell({ p, stats, now }: { p: ProviderView; stats: Resource<Upstrea
   }
   // 停用的上游和额度一样不写余额：整行退成次要色，那一格说计费方式
   const face = p.disabled || !p.balance ? null : balanceFace(p.balance, now);
-  if (p.balance && face) return <BalanceCell p={p} balance={p.balance} face={face} now={now} />;
+  if (p.balance && face) return <BalanceCell p={p} balance={p.balance} face={face} now={now} extra={limits} />;
   const billing = p.billing;
-  return (
-    <TableCell>
+  const body = (
+    <div>
       <div className={billing === "free" || p.disabled ? "text-muted-foreground" : undefined}>
         {billingLabel(billing)}
       </div>
       {billing === "per-token" && (
         <div className="truncate tw-label text-muted-foreground">{t.sheet(p.pricing ?? t.defaultSheet)}</div>
       )}
-    </TableCell>
+    </div>
   );
+  return <TableCell>{limits ? <Tip text={limits}>{body}</Tip> : body}</TableCell>;
 }
 
 /**
@@ -663,11 +670,14 @@ function BalanceCell({
   balance,
   face,
   now,
+  extra,
 }: {
   p: ProviderView;
   balance: Balance;
   face: BalanceFace;
   now: number;
+  /** 悬停里接在余额后面的（用量上限） */
+  extra: ReactNode;
 }) {
   const t = useText(upstreamTableText);
   const bt = useText(balanceText);
@@ -679,6 +689,7 @@ function BalanceCell({
           {line}
         </p>
       ))}
+      {extra && <div className="mt-1.5">{extra}</div>}
     </div>
   );
   const sub = "mt-0.5 w-0 min-w-full truncate tw-label leading-none text-muted-foreground";
@@ -747,8 +758,8 @@ function BalanceCell({
   }
 }
 
-/** 悬停在额度上：每个窗口一行 */
-function QuotaTip({ windows, now }: { windows: QuotaWindow[]; now: number }) {
+/** 悬停在额度上：每个窗口一行。设了用量上限的接在后面（`extra`） */
+function QuotaTip({ windows, now, extra }: { windows: QuotaWindow[]; now: number; extra: ReactNode }) {
   const t = useText(upstreamTableText);
   return (
     <div className="flex flex-col gap-0.5">
@@ -760,6 +771,7 @@ function QuotaTip({ windows, now }: { windows: QuotaWindow[]; now: number }) {
           </div>
         );
       })}
+      {extra && <div className="mt-1.5">{extra}</div>}
     </div>
   );
 }

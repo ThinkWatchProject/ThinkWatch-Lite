@@ -842,3 +842,113 @@ describe("库里读回来的本地应答", () => {
     expect(rows.get(1)).toMatchObject({ provider: "", local: true });
   });
 });
+
+describe("排队中（request_queued）", () => {
+  const queued = (id: number, upstreams: string[] = ["anthropic", "openrouter"]) =>
+    ({ kind: "request_queued", id, upstreams, until_ms: 1_120_000, at_ms: 1_000_500 }) satisfies CoreEvent;
+  const routed = (id: number) =>
+    ({
+      kind: "request_routed",
+      id,
+      route: "default",
+      rule: "catch-all",
+      group: "__all__",
+      rewritten_by: [],
+      attempts: [
+        { provider: "anthropic", outcome: "error", ms: 0, skipped: "throttled" },
+        { provider: "openrouter", outcome: "served", status: 200, ms: 900, queued_ms: 4_200 },
+      ],
+      billing: "per-token",
+    }) satisfies CoreEvent;
+
+  it("排队到路由出结论：在等的几家和最晚等到什么时候，路由之后撤掉", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, queued(1));
+    expect(rows.get(1)?.queued).toEqual({ upstreams: ["anthropic", "openrouter"], untilMs: 1_120_000 });
+    applyEvent(rows, routed(1));
+    expect(rows.get(1)?.queued).toBeUndefined();
+    expect(rows.get(1)?.provider).toBe("openrouter");
+  });
+
+  it("发出去又收到 429、回去接着等：再来一条就又在排队", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, queued(1));
+    applyEvent(rows, routed(1));
+    applyEvent(rows, queued(1, ["openrouter"]));
+    expect(rows.get(1)?.queued?.upstreams).toEqual(["openrouter"]);
+  });
+
+  it("不排了（request_dequeued）：等到了、正在发，路由事件还没到也不再说在排队", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, queued(1));
+    const before = rows.get(1);
+    expect(applyBatch(rows, [{ kind: "request_dequeued", id: 1, at_ms: 1_004_000 }])).toBe(true);
+    expect(rows.get(1)).not.toBe(before);
+    expect(rows.get(1)?.queued).toBeUndefined();
+    expect(rows.get(1)?.state).toBe("in_flight");
+    // 半路才打开：快照里排过、又不排了的，照原样重放之后也不在排队
+    const later = new Map<number, RequestRow>();
+    applyInFlight(
+      later,
+      [open(started({ id: 7 }), queued(7, ["anthropic"]), { kind: "request_dequeued", id: 7, at_ms: 1_004_000 })],
+      { started: new Set(), ended: new Set() },
+    );
+    expect(later.get(7)?.queued).toBeUndefined();
+  });
+
+  it("排着队就结束了（等到头、客户端断开、手动中止）：不再说在排队", () => {
+    const rows = new Map<number, RequestRow>();
+    for (const id of [1, 2, 3]) {
+      applyEvent(rows, started({ id }));
+      applyEvent(rows, queued(id));
+    }
+    applyEvent(rows, {
+      kind: "request_failed",
+      id: 1,
+      model: "claude-sonnet-4-5",
+      source: "upstream",
+      message: { code: "gw.busy_all", text: "" },
+    });
+    applyEvent(rows, { kind: "request_cancelled", id: 2, model: "claude-sonnet-4-5", duration_ms: 5_000 });
+    applyEvent(rows, {
+      kind: "request_finished",
+      id: 3,
+      model: "claude-sonnet-4-5",
+      status: 200,
+      duration_ms: 9_000,
+      sent_bytes: 1,
+      received_bytes: 1,
+    });
+    for (const id of [1, 2, 3]) expect(rows.get(id)?.queued).toBeUndefined();
+  });
+
+  it("半路才打开：快照里的排队照原样重放", () => {
+    const rows = new Map<number, RequestRow>();
+    applyInFlight(rows, [open(started({ id: 7 }), queued(7, ["anthropic"]))], { started: new Set(), ended: new Set() });
+    expect(rows.get(7)?.queued?.upstreams).toEqual(["anthropic"]);
+  });
+
+  it("排队那一条换成新对象（表格据此重画）；上游限流的事件不碰任何一行", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    const before = rows.get(1);
+    expect(applyBatch(rows, [queued(1)])).toBe(true);
+    expect(rows.get(1)).not.toBe(before);
+    const now = rows.get(1);
+    expect(
+      applyBatch(rows, [
+        {
+          kind: "throttle_changed",
+          id: 9,
+          provider: "anthropic",
+          throttle: { kind: "rate_limited", until_ms: 1_042_000 },
+          at_ms: 1_000_000,
+        },
+      ]),
+    ).toBe(false);
+    expect(rows.get(1)).toBe(now);
+  });
+});

@@ -19,7 +19,8 @@ import { compact, latency, money, ms, statusTone, tokens, traffic, when } from "
 import { failureKind, notSentText, translatedText } from "@/labels";
 import { ruleName } from "@/security/labels";
 import { notSent } from "@/requestRouting";
-import { promptTokens, upstreamText, type Filter, type SortDir, type SortKey } from "@/requestTable";
+import { promptTokens, queuedFor, upstreamText, type Filter, type SortDir, type SortKey } from "@/requestTable";
+import { resumeClock } from "@/upstreams/throttle";
 import type { ContentHit, RequestRow } from "@/types";
 import { AliasMark } from "@/aliases/AliasMark";
 import { Badge } from "@/ui/badge";
@@ -419,7 +420,8 @@ function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | n
   const sent = notSent(r);
   const mark = rowMark(r, via);
   const phrase = r.local || sent;
-  const text = sent ? notSentText(sent) : r.local || r.provider ? upstreamText(r) : "—";
+  const waiting = queuedFor(r);
+  const text = sent ? notSentText(sent) : waiting ? t.queuedFor(waiting) : r.local || r.provider ? upstreamText(r) : "—";
   // 上游的名字和标志一起封顶；本地应答、没有发往上游的那一句是说明，不截断
   const name = (phrase ? textWidth(text) : capped(textWidth(text), NAME_PX.upstream, 22)) + 3;
   // 那一句可以在词间折行（见 `UpstreamCell`）：最窄是最长的那个词
@@ -1163,7 +1165,7 @@ function LatencyCell({ r }: { r: RequestRow }) {
 
 /** 状态那一格的字：在跑的写状态码（响应头到了才有），失败、取消写成字 */
 function statusText(r: RequestRow, t: Text): string {
-  if (r.state === "in_flight") return r.status != null ? String(r.status) : "…";
+  if (r.state === "in_flight") return r.queued ? t.queued : r.status != null ? String(r.status) : "…";
   if (r.state === "failed") return failureKind(r.error) === "aborted" ? t.aborted : t.failed;
   if (r.state === "cancelled") return t.cancelled;
   return r.status != null ? String(r.status) : "";
@@ -1196,6 +1198,7 @@ function StatusCell({ r }: { r: RequestRow }) {
 function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
   const t = useText(trafficText);
   const sent = notSent(r);
+  const waiting = queuedFor(r);
   const mark = rowMark(r, via);
   const secrets = r.secrets && r.secrets.items.length > 0 ? secretsMark(r.secrets) : null;
   const edits = contentEdits(r.stripped);
@@ -1216,6 +1219,14 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
           <>
             <NotSentIcon kind={sent} />
             <span>{notSentText(sent)}</span>
+          </>
+        ) : waiting ? (
+          // 排着队：写在等的那几家（首选的那一家可能正是限流中的），悬停说全和最晚等到什么时候
+          <>
+            <UpstreamLogo name={waiting[0] ?? ""} className="opacity-70" />
+            <Tip lazy text={t.queuedTip(waiting, resumeClock(r.queued?.untilMs ?? 0, Date.now()))}>
+              <span className="min-w-0 truncate text-muted-foreground">{t.queuedFor(waiting)}</span>
+            </Tip>
           </>
         ) : (
           <>

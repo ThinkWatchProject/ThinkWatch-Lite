@@ -88,6 +88,14 @@ export function upstreamText(r: RequestRow): string {
   return r.local ? textOf(requestsText).answeredLocally : r.provider;
 }
 
+/**
+ * 排着队的那一行在等哪几家上游（`request_queued` 之后、路由出结论之前）。不在排队、
+ * 已经结束的是 null。事件里说不出是哪几家（空的）也当没在排
+ */
+export function queuedFor(r: Pick<RequestRow, "state" | "queued">): string[] | null {
+  return r.state === "in_flight" && r.queued && r.queued.upstreams.length > 0 ? r.queued.upstreams : null;
+}
+
 function valueOf(r: RequestRow, key: SortKey): number | null {
   switch (key) {
     case "time":

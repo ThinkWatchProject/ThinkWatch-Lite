@@ -23,6 +23,7 @@ import {
   type TranslatedView,
 } from "./types";
 import { PROTOCOLS, skipLabel } from "./upstreams/labels";
+import { pausedText } from "./upstreams/throttle";
 import { labelsText } from "./labels.i18n";
 import { timeValueText } from "./routing/timeWindow";
 import type { NotSent } from "./requestRouting";
@@ -183,6 +184,9 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean; idle?:
   // 没有发出去的一跳：这家满着，换了下一家。短名说原因，悬停是 core 那一句（几个请求在
   // 进行，也就是它的上限）
   if (a.skipped) return { text: skipLabel(a.skipped), ok: false, tip: said };
+  // 收到 429、这家因此暂停了一阵的一跳：「429 · 暂停 30 秒」。请求随后换了别家或排队等它
+  const paused = a.outcome !== "served" ? pausedText(a.status, a.pause_ms) : null;
+  if (paused) return { text: paused, ok: false, tip: said };
   switch (a.outcome) {
     case "served":
       if (a.status == null || a.status < 400) {

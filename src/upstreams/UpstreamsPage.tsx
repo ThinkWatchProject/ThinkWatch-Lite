@@ -31,6 +31,7 @@ import {
   statsPartial,
   useAccountQuotas,
   useInFlight,
+  useLiveThrottles,
   usePricingStatus,
   useUpstreamHealth,
   useUpstreamStats,
@@ -134,12 +135,14 @@ export default function UpstreamsPage({
    * 这里记的是「还没被概览证实的那几个」，概览对上了就撤掉。
    */
   const [pendingDisabled, setPendingDisabled] = useState<Record<string, boolean>>({});
+  // 限流中、用量已满：事件一到就画上，不等概览重读
+  const live = useLiveThrottles(ov.providers);
   const providers = useMemo(
     () =>
-      ov.providers.map((p) =>
+      live.map((p) =>
         p.name in pendingDisabled ? { ...p, disabled: pendingDisabled[p.name]! } : p,
       ),
-    [ov.providers, pendingDisabled],
+    [live, pendingDisabled],
   );
   useEffect(() => {
     const stale = Object.keys(pendingDisabled).filter((n) => {

@@ -1,6 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { ModelRow, PriceSheetInput, ProviderView } from "@/types";
+import { inputsOf } from "@/keys/limits";
 import { presetById } from "./presets";
 import { carried, dropParam, shareProposal } from "./share";
 import { authModeOf, formFromImport, formFromView, type UpstreamForm } from "./upstreamForm";
@@ -31,6 +32,7 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
     billing: "per-token",
     references: [],
     pricing: null,
+    limits: [],
     balance_setting: "auto",
     balance: null,
     signed_in: null,
@@ -58,6 +60,7 @@ function shape(f: UpstreamForm) {
     aws: authModeOf(f) === "aws-keys" ? [f.awsKeyId, f.awsSecret, f.awsToken, f.awsRegion] : null,
     identity: f.forwardClientIdentity,
     concurrency: f.maxConcurrent,
+    limits: inputsOf(f.limits),
     manual: f.manualModels,
     scope: f.scope,
     scopeList: f.scopeList,
@@ -82,6 +85,15 @@ describe("分享上游：链接里的提议", () => {
     roundTrips(view({ name: "ollama", base_url: "http://127.0.0.1:11434", key: null, headers: [], protocol: null, protocol_explicit: false, billing: "free" }));
     roundTrips(view({ name: "lan-ollama", base_url: "http://192.168.1.20:11434", key: null, headers: [], protocol: null, protocol_explicit: false, billing: "per-token" }));
     roundTrips(view({ balance_setting: "newapi", protocol: "openai-chat" }));
+    roundTrips(
+      view({
+        limits: [
+          { per: "minute", every: 5, measure: "tokens", max: 10_000_000, cache_reads: false, used: 4_200_000, reached: false },
+          { per: "day", every: 1, measure: "cost", max: 5_500_000, cache_reads: false, used: 0, resets_at_ms: 1, reached: false },
+          { per: "week", every: 1, measure: "tokens", max: 900_000, cache_reads: true, used: 0, reached: false },
+        ],
+      }),
+    );
     roundTrips(view({ balance_setting: "openrouter", protocol: null, protocol_explicit: false }));
     roundTrips(
       view({
@@ -186,6 +198,22 @@ describe("分享上游：链接里的提议", () => {
     expect(carried(proposal).map((c) => c.kind)).toEqual(
       expect.arrayContaining(["address", "key", "headers", "specs", "prices", "multiplier"]),
     );
+  });
+
+  it("用量上限照设定写进链接，用量不写；登录账号的不写", () => {
+    const limits = [
+      { per: "minute" as const, every: 5, measure: "tokens" as const, max: 10_000_000, cache_reads: false, used: 9, reached: false },
+    ];
+    const { proposal } = shareProposal(view({ limits }), NONE, true);
+    expect(proposal.limits).toEqual([{ per: "minute", every: 5, measure: "tokens", max: 10_000_000, cache_reads: false }]);
+    expect(carried(proposal)).toContainEqual({ kind: "limits", n: 1 });
+    expect(dropParam(proposal, "limits")?.limits).toEqual([]);
+    const zai = shareProposal(
+      view({ name: "zai", base_url: "https://api.z.ai/api/anthropic", signed_in: "zai", headers: [], limits }),
+      NONE,
+      true,
+    );
+    expect(zai.proposal.limits).toEqual([]);
   });
 
   it("写不进链接的那一项去掉；地址、服务类型去不掉", () => {

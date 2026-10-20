@@ -11,6 +11,18 @@ const DENIED = "gw.route.denied";
 const KEY_LIMIT = "gw.key_limit.";
 /** 能服务的上游都满着、等过了也没空出位置：`gw.busy_all {upstreams}` */
 const BUSY_ALL = "gw.busy_all";
+/**
+ * 能服务的上游都暂时发不出去、等到期限也没有一家恢复：都在限流暂停（`gw.wait.rate_limited`）、
+ * 都到了分钟或小时的用量上限（`gw.wait.window_full`）、都用完了天周月的用量上限
+ * （`gw.wait.used_up`，不等）、几种都有（`gw.wait.mixed`）。和 `gw.busy_all` 一样，上游那一格
+ * 是最后看过的那一家，可它没接下这个请求
+ */
+const WAIT: Record<string, NotSent> = {
+  "gw.wait.rate_limited": "throttled",
+  "gw.wait.window_full": "full",
+  "gw.wait.used_up": "full",
+  "gw.wait.mixed": "timeout",
+};
 
 /**
  * 一条请求为什么没有上游接下：
@@ -19,6 +31,9 @@ const BUSY_ALL = "gw.busy_all";
  * · `unavailable`：规则选中的上游一个都接不了（停用、不在范围内、不提供这个模型）
  * · `limited`：这把网关密钥的用量上限拒绝了它（选定上游之后、发出之前）
  * · `busy`：能服务它的上游都满着（各自的并发上限），等过了也没空出位置
+ * · `throttled`：能服务它的上游都因 429 暂停着，等过了也没恢复
+ * · `full`：能服务它的上游都到了自己的用量上限（分钟、小时的等过了也没空出来；天、周、月的不等）
+ * · `timeout`：上面几种都有，等到期限也没有一家恢复
  *
  * 发往了上游的、本地应答的、还没有结局的是 `null`。
  *
@@ -29,11 +44,16 @@ const BUSY_ALL = "gw.busy_all";
  * **`busy` 的上游不是空的**：那一行归在尝试链的最后一跳，也就是最后看过、满着的那一家。
  * 可那一家一个字节都没收到，结局也不是它的失败 —— 这一格写「并发已满」，不写它的名字
  */
-export type NotSent = "denied" | "unavailable" | "limited" | "busy";
+export type NotSent = "denied" | "unavailable" | "limited" | "busy" | "throttled" | "full" | "timeout";
+
+/** 等过了、没有一家上游接下的那几种：上游那一格不是空的，也不写它的名字 */
+const WAITED_OUT: ReadonlySet<NotSent> = new Set(["busy", "throttled", "full", "timeout"]);
 
 export function notSent(r: { local?: boolean; provider: string; error?: Msg | null }): NotSent | null {
   if (r.local || !r.error) return null;
   if (r.error.code === BUSY_ALL) return "busy";
+  const waited = WAIT[r.error.code];
+  if (waited) return waited;
   if (r.provider !== "") return null;
   if (r.error.code === DENIED) return "denied";
   return r.error.code.startsWith(KEY_LIMIT) ? "limited" : "unavailable";
@@ -47,6 +67,14 @@ export function skippedHop(a: AttemptView): boolean {
   return a.skipped != null;
 }
 
+/**
+ * 不算上游失败的一跳：没发出去就换了下一家（满着、限流中、用量已满），或者收到 429、这家
+ * 因此暂停了一阵（`pause_ms`）—— 等它恢复就能接着发，不是故障
+ */
+function notFailed(a: AttemptView): boolean {
+  return skippedHop(a) || a.pause_ms != null;
+}
+
 /** 尝试链里的一跳。`denied`：选定上游之后的规则在这一跳拒绝了它，**没有发给这个上游** */
 export interface Hop {
   attempt: AttemptView;
@@ -57,11 +85,15 @@ export interface Hop {
  * 尝试链下面那一句。只说字面上成立的事：
  *
  * · `failover`：前 `failed` 个上游失败，换到了下一个（最后一跳的结果在它自己那一行）
- * · `switched`：前 `count` 跳没有接下它，换到了下一跳。其中有满着跳过的 —— 那不是上游的
- *   失败，不说「失败」（每一跳为什么没接下在它自己那一行）
+ * · `switched`：前 `count` 跳没有接下它，换到了下一跳。其中有满着、限流中跳过的，或者收到
+ *   429 暂停了的 —— 那不是上游的失败，不说「失败」（每一跳为什么没接下在它自己那一行）
+ * · `waited`：前 `count` 跳没有接下它，最后接下的是前面试过的一家：等它恢复（限流结束、
+ *   用量窗口空出来、空出位置）之后发了过去，没有换上游
  * · `limited`：这把网关密钥的用量上限拒绝了它：没有发往任何上游
  * · `busy`：剩下的上游都满着，等过了也没空出位置。`tried` 是在那之前真的发出去、没成的
  *   几跳；0 就是没有发往任何上游
+ * · `throttled` / `full` / `timeout`：同 `busy`，剩下的上游都在限流暂停 / 都到了用量上限 /
+ *   几种都有（见 `NotSent`）
  * · `failover_denied`：前 `failed` 个上游失败，换到下一个之后被规则 `rule` 拒绝，没有发给它
  * · `denied_after_pick`：唯一的那一跳被规则 `rule` 拒绝：没有发往任何上游
  * · `denied_before_pick`：选定上游之前规则 `rule` 就拒绝了它：没有发往任何上游
@@ -74,8 +106,9 @@ export interface Hop {
 export type RoutingNote =
   | { kind: "failover"; failed: number }
   | { kind: "switched"; count: number }
+  | { kind: "waited"; count: number }
   | { kind: "limited" }
-  | { kind: "busy"; tried: number }
+  | { kind: "busy" | "throttled" | "full" | "timeout"; tried: number }
   | { kind: "failover_denied"; failed: number; rule: string }
   | { kind: "denied_after_pick"; rule: string }
   | { kind: "denied_before_pick"; rule: string }
@@ -138,15 +171,15 @@ export function routingFacts(
   if (ruleDenied || deniedBy) {
     const text = denyReason(deniedHop?.error) ?? denyReason(r.error);
     reason = text ? { text } : null;
-  } else if ((why === "unavailable" || why === "limited" || why === "busy") && r.error) {
+  } else if ((why === "unavailable" || why === "limited" || (why && WAITED_OUT.has(why))) && r.error) {
     // 用量上限的那一句说清是哪一条、用了多少、什么时候重置；满着的那一句列出是哪几家
     reason = { msg: r.error };
   }
 
   let note: RoutingNote | null = null;
-  if (why === "busy") {
-    // 满着跳过的几跳都没发出去。之前真的发出去、没成的那几跳另算
-    note = { kind: "busy", tried: attempts.filter((a) => !skippedHop(a)).length };
+  if (why === "busy" || why === "throttled" || why === "full" || why === "timeout") {
+    // 满着、限流中、用量已满跳过的几跳都没发出去。之前真的发出去、没成的那几跳另算
+    note = { kind: why, tried: attempts.filter((a) => !skippedHop(a)).length };
   } else if (n === 0) {
     if (ruleDenied) note = { kind: "denied_before_pick", rule: routing.rule };
     else if (why === "unavailable") note = { kind: "unavailable" };
@@ -159,9 +192,15 @@ export function routingFacts(
         ? { kind: "failover_denied", failed: n - 1, rule: deniedBy }
         : { kind: "denied_after_pick", rule: deniedBy };
   } else if (n > 1) {
-    // 满着跳过不是上游的失败（无响应超时是）
-    const plain = attempts.slice(0, -1).every((a) => !skippedHop(a));
-    note = plain ? { kind: "failover", failed: n - 1 } : { kind: "switched", count: n - 1 };
+    // 满着、限流中跳过，收到 429 暂停，都不是上游的失败（无响应超时是）
+    const earlier = attempts.slice(0, -1);
+    const last = attempts[n - 1]!;
+    const plain = earlier.every((a) => !notFailed(a));
+    note = earlier.some((a) => a.provider === last.provider)
+      ? { kind: "waited", count: n - 1 }
+      : plain
+        ? { kind: "failover", failed: n - 1 }
+        : { kind: "switched", count: n - 1 };
   }
 
   return {

@@ -364,5 +364,44 @@
       "text": "Every upstream that can serve this request is at its concurrency limit (max_concurrent): `官方`, `中转`. None had a free slot in time; try again shortly."
     },
     "zh": "可处理此请求的上游均已达到并发上限（max_concurrent）：「官方」、「中转」。等待期间没有空出位置，请稍后重试。"
+  },
+  {
+    "msg": {
+      "code": "gw.key_limit.tokens_every",
+      "args": {
+        "key": "laptop",
+        "max": "10000000",
+        "every": "5",
+        "per": "minute",
+        "used": "10002400",
+        "retry": "42"
+      },
+      "text": "Gateway key `laptop` has reached its limit of 10000000 tokens every 5 minutes: 10002400 in the last 5 minutes. Try again in 42 s."
+    },
+    "zh": "网关密钥「laptop」已达到每 5 分钟 10000000 个 token 的上限，最近 5 分钟内已使用 10002400 个 token，请于 42 秒后重试。"
+  },
+  {
+    "msg": {
+      "code": "gw.upstream.paused",
+      "args": {
+        "upstream": "anthropic",
+        "secs": "30"
+      },
+      "text": "Upstream `anthropic` answered 429 (rate limited) and is paused; it takes requests again in about 30 s."
+    },
+    "zh": "上游「anthropic」返回 429（限流），已暂停发送，约 30 秒后恢复。"
+  },
+  {
+    "msg": {
+      "code": "gw.wait.mixed",
+      "args": {
+        "rate_limited": "`anthropic`",
+        "window_full": "`openrouter`, `relay`",
+        "used_up": "—",
+        "busy": "—"
+      },
+      "text": "No upstream that can serve this request became available in time. Paused after answering 429: `anthropic`. At a per-minute or per-hour usage limit: `openrouter`, `relay`. Used up for the current day, week or month: —. At the concurrency limit: —. Try again shortly."
+    },
+    "zh": "等待期间没有可处理此请求的上游恢复可用。因 429 暂停：「anthropic」。达到按分钟或小时计的用量上限：「openrouter」、「relay」。当天、当周或当月的用量上限已用完：—。达到并发上限：—。请稍后重试。"
   }
 ]

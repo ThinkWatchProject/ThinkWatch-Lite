@@ -217,6 +217,11 @@ export function shareProposal(p: ProviderView, extra: ShareExtra, secrets: boole
       headers: shareHeaders,
       client_identity: auth !== "account" && f.forwardClientIdentity && preset.clientIdentity === true,
       concurrency: auth === "account" ? null : (p.max_concurrent ?? null),
+      // 用量上限和并发上限一样：登录账号的链接不带（接收方登录时由 core 建上游）
+      limits:
+        auth === "account"
+          ? []
+          : p.limits.map((l) => ({ per: l.per, every: l.every, measure: l.measure, max: l.max, cache_reads: l.cache_reads })),
       balance: service === "custom" && p.balance_setting !== "auto" ? p.balance_setting : null,
       models: p.models,
       models_only: p.models_only && p.models_only.length > 0 ? p.models_only : null,
@@ -259,6 +264,8 @@ export function dropParam(p: ImportProposal, param: string): ImportProposal | nu
       return { ...p, client_identity: false };
     case "concurrency":
       return { ...p, concurrency: null };
+    case "limits":
+      return { ...p, limits: [] };
     case "balance":
       return { ...p, balance: null };
     case "models":
@@ -293,6 +300,7 @@ export type Carried =
   | { kind: "billing" }
   | { kind: "balance" }
   | { kind: "concurrency" }
+  | { kind: "limits"; n: number }
   | { kind: "identity" }
   | { kind: "login" };
 
@@ -315,6 +323,7 @@ export function carried(p: ImportProposal): Carried[] {
   if (p.billing) out.push({ kind: "billing" });
   if (p.balance || preset.balance) out.push({ kind: "balance" });
   if (p.concurrency != null) out.push({ kind: "concurrency" });
+  if (p.limits.length > 0) out.push({ kind: "limits", n: p.limits.length });
   if (p.client_identity) out.push({ kind: "identity" });
   return out;
 }

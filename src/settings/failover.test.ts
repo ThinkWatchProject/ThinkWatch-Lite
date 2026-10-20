@@ -10,7 +10,7 @@ const failover: FailoverView = {
   quota_pause_secs: 3600,
   rate_limit_max_pause_secs: 3600,
   idle_timeout_secs: 300,
-  slot_wait_secs: 30,
+  wait_secs: 120,
 };
 
 const allOk = (c: Record<string, boolean>) => Object.values(c).every(Boolean);
@@ -37,13 +37,11 @@ describe("故障转移", () => {
     expect(checks({ ...saved, pause_secs: "900", max_pause_secs: "900" }, saved).max_pause_secs).toBe(true);
   });
 
-  it("等空位的秒数可以是 0（不等），最多 300", () => {
+  it("最多等待：默认 120 秒，可以是 0（不等），最多 600", () => {
     const saved = draftOf(failover);
-    expect(saved.slot_wait_secs).toBe("30");
-    expect(checks({ ...saved, slot_wait_secs: "0" }, saved).slot_wait_secs).toBe(true);
-    expect(checks({ ...saved, slot_wait_secs: "300" }, saved).slot_wait_secs).toBe(true);
-    expect(checks({ ...saved, slot_wait_secs: "301" }, saved).slot_wait_secs).toBe(false);
-    expect(checks({ ...saved, slot_wait_secs: "" }, saved).slot_wait_secs).toBe(false);
+    expect(saved.wait_secs).toBe("120");
+    for (const ok of ["0", "1", "300", "600"]) expect(checks({ ...saved, wait_secs: ok }, saved).wait_secs).toBe(true);
+    for (const bad of ["601", "", "-1", "12.5"]) expect(checks({ ...saved, wait_secs: bad }, saved).wait_secs).toBe(false);
   });
 
   it("无响应超时：默认 300 秒，30 到 3600 之间的整数", () => {

@@ -60,6 +60,7 @@ import {
   blankForm,
   connectionChanged,
   connectionMissing,
+  limitsMissing,
   describeModelList,
   fieldRules,
   formFromDraft,
@@ -526,20 +527,26 @@ export function UpstreamDialog({
         }
       : undefined;
 
+  const rowDays = ov.retention.row_days;
   const missing =
     section === "connection"
       ? signedIn
         ? ready
           ? null
           : t.signingIn
-        : connectionMissing(form, original, taken)
-      : section === "models"
-        ? modelsMissing(form)
-        : section === "billing"
-          ? sheetMissing(form, ov.price_sheets)
-          : null;
+        : (connectionMissing(form, original, taken) ?? limitsMissing(form, rowDays))
+      : section === "account"
+        ? limitsMissing(form, rowDays)
+        : section === "models"
+          ? modelsMissing(form)
+          : section === "billing"
+            ? sheetMissing(form, ov.price_sheets)
+            : null;
   const blocking =
-    connectionMissing(form, original, taken) ?? modelsMissing(form) ?? sheetMissing(form, ov.price_sheets);
+    connectionMissing(form, original, taken) ??
+    limitsMissing(form, rowDays) ??
+    modelsMissing(form) ??
+    sheetMissing(form, ov.price_sheets);
 
   /**
    * 导入链接带的模型规格：最终的模型清单（上游列出的接上手动添加的）里有的才写，别的不写，

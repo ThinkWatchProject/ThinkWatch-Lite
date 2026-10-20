@@ -354,6 +354,12 @@ export function skipLabel(reason: ServeSkip): string {
       return t.not_allowed;
     case "busy":
       return t.busy;
+    case "throttled":
+      return t.throttled;
+    case "window_full":
+      return t.window_full;
+    case "period_used_up":
+      return t.period_used_up;
   }
 }
 

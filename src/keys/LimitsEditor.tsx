@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
@@ -12,13 +12,18 @@ import { useNow } from "@/useNow";
 import { Boxed, Note } from "@/upstreams/parts";
 import type { KeyLimitView } from "@/types";
 import {
+  MAX_EVERY,
   MEASURES,
   PERS,
   ROW_DAYS_NEEDED,
   amount,
+  cleanEvery,
   cleanMax,
+  everyOf,
+  isRolling,
   newRow,
   parseMax,
+  periodText,
   resetText,
   usageOf,
   type LimitProblem,
@@ -32,10 +37,11 @@ const UNPRICED_SHOWN = 6;
 
 /**
  * 对话框里的「用量上限」：一条一行，读起来是一句话 ——「每 [天] 最多 [5] [费用 (USD)]」，
- * token 上限再加一个「计入缓存读取」。
+ * 分钟、小时前面多一格 N（「每 [5] [分钟] 最多 …」），token 上限再加一个「计入缓存读取」。
+ * 密钥和上游的对话框共用它，说明那一句（`hint`）各自给。
  *
- * 编辑一把已有的密钥时，每一行下面写着此刻用了多少（core 的 `KeyLimitView`）：天、周、月
- * 是这一期的，带重置的时刻；分钟、小时是最近这一段的。到了的那一行标出来。
+ * 编辑一把已有的密钥、一个已有的上游时，每一行下面写着此刻用了多少（core 的 `KeyLimitView`）：
+ * 天、周、月是这一期的，带重置的时刻；分钟、小时是最近这一段的。到了的那一行标出来。
  *
  * 填错的当场说，写在那一行下面。**空着的那一格等离开它才说**：刚加的一行一出现就标红，
  * 说的是一件用户正要去做的事。删一条写成字，× 在这个应用里只表示关闭。
@@ -43,19 +49,25 @@ const UNPRICED_SHOWN = 6;
 export function LimitsEditor({
   rows,
   views,
-  unpriced,
+  unpriced = [],
   problems,
   rowDays,
+  hint,
+  note,
   onChange,
 }: {
   rows: LimitRow[];
-  /** core 给的这把密钥的上限和用量。新建时是空的 */
+  /** core 给的上限和用量。新建时是空的 */
   views: readonly KeyLimitView[];
-  /** 这把密钥用得到、却没有价格的模型。core 只在已经存了费用上限时才算 */
-  unpriced: readonly string[];
+  /** 用得到、却没有价格的模型（只有密钥有）。core 只在已经存了费用上限时才算 */
+  unpriced?: readonly string[];
   problems: ReadonlyMap<number, LimitProblem>;
   /** 此刻请求记录留几天，「每月」那一条的提示用 */
   rowDays: number | null;
+  /** 标题旁边那一句：用满之后会怎样。不给是密钥的说法 */
+  hint?: string;
+  /** 列表下面的一条提醒（上游不计费时费用上限不起作用这类） */
+  note?: ReactNode;
   onChange: (rows: LimitRow[]) => void;
 }) {
   const t = useText(limitsEditorText);
@@ -82,7 +94,7 @@ export function LimitsEditor({
     <div className="flex flex-col gap-1.5">
       <div className="flex items-baseline gap-2.5">
         <span className="tw-body font-medium">{t.title}</span>
-        <span className="tw-label text-muted-foreground">{t.hint}</span>
+        <span className="tw-label text-muted-foreground">{hint ?? t.hint}</span>
       </div>
       {rows.length > 0 && (
         <Boxed>
@@ -116,6 +128,7 @@ export function LimitsEditor({
         {rows.length === 0 && <span className="tw-label text-muted-foreground">{t.none}</span>}
       </div>
       {costLimited && unpriced.length > 0 && <Unpriced models={unpriced} />}
+      {note}
     </div>
   );
 }
@@ -150,22 +163,41 @@ function LimitLine({
 }) {
   const t = useText(limitsEditorText);
   const w = useText(limitsText);
+  const rolling = isRolling(r.per);
+  const every = everyOf(r.per, r.every);
   const said =
-    problem === "required"
-      ? t.required
-      : problem === "notPositive"
-        ? t.notPositive(r.measure === "cost")
-        : problem === "costTooSmall"
-          ? t.costTooSmall
-          : problem === "duplicate"
-            ? t.duplicate
-            : problem === "retention"
-              ? t.retention(w.per[r.per], ROW_DAYS_NEEDED[r.per] ?? 0, rowDays ?? 0)
-              : null;
+    problem === "every"
+      ? t.badEvery(r.per === "hour", MAX_EVERY[r.per] ?? 1)
+      : problem === "required"
+        ? t.required
+        : problem === "notPositive"
+          ? t.notPositive(r.measure === "cost")
+          : problem === "costTooSmall"
+            ? t.costTooSmall
+            : problem === "duplicate"
+              ? t.duplicate
+              : problem === "retention"
+                ? t.retention(w.per[r.per], ROW_DAYS_NEEDED[r.per] ?? 0, rowDays ?? 0)
+                : null;
   return (
     <div className={cn("flex flex-col gap-1 border-b border-border px-3 py-2 last:border-b-0", className)}>
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5">
         <span className="tw-body">{t.every}</span>
+        {rolling && (
+          <Input
+            aria-label={t.everyLabel(n)}
+            aria-invalid={problem === "every" ? true : undefined}
+            autoComplete="off"
+            spellCheck={false}
+            inputMode="numeric"
+            className="w-14 font-mono"
+            value={r.every}
+            onChange={(e) => onChange({ every: cleanEvery(e.target.value) })}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") e.preventDefault();
+            }}
+          />
+        )}
         <NativeSelect
           aria-label={t.perLabel(n)}
           value={r.per}
@@ -173,7 +205,7 @@ function LimitLine({
         >
           {PERS.map((p) => (
             <NativeSelectOption key={p} value={p}>
-              {w.per[p]}
+              {w.unit(p, isRolling(p) ? (every ?? 1) : 1)}
             </NativeSelectOption>
           ))}
         </NativeSelect>
@@ -246,7 +278,7 @@ function Usage({ row, use, now }: { row: LimitRow; use: KeyLimitView; now: numbe
   return (
     <div className="flex min-w-0 flex-wrap items-center gap-x-2 tw-label text-muted-foreground">
       <span className="tw-num">
-        {w.period[row.per]}{" "}
+        {periodText(row.per, use.every)}{" "}
         <span className={cn(reached && "text-warning")}>
           {amount(row.measure, use.used)} / {amount(row.measure, max)}
         </span>

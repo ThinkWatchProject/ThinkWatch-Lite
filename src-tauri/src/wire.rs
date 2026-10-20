@@ -911,6 +911,18 @@ pub struct ImportPrice {
     pub cache_write_1h: f64,
 }
 
+/// 一条用量上限（上游配置里的 `limits:`）。和控制面的 `KeyLimitInput` 一样：费用是微分；
+/// `every` 是「每 N 分钟 / 小时」的 N，天、周、月是 1
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ImportLimit {
+    pub per: tw_api::LimitPer,
+    pub every: u32,
+    pub measure: tw_api::LimitMeasure,
+    pub max: u64,
+    /// 只有 token 上限会是 true
+    pub cache_reads: bool,
+}
+
 /// 链接带来的新价目表：和上游一起创建，名称跟着上游
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImportSheet {
@@ -945,6 +957,8 @@ pub struct ImportProposal {
     pub client_identity: bool,
     /// 并发上限，1 到 1000
     pub concurrency: Option<u32>,
+    /// 用量上限，按链接里的顺序
+    pub limits: Vec<ImportLimit>,
     /// 余额从哪里读（只有「自定义」）
     pub balance: Option<tw_api::BalanceSetting>,
     /// 手动添加的模型

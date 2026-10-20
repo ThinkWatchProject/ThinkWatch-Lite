@@ -57,6 +57,7 @@ function minimal(s: Service, auth: ImportAuth): ImportProposal {
     headers: [],
     client_identity: false,
     concurrency: null,
+    limits: [],
     balance: null,
     models: [],
     models_only: null,

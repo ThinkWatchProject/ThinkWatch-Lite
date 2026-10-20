@@ -130,9 +130,17 @@ export const requestDrawerText = messages(
     unavailable: "规则选中的上游均无法服务此请求，未发往任何上游。",
     /** 前面几跳里有满着跳过的：它们不是上游的失败 */
     switched: (n: number) => `已自动切换上游：前 ${n} 次尝试未接下此请求。`,
+    /** 最后接下它的是前面试过的一家：等它恢复之后发了过去 */
+    waited: (n: number) => `前 ${n} 次尝试未接下此请求，上游恢复后已发出。`,
     limited: "网关密钥已达到用量上限，此请求未发往任何上游。",
     busy: "上游均已达到并发上限，等待期间没有空出位置，此请求未发往任何上游。",
     busyAfterTries: (n: number) => `发出的 ${n} 次尝试未成功，其余上游均已达到并发上限，等待期间没有空出位置。`,
+    throttled: "上游均因返回 429 而暂停，等待期间没有恢复，此请求未被接下。",
+    throttledAfterTries: (n: number) => `发出的 ${n} 次尝试未成功，其余上游均因返回 429 而暂停，等待期间没有恢复。`,
+    full: "上游均已达到各自的用量上限，此请求未被接下。",
+    fullAfterTries: (n: number) => `发出的 ${n} 次尝试未成功，其余上游均已达到各自的用量上限。`,
+    timeout: "等待期间没有上游恢复可用，此请求未被接下。",
+    timeoutAfterTries: (n: number) => `发出的 ${n} 次尝试未成功，等待期间其余上游均未恢复可用。`,
     noRouting: "此请求由网关本地应答，未经过路由。",
     routingPending: "路由尚未完成",
     noAttempts: "此请求没有上游尝试记录。",
@@ -296,12 +304,31 @@ export const requestDrawerText = messages(
       n === 1
         ? "Switched upstreams automatically: the first attempt did not take this request."
         : `Switched upstreams automatically: the first ${n} attempts did not take this request.`,
+    waited: (n: number) =>
+      n === 1
+        ? "The first attempt did not take this request; it was sent once the upstream was available again."
+        : `The first ${n} attempts did not take this request; it was sent once the upstream was available again.`,
     limited: "The gateway key had reached a usage limit; this request was not sent to any upstream.",
     busy: "Every upstream was at its concurrency limit and none freed up in time; this request was not sent to any upstream.",
     busyAfterTries: (n: number) =>
       n === 1
         ? "The attempt sent did not succeed, and the other upstreams were at their concurrency limits with none freeing up in time."
         : `The ${n} attempts sent did not succeed, and the other upstreams were at their concurrency limits with none freeing up in time.`,
+    throttled: "Every upstream was paused after answering 429 and none resumed in time; this request was not taken.",
+    throttledAfterTries: (n: number) =>
+      n === 1
+        ? "The attempt sent did not succeed, and the other upstreams were paused after answering 429 with none resuming in time."
+        : `The ${n} attempts sent did not succeed, and the other upstreams were paused after answering 429 with none resuming in time.`,
+    full: "Every upstream was at one of its usage limits; this request was not taken.",
+    fullAfterTries: (n: number) =>
+      n === 1
+        ? "The attempt sent did not succeed, and the other upstreams were at their usage limits."
+        : `The ${n} attempts sent did not succeed, and the other upstreams were at their usage limits.`,
+    timeout: "No upstream became available in time; this request was not taken.",
+    timeoutAfterTries: (n: number) =>
+      n === 1
+        ? "The attempt sent did not succeed, and none of the other upstreams became available in time."
+        : `The ${n} attempts sent did not succeed, and none of the other upstreams became available in time.`,
     noRouting: "The gateway answered this request locally; it did not go through routing.",
     routingPending: "Routing has not finished yet",
     noAttempts: "No upstream attempts were recorded for this request.",

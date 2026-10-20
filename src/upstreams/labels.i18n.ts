@@ -66,6 +66,12 @@ export const labelsText = messages(
       not_offered: "未提供此模型",
       not_allowed: "密钥不允许使用此模型",
       busy: "并发已满",
+      /** 上游回了 429，暂停发送中 */
+      throttled: "限流中",
+      /** 分钟、小时的用量上限已满 */
+      window_full: "用量已满",
+      /** 天、周、月的用量上限已满，到下一期才恢复 */
+      period_used_up: "本期用量已满",
     },
     defaultSheet: "默认价目表",
     unpriced: "无法计价",
@@ -150,6 +156,9 @@ export const labelsText = messages(
       not_offered: "Model not offered",
       not_allowed: "Model not allowed for this key",
       busy: "At its concurrency limit",
+      throttled: "Rate limited",
+      window_full: "Usage limit reached",
+      period_used_up: "Usage limit reached for this period",
     },
     defaultSheet: "Default price sheet",
     unpriced: "Unpriced",

@@ -142,6 +142,11 @@ export const trafficText = messages(
     cancelled: "已取消",
     /** 在界面上手动中止的 */
     aborted: "手动中止",
+    /** 在跑、但要去的上游此刻发不了（限流中、用量已满、满着），在等其中一家 */
+    queued: "排队中",
+    /** 排队的那一行，上游一格写在等的几家；悬停说全，和最晚等到什么时候 */
+    queuedFor: (names: string[]) => names.join("、"),
+    queuedTip: (names: string[], at: string) => `排队等待上游：${names.join("、")}。最晚等到 ${at}。`,
 
     // 上游一列的徽标和它们的悬浮说明
     /** 客户端写的是别名，按这家上游换成了它的模型名。模型那一列照旧是客户端写的名称 */
@@ -291,6 +296,9 @@ export const trafficText = messages(
     failed: "Failed",
     cancelled: "Canceled",
     aborted: "Aborted",
+    queued: "Queued",
+    queuedFor: (names: string[]) => names.join(", "),
+    queuedTip: (names: string[], at: string) => `Queued for ${names.join(", ")}. Waits until ${at} at most.`,
 
     aliasTip: (model: string, upstream: string, sent: string) =>
       `${model} is an alias; the model sent to ${upstream} is ${sent}.`,

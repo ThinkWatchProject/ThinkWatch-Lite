@@ -162,6 +162,8 @@ function Summary({ carried: items, left, dropped }: { carried: Carried[]; left: 
         return c.specs(x.n);
       case "prices":
         return c.prices(x.n);
+      case "limits":
+        return c.limits(x.n);
       default:
         return c[x.kind];
     }

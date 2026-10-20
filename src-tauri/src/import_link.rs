@@ -33,11 +33,11 @@ use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use serde::Serialize;
-use tw_api::{BalanceSetting, Billing, Protocol, ZaiFamily};
+use tw_api::{BalanceSetting, Billing, LimitMeasure, LimitPer, Protocol, ZaiFamily};
 
 use crate::wire::{
-    ImportAuth, ImportAwsKeys, ImportHeader, ImportLink, ImportOAuth, ImportPrice, ImportProposal,
-    ImportService, ImportSheet, ImportSpec, ShareLink,
+    ImportAuth, ImportAwsKeys, ImportHeader, ImportLimit, ImportLink, ImportOAuth, ImportPrice,
+    ImportProposal, ImportService, ImportSheet, ImportSpec, ShareLink,
 };
 
 /// 链接的前缀。主机名那一段不分大小写
@@ -57,6 +57,12 @@ pub const MAX_HEADERS: usize = 16;
 pub const MAX_HEADER_NAME: usize = 64;
 pub const MAX_HEADER_VALUE: usize = 1024;
 pub const MAX_CONCURRENCY: u32 = 1000;
+/// 用量上限最多几条
+pub const MAX_LIMITS: usize = 16;
+/// 请求数、token 数上限的上限（十五位数）
+pub const MAX_LIMIT_COUNT: u64 = 999_999_999_999_999;
+/// 费用上限最少多少，微分（$0.01，core 的 `COST_MIN`）
+pub const LIMIT_COST_MIN: u64 = 10_000;
 /// 规格里上下文窗口、输出上限的上限
 pub const MAX_SPEC_TOKENS: u32 = 10_000_000;
 
@@ -89,6 +95,7 @@ pub enum Param {
     Headers,
     ClientIdentity,
     Concurrency,
+    Limits,
     Balance,
     Models,
     ModelsOnly,
@@ -118,6 +125,7 @@ impl Param {
         Self::Headers,
         Self::ClientIdentity,
         Self::Concurrency,
+        Self::Limits,
         Self::Balance,
         Self::Models,
         Self::ModelsOnly,
@@ -148,6 +156,7 @@ impl Param {
             Self::Headers => "headers",
             Self::ClientIdentity => "client_identity",
             Self::Concurrency => "concurrency",
+            Self::Limits => "limits",
             Self::Balance => "balance",
             Self::Models => "models",
             Self::ModelsOnly => "models_only",
@@ -846,6 +855,13 @@ fn build(
             Some(check_concurrency(c)?)
         }
     };
+    let limits = match params.get(Param::Limits) {
+        None => Vec::new(),
+        Some(l) => {
+            offered(Param::Limits, !account)?;
+            check_limits(l)?
+        }
+    };
     let balance = match params.get(Param::Balance) {
         None => None,
         Some(b) => {
@@ -912,6 +928,7 @@ fn build(
         headers,
         client_identity,
         concurrency,
+        limits,
         balance,
         models,
         models_only,
@@ -1215,6 +1232,102 @@ fn check_concurrency(c: &str) -> Result<u32, Rejected> {
     whole(c, MAX_CONCURRENCY).ok_or(Rejected::Invalid(Param::Concurrency))
 }
 
+/// 「每 N」最多写几：分钟 60、小时 24。天、周、月没有 N（core 的 `every` 规则）
+fn max_every(per: LimitPer) -> Option<u32> {
+    match per {
+        LimitPer::Minute => Some(60),
+        LimitPer::Hour => Some(24),
+        _ => None,
+    }
+}
+
+/// 费用上限写成的美元数（`5`、`0.5`，至多六位小数）→ 微分
+fn dollars_to_micros(s: &str) -> Option<u64> {
+    let (i, f) = s.split_once('.').map_or((s, None), |(i, f)| (i, Some(f)));
+    let digits = |x: &str| !x.is_empty() && x.bytes().all(|b| b.is_ascii_digit());
+    if i.len() > 9 || !digits(i) || (i.len() > 1 && i.starts_with('0')) {
+        return None;
+    }
+    let frac: u64 = match f {
+        None => 0,
+        Some(f) if f.len() <= 6 && digits(f) => format!("{f:0<6}").parse().ok()?,
+        Some(_) => return None,
+    };
+    Some(i.parse::<u64>().ok()? * 1_000_000 + frac)
+}
+
+/// 微分写成美元：至多六位小数，末尾的 0 不写（`5`、`0.125`）
+fn micros_text(m: u64) -> String {
+    let frac = format!("{:06}", m % 1_000_000);
+    let frac = frac.trim_end_matches('0');
+    if frac.is_empty() {
+        (m / 1_000_000).to_string()
+    } else {
+        format!("{}.{frac}", m / 1_000_000)
+    }
+}
+
+/// 用量上限：`;` 分隔，每一项 `周期|计量|上限|N|缓存读取`。周期是 `minute` `hour` `day` `week`
+/// `month`；计量是 `requests` `tokens` `cost`；上限是正整数，费用是美元（至少 0.01）；N 是「每 N
+/// 分钟 / 小时」（1–60 / 1–24），只给分钟、小时，不写是 1；缓存读取写 `y`，只给 token。末尾不写的
+/// 几格整个省掉。和 core 的配置校验同一套规矩：同一个周期（连同 N）、同一种量、缓存读取算法
+/// 相同的只能有一条
+fn check_limits(s: &str) -> Result<Vec<ImportLimit>, Rejected> {
+    let bad = Rejected::Invalid(Param::Limits);
+    let entries: Vec<&str> = s.split(';').collect();
+    if entries.len() > MAX_LIMITS {
+        return Err(bad);
+    }
+    let mut out: Vec<ImportLimit> = Vec::new();
+    for e in entries {
+        let f: Vec<&str> = e.split('|').collect();
+        if !(3..=5).contains(&f.len()) {
+            return Err(bad);
+        }
+        let per = LimitPer::from_slug(f[0]).ok_or(bad)?;
+        let measure = LimitMeasure::from_slug(f[1]).ok_or(bad)?;
+        let max = match measure {
+            LimitMeasure::Cost => dollars_to_micros(f[2]).filter(|m| *m >= LIMIT_COST_MIN),
+            _ => {
+                let ok = !f[2].is_empty()
+                    && f[2].len() <= 15
+                    && f[2].bytes().all(|b| b.is_ascii_digit())
+                    && !f[2].starts_with('0');
+                ok.then(|| f[2].parse::<u64>().ok())
+                    .flatten()
+                    .filter(|n| (1..=MAX_LIMIT_COUNT).contains(n))
+            }
+        }
+        .ok_or(bad)?;
+        let every = match f.get(3).copied() {
+            None | Some("") => 1,
+            Some(n) => whole(n, max_every(per).ok_or(bad)?).ok_or(bad)?,
+        };
+        let cache_reads = match f.get(4).copied() {
+            None | Some("") => false,
+            Some("y") if measure == LimitMeasure::Tokens => true,
+            Some(_) => return Err(bad),
+        };
+        let limit = ImportLimit {
+            per,
+            every,
+            measure,
+            max,
+            cache_reads,
+        };
+        if out.iter().any(|x| {
+            x.per == limit.per
+                && x.every == limit.every
+                && x.measure == limit.measure
+                && x.cache_reads == limit.cache_reads
+        }) {
+            return Err(bad);
+        }
+        out.push(limit);
+    }
+    Ok(out)
+}
+
 /// 模型规格：`;` 分隔，每一项 `模型|上下文窗口|输出上限|推理|图片输入`
 fn check_specs(s: &str) -> Result<Vec<ImportSpec>, Rejected> {
     let bad = Rejected::Invalid(Param::Specs);
@@ -1399,6 +1512,30 @@ fn price_text(p: &ImportPrice) -> String {
     f.join("|")
 }
 
+/// 一条用量上限：`周期|计量|上限|N|缓存读取`，N 是 1、缓存读取不算时那一格空着，末尾空着的
+/// 几格整个省掉
+fn limit_text(l: &ImportLimit) -> String {
+    let max = match l.measure {
+        LimitMeasure::Cost => micros_text(l.max),
+        _ => l.max.to_string(),
+    };
+    let mut f = vec![l.per.slug().to_string(), l.measure.slug().to_string(), max];
+    f.push(if l.every > 1 {
+        l.every.to_string()
+    } else {
+        String::new()
+    });
+    f.push(if l.cache_reads {
+        "y".into()
+    } else {
+        String::new()
+    });
+    while f.len() > 3 && f.last().is_some_and(String::is_empty) {
+        f.pop();
+    }
+    f.join("|")
+}
+
 /// 一份提议写成链接的参数（`k=v&…`，值已编码），按 [`Param::ALL`] 的顺序
 pub fn query(p: &ImportProposal) -> String {
     let mut out: Vec<(Param, String)> = vec![(Param::Service, p.service.slug().into())];
@@ -1464,6 +1601,10 @@ pub fn query(p: &ImportProposal) -> String {
     }
     if let Some(c) = p.concurrency {
         put(Param::Concurrency, c.to_string());
+    }
+    if !p.limits.is_empty() {
+        let s: Vec<String> = p.limits.iter().map(limit_text).collect();
+        put(Param::Limits, s.join(";"));
     }
     if let Some(b) = p.balance {
         put(Param::Balance, b.slug().into());

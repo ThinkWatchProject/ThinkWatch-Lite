@@ -72,6 +72,14 @@ describe("没有发往任何上游的请求", () => {
     expect(notSent({ provider: "", error: busyAll })).toBe("busy");
   });
 
+  it("上游都在限流暂停、都到了用量上限、几种都有：同满着一样，不算最后那一家的失败", () => {
+    const wait = (code: string): Msg => ({ code, args: { upstreams: "`anthropic`, `openrouter`" }, text: "" });
+    expect(notSent({ provider: "openrouter", error: wait("gw.wait.rate_limited") })).toBe("throttled");
+    expect(notSent({ provider: "openrouter", error: wait("gw.wait.window_full") })).toBe("full");
+    expect(notSent({ provider: "", error: wait("gw.wait.used_up") })).toBe("full");
+    expect(notSent({ provider: "openrouter", error: wait("gw.wait.mixed") })).toBe("timeout");
+  });
+
   it("发往了上游的、本地应答的、还没有结局的都不算", () => {
     // 选定上游之后才被拒绝：记在要去的那个上游上
     expect(notSent({ provider: "openrouter", error: denied("no-images", "no images") })).toBeNull();
@@ -131,6 +139,23 @@ describe("路由那一页", () => {
     expect(g.note).toEqual({ kind: "switched", count: 2 });
   });
 
+  it("收到 429 暂停、限流中跳过的不说成失败：换过上游，说前几次尝试没有接下", () => {
+    const paused: AttemptView = { provider: "anthropic", outcome: "status", status: 429, ms: 310, pause_ms: 30_000 };
+    const throttled: AttemptView = { provider: "openrouter", outcome: "error", ms: 0, skipped: "throttled" };
+    const f = routingFacts(row({ attempts: [paused, throttled, served("deepseek")] }, { provider: "deepseek" }), false)!;
+    expect(f.note).toEqual({ kind: "switched", count: 2 });
+  });
+
+  it("等前面试过的那一家恢复、发给了它：没有换上游", () => {
+    const paused: AttemptView = { provider: "anthropic", outcome: "status", status: 429, ms: 310, pause_ms: 30_000 };
+    const full: AttemptView = { provider: "openrouter", outcome: "error", ms: 0, skipped: "window_full" };
+    const f = routingFacts(
+      row({ attempts: [paused, full, { ...served("anthropic"), queued_ms: 30_090 }] }),
+      false,
+    )!;
+    expect(f.note).toEqual({ kind: "waited", count: 2 });
+  });
+
   it("等到了空位：只有一跳，排队的时间在那一跳上，不加说明", () => {
     const f = routingFacts(row({ attempts: [{ ...served("anthropic"), queued_ms: 1_240 }] }), false)!;
     expect(f.note).toBeNull();
@@ -153,6 +178,15 @@ describe("路由那一页", () => {
       false,
     )!;
     expect(f.note).toEqual({ kind: "busy", tried: 1 });
+  });
+
+  it("上游都在限流暂停：收到 429 的那一跳算发出去过，跳过的不算", () => {
+    const why: Msg = { code: "gw.wait.rate_limited", args: { upstreams: "`anthropic`, `openrouter`" }, text: "" };
+    const paused: AttemptView = { provider: "anthropic", outcome: "status", status: 429, ms: 310, pause_ms: 30_000 };
+    const throttled: AttemptView = { provider: "openrouter", outcome: "error", ms: 0, skipped: "throttled" };
+    const f = routingFacts(row({ attempts: [paused, throttled] }, { provider: "openrouter", error: why }), false)!;
+    expect(f.note).toEqual({ kind: "throttled", tried: 1 });
+    expect(f.reason).toEqual({ msg: why });
   });
 
   it("密钥的用量上限拒绝了它：没有尝试，原因是 core 说的那一句", () => {

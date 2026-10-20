@@ -72,6 +72,7 @@
     "billing": "per-token",
     "references": [],
     "pricing": null,
+    "limits": [],
     "balance_setting": "auto",
     "balance": null,
     "signed_in": null
@@ -179,7 +180,7 @@
    "quota_pause_secs": 3600,
    "rate_limit_max_pause_secs": 3600,
    "idle_timeout_secs": 300,
-   "slot_wait_secs": 30
+   "wait_secs": 120
   },
   "price_sheets": []
  },

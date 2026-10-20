@@ -84,12 +84,15 @@ export const labelsText = messages(
     /** 选定上游之后被规则拒绝的那一跳：没有发给这个上游 */
     deniedHop: (rule: string) => `未发送 · 被规则「${rule}」拒绝`,
     // 没有上游接下的请求，在「上游」的位置上写的那一句：规则拒绝、没有可用的上游、
-    // 密钥的用量上限拒绝、上游都满着
+    // 密钥的用量上限拒绝、上游都满着、上游都在限流暂停、上游都到了用量上限、几种都有
     notSent: {
       denied: "规则拒绝",
       unavailable: "无可用上游",
       limited: "用量上限",
       busy: "并发已满",
+      throttled: "上游限流中",
+      full: "上游用量已满",
+      timeout: "等待超时",
     },
 
     // ------------------------------------------------------------ 请求与费用
@@ -198,6 +201,9 @@ export const labelsText = messages(
       unavailable: "No upstream",
       limited: "Usage limit",
       busy: "At capacity",
+      throttled: "Rate limited",
+      full: "Upstream limit",
+      timeout: "Wait timed out",
     },
 
     quote: {

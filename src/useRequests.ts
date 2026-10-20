@@ -205,6 +205,8 @@ function touches(ev: CoreEvent): number | null {
     case "request_cancelled":
     case "request_failed":
     case "request_routed":
+    case "request_queued":
+    case "request_dequeued":
     case "request_priced":
     case "secrets_found":
     case "tool_call_flagged":
@@ -646,6 +648,8 @@ export function useRequests(ready: boolean) {
           ev.kind === "proxy_changed" ||
           ev.kind === "credential_expired" ||
           ev.kind === "balance_updated" ||
+          // 上游限流、用量满了或恢复了：概览里的 `throttle` 跟着变
+          ev.kind === "throttle_changed" ||
           ev.kind === "events_dropped"
         ) {
           setUpstreamState((n) => n + 1);

@@ -11,9 +11,10 @@ import { bucketStart } from "@/format";
 import { presetRange, windowStart } from "@/ui/range";
 import { isRunning, parseCoreState } from "@/coreState";
 import { useResource, useResources, type Resource } from "@/lib/resource";
-import type { CoreEvent, CostBucketGroup, ProviderModelsView, ProviderView } from "@/types";
+import type { CoreEvent, CostBucketGroup, ProviderModelsView, ProviderView, Throttle } from "@/types";
 import { useNow } from "@/useNow";
 import { api, type UpstreamStats } from "./api";
+import { applyThrottleEvent, withThrottles } from "./throttle";
 
 /**
  * 一个上游的模型清单在共用缓存里的键。上游页的模型弹窗、路由的固定模型、测速、价目表
@@ -238,13 +239,16 @@ const ENDED_CAP = 512;
  * 此刻每个上游有几个请求在途。
  *
  * 开始事件里就有上游；换了上游（转移）以 `request_routed` 的最后一跳为准；三种结局
- * 都算结束。**页面半路挂上**时，已经在飞的那几个没有开始事件可听 —— 挂上时读一次
+ * 都算结束。**排着队的不算**（`request_queued` 之后、`request_dequeued` 或 `request_routed`
+ * 之前）：它在等上游空出来，还没有发给哪一家。**页面半路挂上**时，已经在飞的那几个没有开始事件可听 —— 挂上时读一次
  * `/in-flight` 的快照，把每个请求到目前为止的事件照原样重放（比快照先到的结束事件
  * 记下来，免得补回一个已经结束的）。core 停了、重启了，在途的全部作废：它们不会再有
  * 结局。
  */
 export function useInFlight(): ReadonlyMap<string, number> {
   const live = useRef(new Map<number, string>());
+  /** 正在排队的：在 `live` 里，但不算在哪一家头上 */
+  const queued = useRef(new Set<number>());
   const ended = useRef(new Set<number>());
   const [tick, setTick] = useState(0);
 
@@ -254,7 +258,11 @@ export function useInFlight(): ReadonlyMap<string, number> {
     /** 开始、路由落到「哪个请求在哪个上游」上。事件流和快照重放用的是同一段 */
     const track = (ev: CoreEvent) => {
       if (ev.kind === "request_started") live.current.set(ev.id, ev.provider);
+      else if (ev.kind === "request_queued") {
+        if (live.current.has(ev.id)) queued.current.add(ev.id);
+      } else if (ev.kind === "request_dequeued") queued.current.delete(ev.id);
       else if (ev.kind === "request_routed") {
+        queued.current.delete(ev.id);
         const last = ev.attempts[ev.attempts.length - 1];
         if (last && live.current.has(ev.id)) live.current.set(ev.id, last.provider);
       }
@@ -276,6 +284,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
     };
     const end = (id: number) => {
       live.current.delete(id);
+      queued.current.delete(id);
       ended.current.add(id);
       if (ended.current.size > ENDED_CAP) {
         const oldest = ended.current.values().next().value;
@@ -289,6 +298,8 @@ export function useInFlight(): ReadonlyMap<string, number> {
           if (!ended.current.has(ev.id)) track(ev);
           break;
         case "request_routed":
+        case "request_queued":
+        case "request_dequeued":
           track(ev);
           break;
         case "request_finished":
@@ -303,6 +314,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
     });
     const unState = subscribe<string>("core-state", (e) => {
       live.current.clear();
+      queued.current.clear();
       bump();
       if (isRunning(parseCoreState(e.payload))) seed();
     });
@@ -316,9 +328,42 @@ export function useInFlight(): ReadonlyMap<string, number> {
 
   return useMemo(() => {
     const by = new Map<string, number>();
-    for (const provider of live.current.values()) by.set(provider, (by.get(provider) ?? 0) + 1);
+    for (const [id, provider] of live.current) {
+      if (!queued.current.has(id)) by.set(provider, (by.get(provider) ?? 0) + 1);
+    }
     return by;
     // `tick` 是 `live` 这份可变状态的版本号
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tick]);
 }
+
+/**
+ * 概览里的上游，换上事件流上刚报来的限流、用量状态（`throttle_changed`）。
+ *
+ * 这条事件也会让外面重读概览（`useRequests` 里的 `upstreamState`），重读回来就以概览为准；
+ * 这里只管中间那一小会儿：限流常常只有几秒，状态一到就画上，一恢复就撤掉。概览换了一份，
+ * 先前按事件改的作废。
+ */
+export function useLiveThrottles(providers: ProviderView[]): ProviderView[] {
+  const [overlay, setOverlay] = useState<{
+    base: ProviderView[];
+    map: ReadonlyMap<string, Throttle | null>;
+  }>(() => ({ base: providers, map: new Map() }));
+  useEffect(
+    () =>
+      subscribe<CoreEvent>("core-event", (e) => {
+        if (e.payload.kind !== "throttle_changed") return;
+        const ev = e.payload;
+        setOverlay((o) => ({ base: o.base, map: applyThrottleEvent(o.map, ev) }));
+      }),
+    [],
+  );
+  // 概览重读过：按事件改过的那几家以它为准
+  const map = overlay.base === providers ? overlay.map : EMPTY_OVERLAY;
+  useEffect(() => {
+    if (overlay.base !== providers) setOverlay({ base: providers, map: new Map() });
+  }, [providers, overlay.base]);
+  return useMemo(() => withThrottles(providers, map), [providers, map]);
+}
+
+const EMPTY_OVERLAY: ReadonlyMap<string, Throttle | null> = new Map();

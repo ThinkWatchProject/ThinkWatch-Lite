@@ -13,8 +13,8 @@ const MAX_PAUSE = 7 * 24 * 3600;
 /** 无响应超时最少、最多写多少秒（core 的 `MIN_IDLE_TIMEOUT_SECS`、`MAX_IDLE_TIMEOUT_SECS`） */
 const MIN_IDLE = 30;
 const MAX_IDLE = 3600;
-/** 等空位最多写多少秒（core 的 `MAX_SLOT_WAIT_SECS`） */
-const MAX_SLOT_WAIT = 300;
+/** 最多等待写多少秒（core 的 `MAX_WAIT_SECS`） */
+const MAX_WAIT = 600;
 
 /** 这一节里的格子，全是数字 */
 type Field = keyof FailoverView;
@@ -29,7 +29,7 @@ const FIELDS: Field[] = [
   "quota_pause_secs",
   "rate_limit_max_pause_secs",
   "idle_timeout_secs",
-  "slot_wait_secs",
+  "wait_secs",
 ];
 
 /** 导出给测试用 */
@@ -58,15 +58,16 @@ export function checks(draft: Draft, saved: Draft): Record<Field, boolean> {
     rate_limit_max_pause_secs: secs("rate_limit_max_pause_secs"),
     idle_timeout_secs:
       draft.idle_timeout_secs === saved.idle_timeout_secs || intIn(draft.idle_timeout_secs, MIN_IDLE, MAX_IDLE),
-    slot_wait_secs: draft.slot_wait_secs === saved.slot_wait_secs || intIn(draft.slot_wait_secs, 0, MAX_SLOT_WAIT),
+    wait_secs: draft.wait_secs === saved.wait_secs || intIn(draft.wait_secs, 0, MAX_WAIT),
   };
 }
 
 /**
- * 上游失败之后停用多久、多久没有内容就不再等它（无响应超时）、上游满着时最多等多久。
+ * 上游失败之后停用多久、多久没有内容就不再等它（无响应超时）、上游暂时发不出去（满着、限流、
+ * 用量用满）时请求最多等多久。
  *
- * 默认值显式写在格子里（概览给的就是真在用的数），不用「留空 = 默认」；无响应超时的说明
- * 里另写默认的 300 秒。
+ * 默认值显式写在格子里（概览给的就是真在用的数），不用「留空 = 默认」；无响应超时、最多等待
+ * 的说明里另写默认的 300 秒、120 秒。
  */
 export function FailoverSection({
   failover,
@@ -150,7 +151,7 @@ export function FailoverSection({
           {row("quota_pause_secs", t.secs, t.what.quota_pause_secs, t.badSecs)}
           {row("rate_limit_max_pause_secs", t.secs, t.what.rate_limit_max_pause_secs, t.badSecs)}
           {row("idle_timeout_secs", t.secs, t.what.idle_timeout_secs, t.badIdle)}
-          {row("slot_wait_secs", t.secs, t.what.slot_wait_secs, t.badSlotWait)}
+          {row("wait_secs", t.secs, t.what.wait_secs, t.badWait)}
           <SaveBar
             dirty={dirty}
             pending={busy}

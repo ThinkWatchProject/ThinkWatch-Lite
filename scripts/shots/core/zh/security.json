@@ -17,6 +17,10 @@
         },
         "name": "Unicode tag characters",
         "on_by_default": true,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ],
         "why": "Entirely invisible in an editor, yet carried into the model's context as they are, so they can hide a whole instruction."
       },
       {
@@ -35,6 +39,10 @@
         },
         "name": "Bidirectional controls",
         "on_by_default": true,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ],
         "why": "They can make the order shown on screen differ from the actual order of the characters."
       },
       {
@@ -54,6 +62,10 @@
         },
         "name": "Zero-width characters",
         "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ],
         "why": "Invisible in an editor, and read by the model. Emoji, Persian and other ordinary writing use them too."
       },
       {
@@ -73,6 +85,10 @@
         },
         "name": "Private-use characters",
         "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ],
         "why": "They have no standard meaning. Some icon fonts use them."
       },
       {
@@ -87,7 +103,11 @@
           "text": "ignore previous instructions"
         },
         "name": "Ignore previous instructions",
-        "on_by_default": true
+        "on_by_default": true,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -101,7 +121,11 @@
           "text": "ignore all previous"
         },
         "name": "Ignore all previous",
-        "on_by_default": true
+        "on_by_default": true,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -115,7 +139,11 @@
           "text": "disregard your instructions"
         },
         "name": "Disregard your instructions",
-        "on_by_default": true
+        "on_by_default": true,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -129,7 +157,11 @@
           "text": "jailbreak"
         },
         "name": "Jailbreak",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -143,7 +175,11 @@
           "text": " dan "
         },
         "name": "DAN",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -157,7 +193,11 @@
           "text": "developer mode"
         },
         "name": "Developer mode",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -171,7 +211,11 @@
           "text": "you are now"
         },
         "name": "Persona manipulation",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -185,7 +229,11 @@
           "text": "new persona"
         },
         "name": "New persona",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -199,7 +247,11 @@
           "text": "act as"
         },
         "name": "Act as",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -213,7 +265,11 @@
           "text": "pretend to be"
         },
         "name": "Pretend to be",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -227,7 +283,11 @@
           "text": "system prompt"
         },
         "name": "System prompt extraction",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -241,7 +301,11 @@
           "text": "reveal your instructions"
         },
         "name": "Reveal instructions",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -255,7 +319,11 @@
           "text": "what are your rules"
         },
         "name": "What are your rules",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -269,7 +337,11 @@
           "pattern": "[A-Za-z0-9+/=]{50,}"
         },
         "name": "Base64 smuggling",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -283,7 +355,11 @@
           "text": "忽略之前"
         },
         "name": "Ignore previous instructions (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -297,7 +373,11 @@
           "text": "忘记你"
         },
         "name": "Forget your instructions (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -311,7 +391,11 @@
           "text": "不要遵循"
         },
         "name": "Do not follow (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -325,7 +409,11 @@
           "text": "现在你是"
         },
         "name": "You are now (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -339,7 +427,11 @@
           "text": "扮演"
         },
         "name": "Role-play (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -353,7 +445,11 @@
           "text": "透露你的"
         },
         "name": "Reveal your instructions (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "record",
@@ -367,7 +463,11 @@
           "text": "系统提示词"
         },
         "name": "System prompt (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       },
       {
         "action": "block",
@@ -381,7 +481,11 @@
           "text": "越狱"
         },
         "name": "Jailbreak (Chinese)",
-        "on_by_default": false
+        "on_by_default": false,
+        "replacement": "***",
+        "scope": [
+          "request"
+        ]
       }
     ]
   },
@@ -441,6 +545,7 @@
         "id": "exfil-credentials",
         "kind": "command",
         "matcher": {
+          "case_sensitive": true,
           "kind": "regex",
           "pattern": "(\\.ssh/id_|\\.aws/credentials|\\.netrc|/\\.env)[^\\n]{0,30}(发|传|上报|打印|输出|贴出|读出|(?i:send|upload|post|print|paste|exfil))"
         },
@@ -456,6 +561,7 @@
         "id": "exfil-credentials-reversed",
         "kind": "command",
         "matcher": {
+          "case_sensitive": true,
           "kind": "regex",
           "pattern": "(发送|上传|贴出|打印|输出|读取|(?i:send|upload|post|print|read))[^\\n]{0,30}(\\.ssh/id_|\\.aws/credentials|\\.netrc|/\\.env)"
         },
@@ -516,6 +622,7 @@
         "id": "write-startup-item",
         "kind": "command",
         "matcher": {
+          "case_sensitive": true,
           "kind": "regex",
           "pattern": "(>>?|tee|cp|mv|ln\\s+-s)[^\\n]{0,200}(\\.zshrc|\\.bashrc|\\.bash_profile|\\.profile|\\.zprofile|LaunchAgents|LaunchDaemons|\\.git/hooks|crontab)"
         },
@@ -531,6 +638,7 @@
         "id": "crontab-install",
         "kind": "command",
         "matcher": {
+          "case_sensitive": true,
           "kind": "regex",
           "pattern": "crontab\\s+(-r\\b|-\\s*($|[\"';&|)])|[^\\s-][^\\n]{0,40})"
         },
@@ -546,6 +654,7 @@
         "id": "rm-rf-root",
         "kind": "command",
         "matcher": {
+          "case_sensitive": true,
           "kind": "regex",
           "pattern": "rm\\s+(-[a-zA-Z]*\\s+)*-[a-zA-Z]*[rf][a-zA-Z]*\\s+(/|~|\\$HOME)(\\s|$|[\"';&|)])"
         },
@@ -561,6 +670,7 @@
         "id": "chmod-777",
         "kind": "command",
         "matcher": {
+          "case_sensitive": true,
           "kind": "regex",
           "pattern": "chmod\\s+(-R\\s+)?777"
         },
@@ -589,7 +699,9 @@
     "mode": "enforce",
     "rules": [
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "anthropic-api-key",
         "kind": "api-keys",
@@ -603,7 +715,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "openai-project-key",
         "kind": "api-keys",
@@ -617,7 +731,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "openai-api-key",
         "kind": "api-keys",
@@ -630,7 +746,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "github-personal-token",
         "kind": "api-keys",
@@ -644,7 +762,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "github-oauth-token",
         "kind": "api-keys",
@@ -658,7 +778,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "github-server-token",
         "kind": "api-keys",
@@ -672,7 +794,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "github-user-token",
         "kind": "api-keys",
@@ -686,7 +810,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "github-fine-grained-token",
         "kind": "api-keys",
@@ -700,7 +826,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "slack-bot-token",
         "kind": "api-keys",
@@ -714,7 +842,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "slack-user-token",
         "kind": "api-keys",
@@ -728,7 +858,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "slack-app-token",
         "kind": "api-keys",
@@ -742,7 +874,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "aws-access-key-id",
         "kind": "api-keys",
@@ -756,7 +890,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "aws-temporary-key-id",
         "kind": "api-keys",
@@ -770,7 +906,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "google-api-key",
         "kind": "api-keys",
@@ -784,7 +922,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "google-oauth-token",
         "kind": "api-keys",
@@ -798,7 +938,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "gitlab-token",
         "kind": "api-keys",
@@ -812,7 +954,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "stripe-live-key",
         "kind": "api-keys",
@@ -826,7 +970,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "stripe-restricted-key",
         "kind": "api-keys",
@@ -840,7 +986,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "npm-token",
         "kind": "api-keys",
@@ -854,7 +1002,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "digitalocean-token",
         "kind": "api-keys",
@@ -868,7 +1018,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "sendgrid-key",
         "kind": "api-keys",
@@ -882,7 +1034,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "private-key",
         "kind": "private-keys",
@@ -894,7 +1048,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "jwt",
         "kind": "jwt",
@@ -906,7 +1062,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "conn-string-password",
         "kind": "conn-strings",
@@ -918,7 +1076,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "cn-resident-id",
         "kind": "personal",
@@ -931,7 +1091,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": true,
         "id": "bank-card",
         "kind": "personal",
@@ -1057,7 +1219,9 @@
         "on_by_default": true
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": false,
         "id": "email",
         "kind": "personal",
@@ -1069,7 +1233,9 @@
         "on_by_default": false
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": false,
         "id": "cn-mobile-phone",
         "kind": "personal",
@@ -1081,7 +1247,9 @@
         "on_by_default": false
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": false,
         "id": "internal-ip",
         "kind": "internal",
@@ -1093,7 +1261,9 @@
         "on_by_default": false
       },
       {
+        "action": "placeholder",
         "custom": false,
+        "default_action": "placeholder",
         "enabled": false,
         "id": "internal-domain",
         "kind": "internal",
@@ -1110,14 +1280,15 @@
         "on_by_default": false
       },
       {
+        "action": "placeholder",
         "custom": true,
         "enabled": true,
         "id": "客户编号",
         "kind": "custom",
         "label": "SECRET",
         "matcher": {
-          "kind": "regex",
-          "pattern": "CUST-\\d{6}"
+          "kind": "contains",
+          "text": "CUST-\\d{6}"
         },
         "name": "客户编号",
         "on_by_default": true

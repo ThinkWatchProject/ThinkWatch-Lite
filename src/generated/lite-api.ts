@@ -1,6 +1,6 @@
 // Generated from src-tauri/src/wire.rs (`tests/ts_bindings.rs`). Do not edit by hand.
 
-import type { BalanceSetting, Billing, CostBucketGroup, CostGroup, HeadView, LiveBody, LiveEnd, Msg, PinnedModel, Protocol, ZaiFamily } from "./tw-api";
+import type { BalanceSetting, Billing, CostBucketGroup, CostGroup, HeadView, LimitMeasure, LimitPer, LiveBody, LiveEnd, Msg, PinnedModel, Protocol, ZaiFamily } from "./tw-api";
 
 export type AdoptResponse = { real: string, backup: string, created: boolean, 
 /**
@@ -268,6 +268,16 @@ export type ImportAwsKeys = { access_key_id: string, secret_access_key: string, 
 export type ImportHeader = { name: string, value: string, };
 
 /**
+ * 一条用量上限（上游配置里的 `limits:`）。和控制面的 `KeyLimitInput` 一样：费用是微分；
+ * `every` 是「每 N 分钟 / 小时」的 N，天、周、月是 1
+ */
+export type ImportLimit = { per: LimitPer, every: number, measure: LimitMeasure, max: number, 
+/**
+ * 只有 token 上限会是 true
+ */
+cache_reads: boolean, };
+
+/**
  * 一条导入链接（`thinkwatch://import?…`）走到界面的结果（`take_import_link`）：一份提议，
  * 或者链接里有这一版不认识的参数。写坏了的、值不合规矩的链接到不了这里（Rust 侧丢掉，
  * 只记原因）
@@ -320,6 +330,10 @@ client_identity: boolean,
  * 并发上限，1 到 1000
  */
 concurrency: number | null, 
+/**
+ * 用量上限，按链接里的顺序
+ */
+limits: Array<ImportLimit>, 
 /**
  * 余额从哪里读（只有「自定义」）
  */

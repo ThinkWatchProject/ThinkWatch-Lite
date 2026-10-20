@@ -40,6 +40,7 @@ function proposal(patch: Partial<ImportProposal>): ImportProposal {
     headers: [],
     client_identity: false,
     concurrency: null,
+    limits: [],
     balance: null,
     models: [],
     models_only: null,
@@ -59,6 +60,10 @@ const relay = proposal({
   headers: [{ name: "X-Group", value: "vip" }],
   client_identity: true,
   concurrency: 8,
+  limits: [
+    { per: "minute", every: 5, measure: "tokens", max: 10_000_000, cache_reads: false },
+    { per: "day", every: 1, measure: "cost", max: 20_000_000, cache_reads: false },
+  ],
   models: ["gpt-5", "gpt-5-mini"],
   models_only: ["gpt-5*"],
   specs: [{ model: "gpt-5", context_window: 400000, max_output_tokens: null, reasoning: true, image_input: null }],
@@ -91,6 +96,10 @@ describe("按导入链接预填新建对话框", () => {
 
   it("中转站给齐的几项都进表单，交给 core 的也是这几项", () => {
     const f = formFromImport(relay, []);
+    expect(f.limits.map((r) => [r.per, r.every, r.measure, r.max])).toEqual([
+      ["minute", "5", "tokens", "10000000"],
+      ["day", "1", "cost", "20.00"],
+    ]);
     expect(f).toMatchObject({
       preset: "sub2api",
       maxConcurrent: "8",
@@ -110,6 +119,7 @@ describe("按导入链接预填新建对话框", () => {
       headers: [{ name: "X-Group", value: "vip" }],
       forward_client_identity: true,
       max_concurrent: 8,
+      limits: relay.limits,
       models: ["gpt-5", "gpt-5-mini"],
       models_only: ["gpt-5*"],
       billing: "per-token",

@@ -108,6 +108,14 @@ export interface RequestRow {
    * 那一刻。
    */
   state: "in_flight" | "done" | "failed" | "cancelled";
+  /**
+   * 正在排队：要去的上游此刻发不了（限流中、用量已满、满着），在等其中一家先空出来，最多等到
+   * `untilMs`。`request_queued` 到了才有；不排了（`request_dequeued`：等到了、被中止了、等不到
+   * 了）、路由出了结论（`request_routed`）或者请求结束就撤掉。**路由事件要等整条尝试链走完**，
+   * 等到了、正在发的那一段靠 `request_dequeued` 撤。发出去又收到 429、回去接着等的，会再来一条
+   * `request_queued`
+   */
+  queued?: { upstreams: string[]; untilMs: number };
   status?: number;
   /** 响应头到的时刻 */
   ttfbMs?: number;
@@ -224,10 +232,21 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       if (r) r.ttftMs = ev.ttft_ms;
       break;
     }
+    case "request_queued": {
+      const r = rows.get(ev.id);
+      if (r) r.queued = { upstreams: [...ev.upstreams], untilMs: ev.until_ms };
+      break;
+    }
+    case "request_dequeued": {
+      const r = rows.get(ev.id);
+      if (r) r.queued = undefined;
+      break;
+    }
     case "request_finished": {
       const r = rows.get(ev.id);
       if (r) {
         r.state = "done";
+        r.queued = undefined;
         r.status = ev.status;
         r.sentBytes = ev.sent_bytes;
         r.receivedBytes = ev.received_bytes;
@@ -246,6 +265,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       const r = rows.get(ev.id);
       if (r) {
         r.state = "cancelled";
+        r.queued = undefined;
         // 响应头之前就断开的没有状态码 —— 那就保留原样（也是没有）
         if (ev.status != null) r.status = ev.status;
         // 还没发给上游就走了的没有（不是 0）
@@ -273,6 +293,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         r.sentModel = last.model ?? undefined;
       }
       if (r) {
+        r.queued = undefined;
         r.route = ev.route;
         r.rule = ev.rule;
         // 选定上游之后才判断的改写在这里才有
@@ -298,6 +319,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
     case "sync_status":
     case "gateway_keys_changed":
     case "client_prefs_changed":
+    // 上游限流、用量满了又恢复：上游表那一行的状态，不是哪一次请求的事
+    case "throttle_changed":
       // 都不进请求列表。配置事件、熔断、额度、余额、凭据、代理说的都是「现在什么情况」，
       // 而这张表装的是「刚才发生过什么」。App 单独接。
       break;
@@ -350,6 +373,7 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
       const r = rows.get(ev.id);
       if (r) {
         r.state = "failed";
+        r.queued = undefined;
         r.error = ev.message;
         if (ev.duration_ms != null) r.durationMs = ev.duration_ms;
         // 一跳都没发出去的失败没有（被规则拒绝、上游都满着……）

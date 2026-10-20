@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FILTER, facets, filterRows, sortRows, upstreamText } from "./requestTable";
+import { EMPTY_FILTER, facets, filterRows, queuedFor, sortRows, upstreamText } from "./requestTable";
 import type { RequestRow } from "./types";
 import { setLang } from "@/i18n";
 import { plain } from "@/i18n/core.i18n";
@@ -246,5 +246,19 @@ describe("只看无法计价的", () => {
   it("不开这一项时什么都不筛", () => {
     const rows = [row({ id: 1 }), row({ id: 2, costMicros: 5 })];
     expect(filterRows(rows, EMPTY_FILTER)).toHaveLength(2);
+  });
+});
+
+describe("排着队的那一行", () => {
+  const waiting = { upstreams: ["anthropic", "openrouter"], untilMs: 2_000_000 };
+
+  it("在跑、排着队：在等的那几家", () => {
+    expect(queuedFor(row({ id: 1, state: "in_flight", queued: waiting }))).toEqual(["anthropic", "openrouter"]);
+  });
+
+  it("没在排、已经结束、说不出等谁的：没有", () => {
+    expect(queuedFor(row({ id: 1, state: "in_flight" }))).toBeNull();
+    expect(queuedFor(row({ id: 1, state: "failed", queued: waiting }))).toBeNull();
+    expect(queuedFor(row({ id: 1, state: "in_flight", queued: { upstreams: [], untilMs: 0 } }))).toBeNull();
   });
 });

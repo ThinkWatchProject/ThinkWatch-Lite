@@ -85,7 +85,7 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
           <ol className="overflow-hidden rounded-lg border border-border">
             {f.hops.map(({ attempt: a, denied }, i) => {
               const outcome = attemptText(a);
-              // 没有发给这个上游的一跳：被规则拒绝，或者它满着、换了下一家
+              // 没有发给这个上游的一跳：被规则拒绝，或者它满着、限流中、用量已满，换了下一家
               const unsent = denied || skippedHop(a);
               return (
                 <li key={`${a.provider}-${i}`} className="border-t border-border px-3 py-2 first:border-t-0">
@@ -124,7 +124,7 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                         )}
                       </StatusLabel>
                     )}
-                    {/* 等空位的时间不算在这一跳的耗时里，另写一项 */}
+                    {/* 排队的时间（等空位、等限流或用量恢复）不算在这一跳的耗时里，另写一项 */}
                     {a.queued_ms != null && a.queued_ms > 0 && (
                       <span className="shrink-0 tw-label tw-num text-muted-foreground">
                         {t.queued(seconds(a.queued_ms))}
@@ -227,10 +227,18 @@ function noteText(n: RoutingNote, t: (typeof requestDrawerText)["zh"]): string {
       return t.failover(n.failed);
     case "switched":
       return t.switched(n.count);
+    case "waited":
+      return t.waited(n.count);
     case "limited":
       return t.limited;
     case "busy":
       return n.tried > 0 ? t.busyAfterTries(n.tried) : t.busy;
+    case "throttled":
+      return n.tried > 0 ? t.throttledAfterTries(n.tried) : t.throttled;
+    case "full":
+      return n.tried > 0 ? t.fullAfterTries(n.tried) : t.full;
+    case "timeout":
+      return n.tried > 0 ? t.timeoutAfterTries(n.tried) : t.timeout;
     case "failover_denied":
       return t.failoverDenied(n.failed, n.rule);
     case "denied_after_pick":

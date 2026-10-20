@@ -101,12 +101,16 @@ const NOT_SENT: Record<NotSent, { Icon: typeof IconDenied; color: string }> = {
   unavailable: { Icon: IconNoUpstream, color: "text-muted-foreground" },
   limited: { Icon: IconLimitReached, color: "text-warning" },
   busy: { Icon: IconBusy, color: "text-muted-foreground" },
+  throttled: { Icon: IconBusy, color: "text-muted-foreground" },
+  full: { Icon: IconLimitReached, color: "text-warning" },
+  timeout: { Icon: IconBusy, color: "text-muted-foreground" },
 };
 
 /**
  * 没有上游接下的请求在上游标志的位置上画什么：被规则拒绝是禁止符号（和路由图上
  * 「拒绝」那个节点同一个），没有可用的上游是划掉的上游，密钥的用量到了上限是顶到线的
- * 箭头，上游都满着是沙漏。和上游标志一样大，名字对得齐。
+ * 箭头，上游都满着是沙漏。上游都在限流暂停、几种都有的同样是沙漏（等过了没等到），上游
+ * 到了自己的用量上限和密钥的一样是顶到线的箭头。和上游标志一样大，名字对得齐。
  *
  * 拒绝带红色，和路由图一致；用量上限是琥珀色：到了上限要留意，但不是故障。`plain` 时
  * 跟着周围的字色（命令面板里的图标都是单色）。

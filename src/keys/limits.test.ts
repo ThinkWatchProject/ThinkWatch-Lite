@@ -2,7 +2,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { KeyLimitView } from "@/types";
 import {
+  cleanEvery,
   cleanMax,
+  everyOf,
   inputOfView,
   inputsOf,
   limitPhrase,
@@ -12,6 +14,7 @@ import {
   newRow,
   nextReset,
   parseMax,
+  periodText,
   resetText,
   rowsOf,
   usageOf,
@@ -19,6 +22,7 @@ import {
 } from "./limits";
 
 const view = (x: Partial<KeyLimitView> & Pick<KeyLimitView, "per" | "measure" | "max">): KeyLimitView => ({
+  every: 1,
   cache_reads: false,
   used: 0,
   resets_at_ms: null,
@@ -27,7 +31,7 @@ const view = (x: Partial<KeyLimitView> & Pick<KeyLimitView, "per" | "measure" | 
 });
 
 const row = (x: Partial<Omit<LimitRow, "id">>): LimitRow =>
-  limitRow({ per: "day", measure: "cost", max: "5", cacheReads: false, ...x });
+  limitRow({ per: "day", every: "1", measure: "cost", max: "5", cacheReads: false, ...x });
 
 afterEach(() => setLang("zh"));
 
@@ -70,8 +74,32 @@ describe("用量上限的一行", () => {
 
   it("缓存读取只跟着 token 上限走", () => {
     expect(inputsOf([row({ measure: "requests", max: "3", cacheReads: true })])).toEqual([
-      { per: "day", measure: "requests", max: 3, cache_reads: false },
+      { per: "day", every: 1, measure: "requests", max: 3, cache_reads: false },
     ]);
+  });
+
+  it("每 N 分钟 / 小时：N 来回不走样；天、周、月一直是 1", () => {
+    const views = [
+      view({ per: "minute", every: 5, measure: "tokens", max: 10_000_000 }),
+      view({ per: "hour", every: 24, measure: "requests", max: 500 }),
+      view({ per: "day", measure: "cost", max: 5_000_000 }),
+    ];
+    const rows = rowsOf(views);
+    expect(rows.map((r) => r.every)).toEqual(["5", "24", "1"]);
+    expect(inputsOf(rows)).toEqual(views.map(inputOfView));
+    // 从分钟换成天，原来写的 N 不跟过去
+    expect(inputsOf([row({ per: "day", every: "5", max: "3" })])[0]!.every).toBe(1);
+  });
+
+  it("N 的范围：分钟 1–60，小时 1–24", () => {
+    expect(everyOf("minute", "60")).toBe(60);
+    expect(everyOf("minute", "61")).toBeNull();
+    expect(everyOf("hour", "24")).toBe(24);
+    expect(everyOf("hour", "25")).toBeNull();
+    for (const bad of ["", "0", " "]) expect(everyOf("minute", bad), bad).toBeNull();
+    expect(everyOf("week", "")).toBe(1);
+    expect(cleanEvery("5 分钟")).toBe("5");
+    expect(cleanEvery("1234")).toBe("12");
   });
 });
 
@@ -114,6 +142,18 @@ describe("当场校验", () => {
     expect(limitProblems([row({ measure: "requests", max: "1" })], 90).size).toBe(0);
   });
 
+  it("N 不对的那一行先说 N；N 不同就不算重复", () => {
+    const rows = [
+      row({ per: "minute", every: "0", max: "" }),
+      row({ per: "hour", every: "25" }),
+      row({ per: "minute", every: "5", measure: "tokens", max: "100" }),
+      row({ per: "minute", every: "1", measure: "tokens", max: "100" }),
+      row({ per: "minute", every: "05", measure: "tokens", max: "100" }),
+    ];
+    const p = limitProblems(rows, 90);
+    expect(rows.map((r) => p.get(r.id) ?? null)).toEqual(["every", "every", null, null, "duplicate"]);
+  });
+
   it("加一行先给还没有的那一种，不一加上就重复", () => {
     const first = newRow([]);
     expect([first.per, first.measure]).toEqual(["day", "cost"]);
@@ -134,14 +174,34 @@ describe("用量", () => {
     expect(usageOf(row({ per: "week", measure: "tokens" }), views)).toBeUndefined();
   });
 
+  it("每 N 分钟的用量按 N 认", () => {
+    const views = [
+      view({ per: "minute", every: 5, measure: "tokens", max: 100, used: 50 }),
+      view({ per: "minute", measure: "tokens", max: 100, used: 7 }),
+    ];
+    expect(usageOf(row({ per: "minute", every: "5", measure: "tokens" }), views)?.used).toBe(50);
+    expect(usageOf(row({ per: "minute", measure: "tokens" }), views)?.used).toBe(7);
+    expect(usageOf(row({ per: "minute", every: "10", measure: "tokens" }), views)).toBeUndefined();
+    expect(periodText("minute", 1)).toBe("最近一分钟");
+    expect(periodText("minute", 5)).toBe("最近 5 分钟");
+    expect(periodText("day", 1)).toBe("今天");
+    setLang("en");
+    expect(periodText("hour", 3)).toBe("Last 3 hours");
+    expect(periodText("hour", 1)).toBe("Last hour");
+  });
+
   it("一条上限说成一句", () => {
     expect(limitPhrase(view({ per: "day", measure: "cost", max: 5_000_000 }))).toBe("每天 $5.00 费用");
     expect(limitPhrase(view({ per: "minute", measure: "requests", max: 30 }))).toBe("每分钟 30 次请求");
+    expect(limitPhrase(view({ per: "minute", every: 5, measure: "tokens", max: 10_000_000 }))).toBe(
+      "每 5 分钟 10,000,000 token",
+    );
     expect(limitPhrase(view({ per: "week", measure: "tokens", max: 1_000_000, cache_reads: true }))).toBe(
       "每周 1,000,000 token（含缓存读取）",
     );
     setLang("en");
     expect(limitPhrase(view({ per: "day", measure: "cost", max: 5_000_000 }))).toBe("$5.00 per day");
+    expect(limitPhrase(view({ per: "hour", every: 2, measure: "requests", max: 100 }))).toBe("100 requests per 2 hours");
     expect(limitPhrase(view({ per: "week", measure: "tokens", max: 1_000_000, cache_reads: true }))).toBe(
       "1,000,000 tokens per week (cache reads included)",
     );

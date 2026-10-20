@@ -29,6 +29,7 @@ import type {
   ProviderView,
   ZaiFamily,
 } from "@/types";
+import { inputsOf, limitProblems, rowsOf, type LimitRow } from "@/keys/limits";
 import { globMatch } from "./glob";
 import { bedrockRegionOf, bedrockUrl } from "./labels";
 import {
@@ -156,6 +157,8 @@ export interface UpstreamForm {
   pricing: string;
   /** 同时最多发给这家几个请求，1 到 1000。空 = 不限 */
   maxConcurrent: string;
+  /** 用量上限（`limits:`），和密钥的同一套编辑器。没有一条 = 不限 */
+  limits: LimitRow[];
   disabled: boolean;
   /**
    * 配置里的 `balance:`。编辑时照原样回填、原样交回 —— 不交就是 `auto`，保存一次就把
@@ -406,6 +409,7 @@ export function blankForm(): UpstreamForm {
     billing: "per-token",
     pricing: "",
     maxConcurrent: "",
+    limits: [],
     disabled: false,
     balance: null,
     saved: null,
@@ -495,6 +499,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     billing: p.billing === "free" ? "free" : "per-token",
     pricing: p.pricing ?? "",
     maxConcurrent: p.max_concurrent != null ? String(p.max_concurrent) : "",
+    limits: rowsOf(p.limits),
     disabled: p.disabled,
     balance,
     saved: {
@@ -545,6 +550,7 @@ export function formFromImport(p: ImportProposal, taken: string[]): UpstreamForm
     awsRegion: p.region && bedrockRegionOf(baseUrl) === null ? p.region : "",
     forwardClientIdentity: p.client_identity,
     maxConcurrent: p.concurrency != null ? String(p.concurrency) : "",
+    limits: rowsOf(p.limits),
     manualModels: p.models,
     scope: p.models_only ? "some" : "all",
     scopeList: p.models_only ?? [],
@@ -751,13 +757,14 @@ export function toInput(f: UpstreamForm): ProviderInput {
     billing: f.billing,
     pricing: f.pricing || undefined,
     max_concurrent: concurrencyOf(f) ?? undefined,
+    limits: inputsOf(f.limits),
     disabled: f.disabled,
   };
 }
 
 /**
  * 「高级设置」里的几项有没有不是默认值的：写了请求头、打开了转发客户端身份、代理不可用时
- * 改为直连、写了并发上限、「自定义」的余额来源不是自动识别。**有就自动展开** —— 收着的一节里
+ * 改为直连、写了并发上限或用量上限、「自定义」的余额来源不是自动识别。**有就自动展开** —— 收着的一节里
  * 藏着一项在起作用的设置，和没写一样看不见。只有名称或只有值的请求头也算：那一行正等着补全，
  * 保存按不下去
  */
@@ -767,6 +774,7 @@ export function advancedNonDefault(f: UpstreamForm): boolean {
     f.forwardClientIdentity ||
     f.onProxyFail !== "fail" ||
     f.maxConcurrent.trim() !== "" ||
+    f.limits.length > 0 ||
     (fieldRules(f).balance && (f.balance ?? "auto") !== "auto")
   );
 }
@@ -781,6 +789,17 @@ export function concurrencyOf(f: UpstreamForm): number | null | undefined {
   if (!/^\d+$/.test(v)) return undefined;
   const n = Number(v);
   return n >= 1 && n <= MAX_CONCURRENCY ? n : undefined;
+}
+
+/**
+ * 用量上限缺什么：有一条填得不对（`limitProblems`）就说一句，毛病写在那一行下面。只有空着
+ * 没填的说「填写」，别的说「有误」。`rowDays`：请求记录留几天，不知道是 null
+ */
+export function limitsMissing(f: Pick<UpstreamForm, "limits">, rowDays: number | null): string | null {
+  const problems = limitProblems(f.limits, rowDays);
+  if (problems.size === 0) return null;
+  const t = textOf(upstreamFormText);
+  return [...problems.values()].every((p) => p === "required") ? t.limitRequired : t.limitsInvalid;
 }
 
 /**

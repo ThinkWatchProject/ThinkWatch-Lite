@@ -123,6 +123,30 @@ describe("尝试链里的一跳", () => {
     expect(attemptText(busy).text).toBe("At its concurrency limit");
   });
 
+  it("限流中、用量已满跳过的一跳：短名说原因", () => {
+    const skip = (skipped: "throttled" | "window_full" | "period_used_up") => ({
+      provider: "anthropic",
+      outcome: "error" as const,
+      ms: 0,
+      skipped,
+    });
+    expect(attemptText(skip("throttled")).text).toBe("限流中");
+    expect(attemptText(skip("window_full")).text).toBe("用量已满");
+    expect(attemptText(skip("period_used_up")).text).toBe("本期用量已满");
+    setLang("en");
+    expect(attemptText(skip("throttled")).text).toBe("Rate limited");
+    expect(attemptText(skip("window_full")).text).toBe("Usage limit reached");
+    expect(attemptText(skip("period_used_up")).text).toBe("Usage limit reached for this period");
+  });
+
+  it("收到 429、暂停了这家的一跳写暂停多久；没暂停的照旧", () => {
+    const hop = { provider: "anthropic", outcome: "status" as const, status: 429, ms: 310 };
+    expect(attemptText({ ...hop, pause_ms: 30_000 })).toEqual({ text: "429 · 暂停 30 秒", ok: false, tip: null });
+    expect(attemptText(hop).text).toBe("429 · 限流");
+    // 接下了的那一跳（流里中途限流）照旧写成功
+    expect(attemptText({ ...hop, outcome: "served", status: 200, pause_ms: 5_000 }).text).toBe("成功 · 200");
+  });
+
   it("别的结果照旧：字就是那一句，没有悬停", () => {
     expect(attemptText({ provider: "openrouter", outcome: "served", status: 200, ms: 900 })).toEqual({
       text: "成功 · 200",

@@ -2,7 +2,7 @@
 
 use std::time::{Duration, Instant};
 
-use tw_api::{BalanceSetting, Billing, Protocol, ZaiFamily};
+use tw_api::{BalanceSetting, Billing, LimitMeasure, LimitPer, Protocol, ZaiFamily};
 
 use super::*;
 
@@ -84,6 +84,7 @@ fn blank(base_url: &str) -> ImportProposal {
         headers: vec![],
         client_identity: false,
         concurrency: None,
+        limits: vec![],
         balance: None,
         models: vec![],
         models_only: None,
@@ -682,6 +683,7 @@ fn account_links_carry_no_credentials_or_connection_fields() {
         ("headers", "X-A: 1"),
         ("protocol", "openai-chat"),
         ("concurrency", "4"),
+        ("limits", "day|requests|100"),
         ("oauth_refresh", "r"),
     ] {
         let want = match k {
@@ -690,6 +692,7 @@ fn account_links_carry_no_credentials_or_connection_fields() {
             "headers" => Param::Headers,
             "protocol" => Param::Protocol,
             "concurrency" => Param::Concurrency,
+            "limits" => Param::Limits,
             _ => Param::OauthRefresh,
         };
         assert_eq!(
@@ -1237,6 +1240,97 @@ fn concurrency_is_a_plain_whole_number_up_to_a_thousand() {
             "{bad}"
         );
     }
+}
+
+/// 用量上限：`周期|计量|上限|N|缓存读取`，和 core 的配置校验同一套规矩
+#[test]
+fn limits_are_checked_like_the_config() {
+    let lim = |per, every, measure, max, cache_reads| ImportLimit {
+        per,
+        every,
+        measure,
+        max,
+        cache_reads,
+    };
+    assert_eq!(
+        relay(&[(
+            "limits",
+            "minute|tokens|10000000|5;day|cost|5.5;week|tokens|900000||y;hour|requests|600|24;month|cost|0.01"
+        )])
+        .unwrap()
+        .limits,
+        vec![
+            lim(LimitPer::Minute, 5, LimitMeasure::Tokens, 10_000_000, false),
+            lim(LimitPer::Day, 1, LimitMeasure::Cost, 5_500_000, false),
+            lim(LimitPer::Week, 1, LimitMeasure::Tokens, 900_000, true),
+            lim(LimitPer::Hour, 24, LimitMeasure::Requests, 600, false),
+            lim(LimitPer::Month, 1, LimitMeasure::Cost, 10_000, false),
+        ]
+    );
+    // N 不同就不是同一条；缓存读取算法不同也不是
+    assert_eq!(
+        relay(&[(
+            "limits",
+            "minute|tokens|100|5;minute|tokens|100;minute|tokens|100||y"
+        )])
+        .unwrap()
+        .limits
+        .len(),
+        3
+    );
+    for bad in [
+        "day|cost",
+        "day|cost|5|1|y|x",
+        "days|cost|5",
+        "day|usd|5",
+        "day|requests|0",
+        "day|requests|01",
+        "day|requests|1.5",
+        "day|requests|1000000000000000",
+        "day|cost|0",
+        "day|cost|0.009999",
+        "day|cost|5.1234567",
+        "day|cost|05",
+        "day|cost|.5",
+        "day|cost|5.",
+        "day|requests|5|2",
+        "day|requests|5|1",
+        "minute|requests|5|0",
+        "minute|requests|5|61",
+        "hour|requests|5|25",
+        "minute|requests|5|05",
+        "day|requests|5||y",
+        "day|cost|5||y",
+        "day|tokens|5||n",
+        "day|cost|5;day|cost|6",
+        "minute|tokens|5|3;minute|tokens|9|3",
+        "day|requests|5;",
+    ] {
+        assert_eq!(
+            relay(&[("limits", bad)]),
+            Err(Rejected::Invalid(Param::Limits)),
+            "{bad}"
+        );
+    }
+    let many = vec!["day|requests|1"; MAX_LIMITS + 1].join(";");
+    assert_eq!(
+        relay(&[("limits", &many)]),
+        Err(Rejected::Invalid(Param::Limits))
+    );
+    // 写回链接：N 是 1、缓存读取不算的那一格省掉，费用写美元
+    let q = relay(&[(
+        "limits",
+        "minute|tokens|10000000|5;day|cost|5.50;week|tokens|900000||y;hour|requests|60|1",
+    )])
+    .unwrap();
+    assert!(
+        generate(&q).ends_with(
+            "&limits=minute%7Ctokens%7C10000000%7C5%3Bday%7Ccost%7C5.5%3Bweek%7Ctokens%7C900000%7C%7Cy%3Bhour%7Crequests%7C60"
+        ),
+        "{}",
+        generate(&q)
+    );
+    round_trip(&q);
 }
 
 #[test]
@@ -1911,6 +2005,7 @@ fn every_proposal_the_parser_accepts_round_trips() {
             ("key", "sk-a+b/c=="),
             ("client_identity", "on"),
             ("concurrency", "8"),
+            ("limits", "minute|tokens|10000000|5;day|cost|20"),
             ("models", "claude-opus-5-5,claude-sonnet-5-5"),
             ("models_only", "claude-*,gpt-5?"),
         ],

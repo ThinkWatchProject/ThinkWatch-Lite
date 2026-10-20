@@ -15,6 +15,7 @@ import {
   formFromView,
   headerRow,
   inScope,
+  limitsMissing,
   modelsMissing,
   oauthKept,
   retarget,
@@ -59,6 +60,7 @@ function view(patch: Partial<ProviderView> = {}): ProviderView {
     billing: "per-token",
     references: [],
     pricing: null,
+    limits: [],
     balance_setting: "auto",
     balance: null,
     signed_in: null,
@@ -598,6 +600,46 @@ describe("交给 core 的定义", () => {
     expect(toInput(filled("openrouter")).protocol).toBe("openai-chat");
     expect(toInput(filled("deepseek")).protocol).toBe("anthropic");
     expect(toInput(filled("thinkwatch")).protocol).toBeUndefined();
+  });
+});
+
+describe("用量上限", () => {
+  const limits: ProviderView["limits"] = [
+    { per: "minute", every: 5, measure: "tokens", max: 10_000_000, cache_reads: false, used: 1, reached: false },
+    { per: "hour", every: 1, measure: "requests", max: 600, cache_reads: false, used: 0, reached: false },
+    { per: "month", every: 1, measure: "cost", max: 50_000_000, cache_reads: false, used: 0, resets_at_ms: 9, reached: false },
+  ];
+
+  it("编辑时回填、保存时原样交回，每 N 分钟的 N 不丢", () => {
+    const p = view({ limits });
+    const f = formFromView(p);
+    expect(f.limits.map((r) => [r.per, r.every, r.measure, r.max])).toEqual([
+      ["minute", "5", "tokens", "10000000"],
+      ["hour", "1", "requests", "600"],
+      ["month", "1", "cost", "50.00"],
+    ]);
+    expect(toInput(f).limits).toEqual(limits.map(({ per, every, measure, max, cache_reads }) => ({ per, every, measure, max, cache_reads })));
+    // 改用量上限不算改了连接，模型列表不用重新问
+    expect(connectionChanged({ ...f, limits: f.limits.slice(1) }, p)).toBe(false);
+  });
+
+  it("没有一条就交空的：删光了就是不限", () => {
+    expect(toInput(blankForm()).limits).toEqual([]);
+    expect(toInput({ ...formFromView(view({ limits })), limits: [] }).limits).toEqual([]);
+  });
+
+  it("填得不对的当场拦下：空着说填写，别的说修正；月上限要记录留够 31 天", () => {
+    const f = formFromView(view({ limits }));
+    expect(limitsMissing(f, 90)).toBeNull();
+    expect(limitsMissing(f, 7)).toBe("修正用量上限");
+    expect(limitsMissing(f, null)).toBeNull();
+    const [first, ...rest] = f.limits;
+    expect(limitsMissing({ limits: [{ ...first!, max: "" }, ...rest] }, 90)).toBe("填写用量上限的数值");
+    expect(limitsMissing({ limits: [{ ...first!, every: "61" }, ...rest] }, 90)).toBe("修正用量上限");
+  });
+
+  it("有用量上限时高级设置自动展开", () => {
+    expect(advancedNonDefault(formFromView(view({ headers: [], limits })))).toBe(true);
   });
 });
 
