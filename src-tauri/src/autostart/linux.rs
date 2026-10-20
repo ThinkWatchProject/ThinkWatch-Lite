@@ -13,10 +13,9 @@
 //! - writes `$XDG_CONFIG_HOME/autostart/<identifier>.desktop` (falling back to
 //!   `~/.config`), with `Exec` encoded per the Desktop Entry Specification
 //!   (section "The Exec key", plus the string escapes of "Possible value types");
-//! - points it at `$APPIMAGE` when an AppImage runtime set it (the running
-//!   binary lives under a per-launch `/tmp/.mount_*` directory) and at the
-//!   installed binary otherwise — including an unpacked AppImage, which keeps
-//!   the bundler's marker but has no `$APPIMAGE`;
+//! - points it at `$APPIMAGE` for an AppImage (the running binary lives under a
+//!   per-launch `/tmp/.mount_*` directory), at the AppDir's `AppRun` for an
+//!   unpacked one, and at the installed binary otherwise;
 //! - treats `Hidden=true` and `X-GNOME-Autostart-enabled=false` as off, which is
 //!   how GNOME and KDE record "disabled" without deleting the file;
 //! - rewrites the entry on every launch when it points somewhere else (the
@@ -164,30 +163,28 @@ impl Autostart {
 
 /// What the entry should start.
 ///
-/// **Asks the bundle type, not the environment alone.** `$APPIMAGE` is inherited
-/// by everything an AppImage starts, so a development build launched from, say,
-/// an AppImage terminal emulator would see someone else's `$APPIMAGE`. The bundle
-/// type is patched into the binary by the bundler, so it cannot be inherited.
-///
-/// **But the bundle type alone is not an AppImage either.** A package that
-/// unpacks the AppImage and starts its `AppRun` — the AUR `thinkwatch-lite-bin`,
-/// `--appimage-extract`, a deb built from one — keeps the marker the bundler
-/// patched into the binary, while no AppImage runtime ever set `$APPIMAGE` for
-/// it. There is no file to point the entry at, so it points at the running
-/// binary, exactly as `update::linux_kind` refuses to treat that copy as an
-/// AppImage for the updater.
+/// - **An AppImage the runtime mounted**: the `.AppImage` file. Which one that is
+///   comes from the bundle marker and `$APPIMAGE` together
+///   (`update::mounted_appimage`).
+/// - **An unpacked AppImage** (the AUR `thinkwatch-lite-bin`,
+///   `--appimage-extract`): the AppDir's `AppRun`, never the binary itself.
+///   It keeps the bundle marker but has no `$APPIMAGE`. `AppRun` changes into
+///   `usr/` and puts the bundled libraries first, and the bundled WebKit needs
+///   both: the bundler rewrites `/usr` to `././` in it, so it looks for its
+///   helper processes relative to the working directory. That is also what the
+///   AUR package's own launcher starts.
+/// - **Anything else**: the running binary.
 fn program(
     bundle: Option<tauri::utils::config::BundleType>,
     appimage: Option<&std::ffi::OsStr>,
     exe: Option<PathBuf>,
 ) -> Result<String, String> {
     use tauri::utils::config::BundleType;
-    let path = match bundle {
-        Some(BundleType::AppImage) => appimage
-            .map(PathBuf::from)
-            .filter(|p| p.is_absolute())
-            .or(exe),
-        _ => exe,
+    let unpacked = bundle == Some(BundleType::AppImage);
+    let path = match crate::update::mounted_appimage(bundle, appimage) {
+        Some(file) => Some(file),
+        None if unpacked => exe.map(|exe| app_run(&exe).unwrap_or(exe)),
+        None => exe,
     }
     .ok_or_else(|| {
         tr!(
@@ -205,6 +202,13 @@ fn program(
             )
         )
     })
+}
+
+/// `<AppDir>/AppRun` for a binary at `<AppDir>/usr/bin/<name>`, when it is there.
+fn app_run(exe: &Path) -> Option<PathBuf> {
+    let bin = exe.parent().filter(|d| d.ends_with("usr/bin"))?;
+    let app_run = bin.parent()?.parent()?.join("AppRun");
+    app_run.is_file().then_some(app_run)
 }
 
 /// `$XDG_CONFIG_HOME/autostart`, or `$HOME/.config/autostart`.
@@ -493,49 +497,6 @@ mod tests {
         "/home/a/\\\"$`%%\\/x.AppImage",
     ];
 
-    /// An AppImage the runtime started is pointed at by `$APPIMAGE`; a package
-    /// that unpacked the AppImage keeps the bundle marker but has no `$APPIMAGE`
-    /// (the AUR package, `--appimage-extract`), and the entry then points at the
-    /// running binary — the same line `update::linux_kind` draws for the updater.
-    #[test]
-    fn the_bundle_marker_alone_is_not_an_appimage() {
-        use std::ffi::OsStr;
-        use tauri::utils::config::BundleType;
-        let image = OsStr::new("/home/a/Apps/ThinkWatch-Lite.AppImage");
-        let exe = || {
-            Some(PathBuf::from(
-                "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite",
-            ))
-        };
-
-        // Started by the runtime: the entry starts the AppImage file
-        assert_eq!(
-            program(Some(BundleType::AppImage), Some(image), exe()).unwrap(),
-            "/home/a/Apps/ThinkWatch-Lite.AppImage"
-        );
-        // Unpacked: marker, no `$APPIMAGE` — the installed binary is the program
-        assert_eq!(
-            program(Some(BundleType::AppImage), None, exe()).unwrap(),
-            "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite"
-        );
-        // An empty or relative value is no location either
-        for bad in ["", "rel/x.AppImage"] {
-            assert_eq!(
-                program(Some(BundleType::AppImage), Some(OsStr::new(bad)), exe()).unwrap(),
-                "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite",
-                "{bad:?}"
-            );
-        }
-        // Not this bundle type: `$APPIMAGE` is somebody else's, never used
-        assert_eq!(
-            program(None, Some(image), exe()).unwrap(),
-            "/opt/thinkwatch-lite-bin/usr/bin/thinkwatch-lite"
-        );
-        // Neither a location nor a running binary
-        assert!(program(Some(BundleType::AppImage), None, None).is_err());
-        assert!(program(None, None, None).is_err());
-    }
-
     #[test]
     fn plain_paths_are_still_quoted_and_plain_args_are_not() {
         assert_eq!(
@@ -686,6 +647,57 @@ mod tests {
             );
         }
         assert_eq!(autostart_dir(None, None), None);
+    }
+
+    /// The mounted AppImage file; an unpacked AppImage's `AppRun`, not its bare
+    /// binary; the running binary for anything else. Unix paths only, as above.
+    #[cfg(unix)]
+    #[test]
+    fn the_entry_starts_the_appimage_or_its_app_run() {
+        use std::ffi::OsStr;
+        use tauri::utils::config::BundleType;
+        const APPIMAGE: Option<BundleType> = Some(BundleType::AppImage);
+        let (_tmp, dir) = tempdir();
+        let exe = dir.join("usr/bin/thinkwatch-lite");
+        let app_run = dir.join("AppRun");
+        let image = OsStr::new("/home/a/Apps/ThinkWatch-Lite.AppImage");
+        let s = |p: &Path| p.to_str().unwrap().to_owned();
+
+        // Mounted by the runtime: the AppImage file
+        assert_eq!(
+            program(APPIMAGE, Some(image), Some(exe.clone())).unwrap(),
+            "/home/a/Apps/ThinkWatch-Lite.AppImage"
+        );
+        // Unpacked, before there is an `AppRun` to find: the binary
+        assert_eq!(program(APPIMAGE, None, Some(exe.clone())).unwrap(), s(&exe));
+        // Unpacked (no, empty or relative `$APPIMAGE`): `AppRun`
+        std::fs::write(&app_run, "").unwrap();
+        for v in [
+            None,
+            Some(OsStr::new("")),
+            Some(OsStr::new("rel/x.AppImage")),
+        ] {
+            assert_eq!(
+                program(APPIMAGE, v, Some(exe.clone())).unwrap(),
+                s(&app_run),
+                "{v:?}"
+            );
+        }
+        // No marker: the binary, even next to an `AppRun`, and someone else's
+        // `$APPIMAGE` is never used
+        assert_eq!(
+            program(None, Some(image), Some(exe.clone())).unwrap(),
+            s(&exe)
+        );
+        // A binary outside `usr/bin` has no AppDir around it
+        let elsewhere = dir.join("thinkwatch-lite");
+        assert_eq!(
+            program(APPIMAGE, None, Some(elsewhere.clone())).unwrap(),
+            s(&elsewhere)
+        );
+        // Neither a location nor a running binary
+        assert!(program(APPIMAGE, None, None).is_err());
+        assert!(program(None, None, None).is_err());
     }
 
     /// Writes, reads back, is switched off by "GNOME", re-enabled in place, and

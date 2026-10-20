@@ -178,12 +178,31 @@ pub fn official_build() -> bool {
     option_env!("TW_OFFICIAL_BUILD") == Some("1")
 }
 
+/// 运行时挂载起来跑的那个 AppImage 文件。
+///
+/// **打包标记和 `APPIMAGE` 两样都要。**`APPIMAGE` 会被 AppImage 拉起来的一切
+/// 继承，只看它会拿到别人的文件；标记打在二进制里，继承不来。可只有标记也
+/// 不够：解开来跑的（AUR 的 `thinkwatch-lite-bin`、`--appimage-extract`）标记
+/// 照样是 AppImage，但运行时挂载时才设 `APPIMAGE`，这时根本没有那个文件。
+///
+/// 更新（[`linux_kind`]）、菜单条目（`desktop_entry`）、自启项
+/// （`autostart::linux`）都按这一条判断。
+pub fn mounted_appimage(
+    bundle: Option<tauri::utils::config::BundleType>,
+    appimage: Option<&std::ffi::OsStr>,
+) -> Option<std::path::PathBuf> {
+    if bundle != Some(tauri::utils::config::BundleType::AppImage) {
+        return None;
+    }
+    appimage
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.is_absolute())
+}
+
 /// Linux 上这一份是怎么装上来的。
 ///
-/// **AppImage 还要看 `APPIMAGE` 在不在。**同一个打过补丁的二进制，用户用
-/// `--appimage-extract` 解开之后直接跑，标记照样是 AppImage，而这时根本没有
-/// 一个可以原地替换的 AppImage 文件 —— 插件会去替换正在跑的那个可执行文件。
-/// 运行时（AppImage 的 runtime）挂载时才设这个变量。
+/// **只有挂载起来跑的 AppImage 自己更新**（[`mounted_appimage`]）。解开来跑的
+/// 没有一个可以原地替换的 AppImage 文件 —— 插件会去替换正在跑的那个可执行文件。
 ///
 /// deb、rpm 都不发，自己打出来的也不自己更新。
 #[cfg(target_os = "linux")]
@@ -191,12 +210,9 @@ pub fn linux_kind(
     bundle: Option<tauri::utils::config::BundleType>,
     appimage: Option<&std::ffi::OsStr>,
 ) -> Install {
-    use tauri::utils::config::BundleType;
-    match bundle {
-        Some(BundleType::AppImage) if appimage.is_some_and(|p| !p.is_empty()) => {
-            Install::Standalone
-        }
-        _ => Install::Dev,
+    match mounted_appimage(bundle, appimage) {
+        Some(_) => Install::Standalone,
+        None => Install::Dev,
     }
 }
 
@@ -480,6 +496,34 @@ mod tests {
             serde_json::to_string(&Install::Portable).unwrap(),
             "\"portable\""
         );
+    }
+
+    /// 标记和一个绝对路径的 `APPIMAGE` 缺一不可（Windows 上 `/home/…` 不算绝对路径）。
+    #[cfg(unix)]
+    #[test]
+    fn a_mounted_appimage_needs_the_marker_and_the_variable() {
+        use std::ffi::OsStr;
+        use tauri::utils::config::BundleType;
+        let image = OsStr::new("/home/u/Apps/ThinkWatch-Lite.AppImage");
+        assert_eq!(
+            mounted_appimage(Some(BundleType::AppImage), Some(image)),
+            Some(std::path::PathBuf::from(image))
+        );
+        // 解开来跑的：有标记、没有变量
+        for v in [
+            None,
+            Some(OsStr::new("")),
+            Some(OsStr::new("rel/x.AppImage")),
+        ] {
+            assert_eq!(
+                mounted_appimage(Some(BundleType::AppImage), v),
+                None,
+                "{v:?}"
+            );
+        }
+        // 没有标记，环境里那个 `APPIMAGE` 是别人的
+        assert_eq!(mounted_appimage(None, Some(image)), None);
+        assert_eq!(mounted_appimage(Some(BundleType::Deb), Some(image)), None);
     }
 
     /// Linux 上信打包时写进去的标记，不信路径和环境变量。

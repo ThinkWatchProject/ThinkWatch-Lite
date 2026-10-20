@@ -80,18 +80,13 @@ fn data_home(
 }
 
 /// The running AppImage file. `None` for anything else (a development build,
-/// or an AppImage unpacked with `--appimage-extract`).
-///
-/// The bundle type comes first for the same reason as in `update::linux_kind`:
-/// `$APPIMAGE` is inherited by everything an AppImage starts.
+/// or an AppImage unpacked with `--appimage-extract`); see
+/// `update::mounted_appimage`.
 pub(crate) fn appimage() -> Option<PathBuf> {
-    use tauri::utils::config::BundleType;
-    if tauri::utils::platform::bundle_type() != Some(BundleType::AppImage) {
-        return None;
-    }
-    std::env::var_os("APPIMAGE")
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute())
+    crate::update::mounted_appimage(
+        tauri::utils::platform::bundle_type(),
+        std::env::var_os("APPIMAGE").as_deref(),
+    )
 }
 
 /// The whole file.
