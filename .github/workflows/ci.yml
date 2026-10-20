@@ -116,8 +116,14 @@ jobs:
       # reads.
       - name: Clippy
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+      # **测试用 nextest 跑**，和 core 一样：测试程序同时跑、每条测试各占一个进程，改环境
+      # 变量的那几条互不干扰。版本钉死，和 core 的是同一版。没有文档测试（只有一个 yaml
+      # 代码块，rustdoc 不当测试跑），nextest 不跑它们不丢东西
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
       - name: Test
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
 
   # **这台机器上没有 unix socket。**控制面在那里落在回环端口上，凭据是唯一的
   # 门，而在这个任务出现之前，那一半从来没有被编译过 —— 一个 `#[cfg(windows)]`
@@ -128,6 +134,12 @@ jobs:
   rust-windows:
     name: Rust (Windows)
     runs-on: windows-latest
+    # **链接是这一档最慢的部分**，和 core 一样：不写调试信息就不用生成 PDB，rust-lld 也比
+    # MSVC 的 link.exe 快。只在 CI 上这样：本机调试要行号，安装包由 release.yml 用它自己的
+    # 设置打
+    env:
+      CARGO_PROFILE_DEV_DEBUG: "0"
+      CARGO_TARGET_X86_64_PC_WINDOWS_MSVC_LINKER: rust-lld
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -157,8 +169,12 @@ jobs:
       # 这里的测试**包含那条接缝测试**：起一份真的 twcore.exe，让桌面端这一侧
       # 的客户端在回环端口上真连上去。那条路在这个平台上没有替代品，而它是否
       # 成立，只有这台机器答得出来。
+      # 见 macOS 那一档
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
       - name: Test
-        run: cargo test --manifest-path src-tauri/Cargo.toml
+        run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
 
       # **绿色版会被放在 U 盘和网络共享上。**它的自更新靠「正在运行的 exe 能改名、
       # 腾出来的名字上能写新的」（`portable::swap_in`），上一步只在 NTFS 上证明过。
@@ -209,7 +225,7 @@ jobs:
           foreach ($dir in $dirs) {
             Write-Host "::group::portable tests in $dir"
             $env:TW_PORTABLE_TEST_DIR = $dir
-            cargo test --manifest-path src-tauri/Cargo.toml --lib -- portable::tests --nocapture
+            cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci --lib --no-capture -E 'test(/^portable::tests::/)'
             if ($LASTEXITCODE -ne 0) { $failed += $dir }
             Write-Host "::endgroup::"
           }
@@ -257,5 +273,9 @@ jobs:
       # **套一层会话总线。**这台机器没有桌面，而有几条测试要真的连 D-Bus
       # （系统通知的往返、深浅色的 portal）；不套的话通知那条会悄悄跳过自己。
       # `dbus-run-session` 起一个只活到命令结束的总线，把地址交给它
+      # 见 macOS 那一档
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-nextest@0.9.146
       - name: Test
-        run: dbus-run-session -- cargo test --manifest-path src-tauri/Cargo.toml
+        run: dbus-run-session -- cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci

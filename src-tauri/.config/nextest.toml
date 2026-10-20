@@ -1,0 +1,8 @@
+# CI 上跑测试的那一套（`cargo nextest run --profile ci`，见 .github/workflows/ci.yml），
+# 和 core 的同名配置一样。
+#
+# **一次跑完再报**：默认碰到第一条失败就停，剩下的要再推一次才看得到。慢的测试列在最后，
+# 哪条拖慢了 CI 一眼看得出来。
+[profile.ci]
+fail-fast = false
+final-status-level = "slow"
