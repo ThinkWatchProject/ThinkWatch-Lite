@@ -3,7 +3,7 @@ import { messages } from "@/i18n";
 export const limitsEditorText = messages(
   {
     title: "用量上限",
-    hint: "任一上限用满后，此密钥的请求会被拒绝",
+    hint: "分钟、小时上限用满时请求先排队等待；天、周、月上限用满后请求被拒绝，直到重置",
     none: "未设上限，用量不限",
     add: "添加上限",
     every: "每",
@@ -30,7 +30,7 @@ export const limitsEditorText = messages(
   },
   {
     title: "Usage limits",
-    hint: "Once any limit is used up, requests with this key are rejected",
+    hint: "Requests wait at a full minute or hour limit; a used-up day, week or month limit rejects them until it resets",
     none: "No limits set: usage is unlimited",
     add: "Add limit",
     every: "Per",
