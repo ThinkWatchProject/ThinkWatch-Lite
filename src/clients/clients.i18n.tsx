@@ -182,23 +182,24 @@ export const clientsText = messages(
     /** 连着远程时，组名下面那一句后面接上：这一组里还有指着本机网关的（组收起时也看得见） */
     wslLeft: (summary: string, n: number) => `${summary}${n} 个已接管的客户端仍指向本机网关。`,
     // 不能接管时，组里的那条说明
-    natBody: "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问；改为 mirrored 网络模式后才能接管。",
-    natVersion: "mirrored 网络模式需要 WSL 2.0.5 或更高版本，可在终端中运行 wsl --update 更新。",
+    natBody: "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问；将 WSL 改为 mirrored 网络模式后才能接管。",
+    natVersion: "WSL 的 mirrored 网络模式需要 WSL 2.0.5 或更高版本，可在终端中运行 wsl --update 更新。",
     toMirrored: "改为 mirrored 模式…",
-    restartBody: "已在 .wslconfig 中设为 mirrored 网络模式，重启 WSL 后生效。",
-    fallbackBody: "WSL 重启后仍在使用 NAT 网络，未能启用 mirrored 网络模式，因此无法接管 WSL 中的客户端。",
+    restartBody: "已在 .wslconfig 中将 WSL 设为 mirrored 网络模式，重启 WSL 后生效。",
+    fallbackBody: "WSL 重启后仍在使用 NAT 网络，未能启用 WSL 的 mirrored 网络模式，因此无法接管 WSL 中的客户端。",
     restartWsl: "重启 WSL…",
-    oldWindowsBody: "这台电脑的 Windows 版本不支持 mirrored 网络模式，因此无法接管 WSL 中的客户端。",
+    oldWindowsBody:
+      "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问。WSL 的 mirrored 网络模式需要 Windows 11 22H2 或更高版本，这台电脑的 Windows 不支持，因此无法接管 WSL 中的客户端。",
     oldWslBody: (version: string) => `WSL ${version} 不支持 mirrored 网络模式，需先在终端中运行 wsl --update。`,
     unreachable: "WSL 中无法访问网关",
     // 改为 mirrored 的确认
-    mirroredTitle: "改为 mirrored 网络模式",
+    mirroredTitle: "将 WSL 改为 mirrored 网络模式",
     mirroredAllDistros: "对这台电脑上所有 WSL 2 发行版生效。",
     mirroredRestart: "重启 WSL 后才会生效。",
     mirroredKept: "完全卸载时不会改回。",
     mirroredNoop: "已是 mirrored 网络模式，无需修改。",
     confirmMirrored: "改为 mirrored",
-    mirroredSet: "已改为 mirrored 网络模式，重启 WSL 后生效",
+    mirroredSet: "已将 WSL 改为 mirrored 网络模式，重启 WSL 后生效",
     // 重启 WSL 的确认
     restartTitle: "重启 WSL",
     restartWhat: "将执行 wsl --shutdown：所有正在运行的 WSL 发行版都会停止，其中运行的程序随之退出。",
@@ -397,25 +398,25 @@ export const clientsText = messages(
         ? `${summary} 1 connected client still points to the local gateway.`
         : `${summary} ${n} connected clients still point to the local gateway.`,
     natBody:
-      "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. Clients can be connected once WSL uses mirrored networking.",
-    natVersion: "Mirrored networking needs WSL 2.0.5 or later; wsl --update in a terminal updates it.",
+      "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. Clients can be connected once WSL is switched to its mirrored networking mode.",
+    natVersion: "WSL's mirrored networking mode needs WSL 2.0.5 or later; wsl --update in a terminal updates it.",
     toMirrored: "Switch to mirrored…",
-    restartBody: "Mirrored networking is set in .wslconfig and takes effect once WSL restarts.",
+    restartBody: "WSL's mirrored networking mode is set in .wslconfig and takes effect once WSL restarts.",
     fallbackBody:
-      "WSL still uses NAT networking after restarting. Mirrored networking could not be turned on, so clients in WSL cannot be connected.",
+      "WSL still uses NAT networking after restarting. WSL's mirrored networking mode could not be turned on, so clients in WSL cannot be connected.",
     restartWsl: "Restart WSL…",
     oldWindowsBody:
-      "This version of Windows does not support mirrored networking, so clients in WSL cannot be connected.",
+      "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. WSL's mirrored networking mode needs Windows 11 22H2 or later, which this computer does not have, so clients in WSL cannot be connected.",
     oldWslBody: (version: string) =>
       `WSL ${version} does not support mirrored networking. Run wsl --update in a terminal first.`,
     unreachable: "The gateway cannot be reached from WSL",
-    mirroredTitle: "Switch to mirrored networking",
+    mirroredTitle: "Switch WSL to mirrored networking",
     mirroredAllDistros: "Applies to every WSL 2 distribution on this computer.",
     mirroredRestart: "Takes effect once WSL restarts.",
     mirroredKept: "A full uninstall does not change it back.",
     mirroredNoop: "Mirrored networking is already set; nothing to change.",
     confirmMirrored: "Switch",
-    mirroredSet: "Switched to mirrored networking; it takes effect once WSL restarts",
+    mirroredSet: "Switched WSL to mirrored networking; it takes effect once WSL restarts",
     restartTitle: "Restart WSL",
     restartWhat:
       "This runs wsl --shutdown: every running WSL distribution stops, and the programs running in it exit.",
