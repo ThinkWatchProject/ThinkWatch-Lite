@@ -286,6 +286,7 @@ pub fn run() {
             clients::client_locations,
             clients::plan_client_locations,
             clients::set_client_locations,
+            clients::set_client_order,
             clients::retarget_clients,
             mcp::mcp_targets,
             mcp::plan_mcp,

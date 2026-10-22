@@ -49,7 +49,13 @@ gateway_base: string,
 /**
  * config.yaml 里有哪几把网关密钥可选
  */
-keys: Array<string>, };
+keys: Array<string>, 
+/**
+ * 用户排过的客户端顺序（客户端 id，`app.json` 的 `client_order`）。**界面按它排**：在里面的
+ * 按这个顺序排在前，没在里面的按 `clients`、`manual` 原来的顺序跟在后面，不认识的 id 不管。
+ * 这台电脑上和各个 WSL 发行版里共用这一份
+ */
+order: Array<string>, };
 
 /**
  * 给 Claude Desktop 选模型：写进它配置的那个名称，和它的密钥能用的上游模型

@@ -361,7 +361,12 @@ pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::Client
     let gw = gateway(&state).await?;
     let models = listed_models(&gw).await;
     // 检测要读每个客户端的配置文件（可能在一个离线的网络位置上）：放在阻塞线程上
-    blocking(move || ops::list(&home_dir(), &backups(), &gw, &models)).await
+    blocking(move || {
+        let mut r = ops::list(&home_dir(), &backups(), &gw, &models);
+        r.order = crate::prefs::load(&crate::data_dir()).client_order;
+        r
+    })
+    .await
 }
 
 /// 客户端页的 WSL 部分：每个发行版一组。
@@ -772,6 +777,19 @@ pub async fn set_client_locations(
             at_ms: crate::notices::now_ms(),
         },
     );
+    Ok(())
+}
+
+/// 存下客户端页上客户端的顺序（客户端 id，排在前面的在前）。**只存在这台电脑上**
+/// （`app.json` 的 `client_order`），不导出、不同步。重复的只留第一个；空的列表是回到注册表顺序
+#[tauri::command]
+pub async fn set_client_order(order: Vec<String>) -> Out<()> {
+    let mut seen = std::collections::HashSet::new();
+    let order: Vec<String> = order
+        .into_iter()
+        .filter(|id| !id.is_empty() && seen.insert(id.clone()))
+        .collect();
+    crate::prefs::change(move |p| p.client_order = order).await?;
     Ok(())
 }
 

@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from "react";
-import { ChevronRightIcon } from "lucide-react";
+import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
+import { ChevronRightIcon, GripVerticalIcon } from "lucide-react";
 import { Button, DISCLOSURE } from "@/ui/button";
 import { Count } from "@/ui/count";
 import { Reveal, rowMotion, usePresentList } from "@/ui/motion";
@@ -17,6 +17,8 @@ import { ClientMark, UsageCell } from "@/keys/parts";
 import { clientsText } from "./clients.i18n";
 import { SILENCE_MS, hostOf, manualStatusOf, statusOf, type Status, type WslPlace } from "./status";
 import { ClientStatus, reasonText } from "./ClientStatus";
+import { moved } from "./order";
+import { useReorder } from "@/routing/useReorder";
 
 export interface RowActions {
   details: (c: DetectedClient) => void;
@@ -46,11 +48,131 @@ export interface RowContext {
    */
   wsl?: WslPlace;
   actions: RowActions;
+  /**
+   * 一张表排过之后，这张表里客户端 id 的新顺序。页面把它并进整份顺序、存下来。只有
+   * 能排序的表用它（检测到的、需要手动配置的；未检测到的不排）
+   */
+  reorder?: (ids: string[]) => void;
+}
+
+/** 能排序的表里的一行：第几个、共几个，拖动把手，上移下移 */
+interface RowSort {
+  index: number;
+  count: number;
+  /** 行上标的：`useReorder` 按它认是哪一行、是不是这一张表的 */
+  attrs: { "data-reorder-row": number; "data-reorder-scope": string };
+  handle: ReturnType<ReturnType<typeof useReorder>["handle"]>;
+  mark: "before" | "after" | null;
+  dragging: boolean;
+  move: (d: -1 | 1) => void;
+}
+
+/**
+ * 一张能排序的表：拖动把手、行菜单的上移下移、在行上按 Alt+↑/↓。`onReorder` 没给就不能排。
+ *
+ * **拖动中画的是按下把手那一刻的列表。**这一页跟着请求刷新，拖到一半来了新数据（新装了
+ * 一个、有一个不见了）的话，行的进出场动画会把行挤来挤去，放下时的下标也对不上；放下
+ * 之后才换成新的。
+ *
+ * 用键盘挪的那一行重新排过之后可能丢了焦点（React 挪的是它所在的那个节点）：焦点丢了
+ * 就还给它
+ */
+function useSortable<T>(items: T[], idOf: (item: T) => string, onReorder: ((ids: string[]) => void) | undefined) {
+  const scope = useId();
+  const table = useRef<HTMLTableElement>(null);
+  const [frozen, setFrozen] = useState<T[] | null>(null);
+  const latest = useRef<string[]>([]);
+  const commit = (ids: string[], focus?: string) => {
+    onReorder?.(ids);
+    if (focus === undefined) return;
+    requestAnimationFrame(() => {
+      const a = document.activeElement;
+      if (a && a !== document.body && a.isConnected) return;
+      table.current?.querySelector<HTMLElement>(`tr[data-row="${CSS.escape(focus)}"]`)?.focus();
+    });
+  };
+  const reorder = useReorder((from, to) => commit(moved(latest.current, from, to)), scope);
+  const dragging = reorder.dragging !== null;
+  if (dragging && frozen === null) setFrozen(items);
+  else if (!dragging && frozen !== null) setFrozen(null);
+  const list = (dragging ? frozen : null) ?? items;
+  const ids = list.map(idOf);
+  latest.current = ids;
+  const sortOf = (id: string): RowSort | undefined => {
+    if (!onReorder) return undefined;
+    const i = ids.indexOf(id);
+    // 正在淡出的那一行已经不在列表里：不能再拖、再挪
+    if (i < 0) return undefined;
+    return {
+      index: i,
+      count: ids.length,
+      attrs: { "data-reorder-row": i, "data-reorder-scope": scope },
+      handle: reorder.handle(i),
+      mark: reorder.marker(i, ids.length),
+      dragging: reorder.dragging === i,
+      move: (d) => {
+        const j = i + d;
+        if (j < 0 || j >= ids.length) return;
+        commit(moved(ids, i, j), id);
+      },
+    };
+  };
+  return { list, table, sortOf };
+}
+
+/** 拖动中：被拖的那一行淡下去，放下的位置画一条线（和路由规则一样） */
+const sortRow = (sort: RowSort | undefined) =>
+  sort && [
+    sort.dragging && "opacity-50",
+    sort.mark === "before" && "shadow-[inset_0_2px_0_var(--color-foreground)]",
+    sort.mark === "after" && "shadow-[inset_0_-2px_0_var(--color-foreground)]",
+  ];
+
+/** 行上的按键：Alt+↑/↓ 上移下移，其余照 `openable` */
+function sortKeys(sort: RowSort | undefined, onKeyDown: (e: KeyboardEvent) => void) {
+  return (e: KeyboardEvent) => {
+    if (sort && e.target === e.currentTarget && e.altKey && (e.key === "ArrowUp" || e.key === "ArrowDown")) {
+      e.preventDefault();
+      sort.move(e.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+    onKeyDown(e);
+  };
+}
+
+/** 行菜单里的上移、下移。到顶、到底时置灰 */
+function moveItems(sort: RowSort | undefined, t: typeof clientsText.zh): MenuItems {
+  if (!sort) return [];
+  return [
+    { kind: "sep" },
+    { kind: "item", label: t.moveUp, disabled: sort.index === 0, onSelect: () => sort.move(-1) },
+    { kind: "item", label: t.moveDown, disabled: sort.index === sort.count - 1, onSelect: () => sort.move(1) },
+  ];
+}
+
+/**
+ * 最左边那一格：拖动把手（和路由规则的一样）。**只有它能拖**，点它不打开这一行。
+ * 不能排序的表（未检测到）这一格空着，几张表的列照样对齐
+ */
+function GripCell({ sort, name }: { sort: RowSort | undefined; name: string }) {
+  const t = useText(clientsText);
+  if (!sort) return <TableCell className="px-0" />;
+  return (
+    <TableCell
+      className="px-0 pl-2 text-muted-foreground/60"
+      aria-label={t.dragClient(name)}
+      onClick={stop}
+      {...sort.handle}
+    >
+      <GripVerticalIcon className="size-3.5" />
+    </TableCell>
+  );
 }
 
 /**
  * 三张表共用的列宽。**表格是固定布局**：分组各是一张表（收起、展开时整块带高度
- * 动画），列宽写死在这里，几张表的列才对得齐。第一列吃掉剩下的宽度。
+ * 动画），列宽写死在这里，几张表的列才对得齐。最左边一列是拖动把手，客户端那一列
+ * 吃掉剩下的宽度。
  *
  * 窄窗口下（页面窄于 48rem）小柱图收起，那一列跟着变窄；「密钥」一列也收起 ——
  * 不然最小窗口下客户端名字那一列只剩几个像素。密钥在详情里、行菜单的「查看流量」
@@ -63,6 +185,7 @@ function Cols() {
   const en = useLang() === "en";
   return (
     <colgroup>
+      <col className="w-7" />
       <col />
       <col className={en ? "w-[184px] @max-3xl/page:w-[150px]" : "w-[136px] @max-3xl/page:w-[120px]"} />
       <col className="w-[128px] @max-3xl/page:w-0" />
@@ -83,6 +206,7 @@ function Head() {
   return (
     <TableHeader>
       <TableRow className="hover:bg-transparent">
+        <TableHead className="px-0" />
         <TableHead>{t.client}</TableHead>
         <TableHead>{t.status}</TableHead>
         <TableHead className={KEY_CELL}>
@@ -104,34 +228,54 @@ function Head() {
  * 单击一行打开详情；没检测到的打开手动配置。
  *
  * `head`：带表头。页面上第一张表带，下面的分组不带 —— 列宽对齐，表头只写一次。
+ * `sortable`：能拖动、上移下移（`ctx.reorder`）。未检测到的那一组不排。
  */
 export function DetectedTable({
   clients,
   ctx,
   head,
   dim,
+  sortable,
 }: {
   clients: DetectedClient[];
   ctx: RowContext;
   head: boolean;
   /** 没检测到的那一组：整行淡显 */
   dim?: boolean;
+  sortable?: boolean;
 }) {
-  const shown = usePresentList(clients, (c) => c.id);
+  const { list, table, sortOf } = useSortable(clients, (c) => c.id, sortable ? ctx.reorder : undefined);
+  const shown = usePresentList(list, (c) => c.id);
   return (
-    <Table className="table-fixed">
+    <Table ref={table} className="table-fixed">
       <Cols />
       {head && <Head />}
       <TableBody>
         {shown.map(({ item: c, key, presence }) => (
-          <DetectedRow key={key} c={c} ctx={ctx} className={cn(rowMotion(presence), dim && "text-muted-foreground")} />
+          <DetectedRow
+            key={key}
+            c={c}
+            ctx={ctx}
+            sort={sortOf(c.id)}
+            className={cn(rowMotion(presence), dim && "text-muted-foreground")}
+          />
         ))}
       </TableBody>
     </Table>
   );
 }
 
-function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext; className?: string }) {
+function DetectedRow({
+  c,
+  ctx,
+  sort,
+  className,
+}: {
+  c: DetectedClient;
+  ctx: RowContext;
+  sort: RowSort | undefined;
+  className?: string;
+}) {
   const t = useText(clientsText);
   const { actions, usage } = ctx;
   const status = statusOf(c, ctx.gatewayBase, Date.now(), ctx.remote, ctx.wsl);
@@ -139,17 +283,26 @@ function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext
   const adopted = c.adopted_at_ms != null;
   /** WSL 里够不着网关的那一组：接管、手动配置都不给 */
   const reachable = ctx.wsl?.adoptable ?? true;
-  const items = menu(c, actions, t, reachable);
+  const items = [...menu(c, actions, t, reachable), ...moveItems(sort, t)];
   const open = () => {
     if (!absent) actions.details(c);
     else if (reachable) actions.manual(c.id);
   };
+  const row = openable(open);
   const sub = subline(c, status, t);
   // 刚接管、正等着第一个请求：点带脉冲。等久了就不跳了
   const live = adopted && status.state === "waiting" && Date.now() - (c.adopted_at_ms ?? 0) < SILENCE_MS;
   return (
     <RowMenu items={items}>
-      <TableRow data-row={c.id} {...openable(open)} className={cn(OPENABLE_ROW, "scroll-mx-[100vw]", className)}>
+      <TableRow
+        data-row={c.id}
+        {...sort?.attrs}
+        {...row}
+        onKeyDown={sortKeys(sort, row.onKeyDown)}
+        aria-keyshortcuts={sort ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+        className={cn(OPENABLE_ROW, "scroll-mx-[100vw]", className, sortRow(sort))}
+      >
+        <GripCell sort={sort} name={c.name} />
         <TableCell className="py-2">
           <div className="flex min-w-0 items-center gap-2.5">
             <Tile className={cn(absent && "opacity-60")}>
@@ -214,13 +367,16 @@ function DetectedRow({ c, ctx, className }: { c: DetectedClient; ctx: RowContext
  */
 export function ManualTable({ manual, ctx }: { manual: ManualClient[]; ctx: RowContext }) {
   const t = useText(clientsText);
-  const shown = usePresentList(manual, (m) => m.id);
+  const { list, table, sortOf } = useSortable(manual, (m) => m.id, ctx.reorder);
+  const shown = usePresentList(list, (m) => m.id);
   const { actions, usage } = ctx;
   return (
-    <Table className="table-fixed">
+    <Table ref={table} className="table-fixed">
       <Cols />
       <TableBody>
         {shown.map(({ item: m, key, presence }) => {
+          const sort = sortOf(m.id);
+          const row = openable(() => actions.manual(m.id));
           const items: MenuItems = [
             { kind: "item", label: t.manual, onSelect: () => actions.manual(m.id) },
             ...(m.movable ? [{ kind: "item" as const, label: t.changePath, onSelect: () => actions.path(m.id) }] : []),
@@ -230,14 +386,19 @@ export function ManualTable({ manual, ctx }: { manual: ManualClient[]; ctx: RowC
               onSelect: () => m.key && actions.traffic(m.key),
               disabled: !m.key,
             },
+            ...moveItems(sort, t),
           ];
           return (
             <RowMenu key={key} items={items}>
               <TableRow
                 data-row={m.id}
-                {...openable(() => actions.manual(m.id))}
-                className={cn(OPENABLE_ROW, "scroll-mx-[100vw]", rowMotion(presence))}
+                {...sort?.attrs}
+                {...row}
+                onKeyDown={sortKeys(sort, row.onKeyDown)}
+                aria-keyshortcuts={sort ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+                className={cn(OPENABLE_ROW, "scroll-mx-[100vw]", rowMotion(presence), sortRow(sort))}
               >
+                <GripCell sort={sort} name={m.name} />
                 <TableCell className="py-2">
                   <div className="flex min-w-0 items-center gap-2.5">
                     <Tile>

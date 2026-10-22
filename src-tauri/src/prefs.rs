@@ -41,6 +41,11 @@ pub struct Prefs {
     /// 只写和默认位置不一样的几项。**没写就是都在默认位置**，见 `clients::locations`
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub client_locations: BTreeMap<String, tw_adopt::locations::Places>,
+    /// 客户端页上客户端的顺序：用户拖过、上移下移过的客户端 id，排在前面的在前。**没在里面的**
+    /// （新装的、从未排过的）按注册表顺序跟在后面；这台电脑上和各个 WSL 发行版里共用这一份。
+    /// 只存在这台电脑上，不导出、不同步
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub client_order: Vec<String>,
     /// 这一份 Lite 的标识：16 个十六进制字符，第一次要用时生成（[`instance_id`]）。core 按它分开
     /// 记各个 Lite 报的固定密钥（几个 Lite 连着同一个远程 core 时各报各的）。**不是通用偏好**：
     /// 不导出、不同步
@@ -57,6 +62,7 @@ impl Default for Prefs {
             notices: Mode::System,
             menubar: crate::menubar::Style::Full,
             client_locations: BTreeMap::new(),
+            client_order: Vec::new(),
             instance: None,
         }
     }
@@ -114,6 +120,17 @@ fn from_fields(fields: &Fields) -> Prefs {
                     .collect()
             })
             .unwrap_or(d.client_locations),
+        // 一个一个地读：不是字符串的、重复的只丢那一个
+        client_order: field::<Vec<serde_json::Value>>(fields, "client_order")
+            .map(|all| {
+                let mut seen = std::collections::HashSet::new();
+                all.iter()
+                    .filter_map(|v| v.as_str())
+                    .filter(|id| seen.insert(*id))
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or(d.client_order),
         instance: field::<String>(fields, "instance").filter(|s| valid_instance(s)),
     }
 }
@@ -296,6 +313,7 @@ mod tests {
                     scan: Some("/work/claude".into()),
                 },
             )]),
+            client_order: vec!["codex".into(), "claude-code".into()],
             instance: Some("0123456789abcdef".into()),
         };
         save(&dir, &want).unwrap();
@@ -403,6 +421,25 @@ mod tests {
         assert_eq!(p.theme, None);
         assert_eq!(p.notices, Mode::Off);
         assert_eq!(p.menubar, crate::menubar::Style::Icon);
+    }
+
+    /// 客户端顺序一个一个地读：不是字符串的、重复的丢掉，别的照旧；没排过就不写进文件
+    #[test]
+    fn the_client_order_drops_only_what_it_cannot_read() {
+        let (_tmp, dir) = tmp();
+        std::fs::write(
+            prefs_path(&dir),
+            br#"{"check_updates":false,"client_order":["codex",1,"zed","codex",null,"claude-code"]}"#,
+        )
+        .unwrap();
+        let p = load(&dir);
+        assert!(!p.check_updates);
+        assert_eq!(p.client_order, ["codex", "zed", "claude-code"]);
+        std::fs::write(prefs_path(&dir), br#"{"client_order":"codex"}"#).unwrap();
+        assert!(load(&dir).client_order.is_empty());
+        update(&dir, |p| p.client_order.clear()).unwrap();
+        let raw = std::fs::read_to_string(prefs_path(&dir)).unwrap();
+        assert!(!raw.contains("client_order"), "{raw}");
     }
 
     /// 写到一半的文件（以前不是整份换上去的）：按出厂设置，不崩

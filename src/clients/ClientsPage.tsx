@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { IconClient, IconRemote } from "@/ui/icons";
@@ -31,6 +31,7 @@ import { useClients, useWsl } from "./data";
 import { DetailDialog } from "./DetailDialog";
 import { ManualDialog, type ManualTarget } from "./ManualDialog";
 import { LocationsDialog } from "./LocationsDialog";
+import { mergeOrder, sameIds, sortByOrder } from "./order";
 import { PlanDialog } from "./PlanDialog";
 import { RestoreAllDialog } from "./RestoreAllDialog";
 import { MirroredDialog, RestartWslDialog } from "./WslDialogs";
@@ -132,6 +133,15 @@ export default function ClientsPage({
   });
 
   const data = clients.data;
+  /**
+   * 刚排过、还没从 `list_clients` 读回来的顺序。存好之后重取，读回来的和它一样了就不再用它；
+   * 没存成就退回排之前的样子。在这之间跟着请求刷新回来的旧顺序不会把行挪回去
+   */
+  const [pendingOrder, setPendingOrder] = useState<string[] | null>(null);
+  const order = pendingOrder ?? data?.order ?? [];
+  useEffect(() => {
+    if (pendingOrder && data && sameIds(data.order, pendingOrder)) setPendingOrder(null);
+  }, [data, pendingOrder]);
   const adopted = data?.clients.filter((c) => c.adopted_at_ms != null) ?? [];
   /** 全部还原会还原的：这台电脑上的，加上各个 WSL 发行版里的 */
   const adoptedEverywhere: { key: string; client: DetectedClient; status: Status }[] = [
@@ -270,6 +280,29 @@ export default function ClientsPage({
     });
   }
 
+  /**
+   * 一张表排过了（`table` 是这张表里客户端 id 的新顺序）：并进整份顺序、存下来。**先按新的
+   * 顺序画**，存不进去再退回去、报错
+   */
+  function reorder(table: string[]) {
+    if (!data) return;
+    const before = pendingOrder;
+    const known = [
+      ...data.clients.map((c) => c.id),
+      ...data.manual.map((m) => m.id),
+      ...groups.flatMap((g) => g.clients.map((c) => c.id)),
+    ];
+    const next = mergeOrder(order, known, table);
+    setPendingOrder(next);
+    api.setOrder(next).then(
+      () => void clients.reload(),
+      (e: unknown) => {
+        setPendingOrder((cur) => (cur === next ? before : cur));
+        notify.error(e, t.orderFailed);
+      },
+    );
+  }
+
   const locate = (id: string, env?: string): Located | undefined => {
     if (!env) {
       const c = data?.clients.find((x) => x.id === id);
@@ -323,6 +356,7 @@ export default function ClientsPage({
       traffic: (key) => nav.open("requests", { filter: { client: key } }),
       openKey: (key) => nav.open("keys", { key }),
     },
+    reorder,
   });
   const ctx: RowContext | null = data ? ctxFor(data.gateway_base, data.clients.map((c) => c.id)) : null;
 
@@ -403,13 +437,14 @@ export default function ClientsPage({
             <>
               {/* 有 WSL 时分组：先是这台电脑，再是每个发行版 */}
               {groups.length > 0 && <h2 className="mb-3 tw-head text-foreground">{t.thisComputer}</h2>}
-              <Body data={d} ctx={ctx} />
+              <Body data={d} ctx={ctx} order={order} />
               {groups.map((g) => {
                 const left = remote ? leftBehindOf(g.clients) : [];
                 return (
                   <WslSection
                     key={g.distro}
                     group={g}
+                    order={order}
                     ctx={ctxFor(
                       g.gateway_base,
                       g.clients.map((c) => c.id),
@@ -520,15 +555,20 @@ export default function ClientsPage({
 /**
  * 表格和两组。检测到的客户端在最上面一张表里；需要手动配置的、没检测到的各是一组，
  * 可以收起。一个都没检测到时，上面那张表换成一句话。
+ *
+ * 几张表都按 `order`（用户排过的顺序）排；检测到的、需要手动配置的能拖动、上移下移，
+ * 未检测到的不排。
  */
-function Body({ data, ctx }: { data: ClientsResponse; ctx: RowContext }) {
+function Body({ data, ctx, order }: { data: ClientsResponse; ctx: RowContext; order: readonly string[] }) {
   const t = useText(clientsText);
-  const installed = data.clients.filter((c) => c.installed);
-  const absent = data.clients.filter((c) => !c.installed);
+  const clients = sortByOrder(data.clients, order, (c) => c.id);
+  const manual = sortByOrder(data.manual, order, (m) => m.id);
+  const installed = clients.filter((c) => c.installed);
+  const absent = clients.filter((c) => !c.installed);
   return (
     <>
       {installed.length > 0 ? (
-        <DetectedTable clients={installed} ctx={ctx} head />
+        <DetectedTable clients={installed} ctx={ctx} head sortable />
       ) : (
         <EmptyState
           variant="outlined"
@@ -537,9 +577,9 @@ function Body({ data, ctx }: { data: ClientsResponse; ctx: RowContext }) {
           description={t.noneHint}
         />
       )}
-      {data.manual.length > 0 && (
-        <Section id="manual" title={t.manualTitle} count={data.manual.length} description={t.manualIntro}>
-          <ManualTable manual={data.manual} ctx={ctx} />
+      {manual.length > 0 && (
+        <Section id="manual" title={t.manualTitle} count={manual.length} description={t.manualIntro}>
+          <ManualTable manual={manual} ctx={ctx} />
         </Section>
       )}
       {absent.length > 0 && (
@@ -575,6 +615,7 @@ interface WslLeft {
  */
 function WslSection({
   group: g,
+  order,
   ctx,
   planning,
   onMirrored,
@@ -582,6 +623,8 @@ function WslSection({
   left,
 }: {
   group: WslGroup;
+  /** 用户排过的顺序：和这台电脑上的共用一份 */
+  order: readonly string[];
   ctx: RowContext;
   /** 正在取 `.wslconfig` 的改动 */
   planning: boolean;
@@ -591,8 +634,9 @@ function WslSection({
 }) {
   const t = useText(clientsText);
   const rt = useText(remoteText);
-  const installed = g.clients.filter((c) => c.installed);
-  const absent = g.clients.filter((c) => !c.installed);
+  const clients = sortByOrder(g.clients, order, (c) => c.id);
+  const installed = clients.filter((c) => c.installed);
+  const absent = clients.filter((c) => !c.installed);
   const summary = wslSummary(g, t);
   const description = g.error ? t.wslUnreadable : left ? t.wslLeft(summary, left.count) : summary;
   return (
@@ -622,7 +666,7 @@ function WslSection({
         )}
         {!g.error && (
           <>
-            {installed.length > 0 && <DetectedTable clients={installed} ctx={ctx} head={false} />}
+            {installed.length > 0 && <DetectedTable clients={installed} ctx={ctx} head={false} sortable />}
             {g.adoptable && absent.length > 0 && <DetectedTable clients={absent} ctx={ctx} head={false} dim />}
           </>
         )}

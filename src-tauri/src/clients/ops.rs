@@ -145,6 +145,8 @@ pub fn list(
         manual,
         keys: gw.keys.iter().map(|k| k.name.clone()).collect(),
         gateway_base: gw.base.clone(),
+        // 顺序存在 `app.json` 里，由命令那一层填（[`crate::clients::list_clients`]）
+        order: Vec::new(),
     }
 }
 

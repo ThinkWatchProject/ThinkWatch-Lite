@@ -496,7 +496,13 @@ function manualNow(): ManualClient[] {
 }
 
 export function clientsResponse(): ClientsResponse {
-  return { gateway_base: base(), keys: ["default", "claude-code", "codex", "cursor"], clients: clientsNow(), manual: manualNow() };
+  return {
+    gateway_base: base(),
+    keys: ["default", "claude-code", "codex", "cursor"],
+    clients: clientsNow(),
+    manual: manualNow(),
+    order: [],
+  };
 }
 
 /** 接管前给看的改动。截图里不打开它，给一份形状对的 */

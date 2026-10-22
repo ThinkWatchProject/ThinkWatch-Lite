@@ -71,6 +71,10 @@ export const clientsText = messages(
     changePath: "更改路径…",
     traffic: "查看流量",
     actionsFor: (name: string) => `${name} 的操作`,
+    moveUp: "上移",
+    moveDown: "下移",
+    dragClient: (name: string) => `拖动调整 ${name} 的位置`,
+    orderFailed: "无法保存客户端顺序",
     restoredAll: (n: number) => `已还原 ${n} 个客户端`,
     restoreFailed: (failures: { client: string; detail: string }[]) =>
       `${failures.length} 个客户端还原失败：` + failures.map((r) => `${r.client}（${r.detail}）`).join("；"),
@@ -287,6 +291,10 @@ export const clientsText = messages(
     changePath: "Change path…",
     traffic: "Show traffic",
     actionsFor: (name: string) => `Actions for ${name}`,
+    moveUp: "Move up",
+    moveDown: "Move down",
+    dragClient: (name: string) => `Drag to reorder ${name}`,
+    orderFailed: "The client order could not be saved",
     restoredAll: (n: number) => `${count(n, "client", "clients")} restored`,
     restoreFailed: (failures: { client: string; detail: string }[]) =>
       `${count(failures.length, "client", "clients")} could not be restored: ` +

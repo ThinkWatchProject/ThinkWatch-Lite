@@ -161,6 +161,10 @@ pub struct ClientsResponse {
     pub gateway_base: String,
     /// config.yaml 里有哪几把网关密钥可选
     pub keys: Vec<String>,
+    /// 用户排过的客户端顺序（客户端 id，`app.json` 的 `client_order`）。**界面按它排**：在里面的
+    /// 按这个顺序排在前，没在里面的按 `clients`、`manual` 原来的顺序跟在后面，不认识的 id 不管。
+    /// 这台电脑上和各个 WSL 发行版里共用这一份
+    pub order: Vec<String>,
 }
 
 /// WSL 里的一个发行版用哪种网络；本机时，不能接管的那几种说明卡在哪一步。

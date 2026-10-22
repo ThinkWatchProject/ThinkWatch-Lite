@@ -6,15 +6,19 @@ import { useRef, useState, type PointerEvent } from "react";
  * **用指针事件，不用 HTML5 拖放。**Tauri 的窗口默认接管拖放（为了接住从
  * Finder 拖进来的文件），网页里的 `dragstart` / `drop` 因此时有时无；指针
  * 事件不受它影响。行上标 `data-reorder-row={i}`，把手上摊 `handle(i)`。
+ *
+ * `scope`：一页上有好几张能各自排序的表时，各给一个名字，行上再标
+ * `data-reorder-scope={scope}`。只认同一张表里的行：拖到别的表上等于没放下。
  */
-export function useReorder(onMove: (from: number, to: number) => void) {
+export function useReorder(onMove: (from: number, to: number) => void, scope?: string) {
   const from = useRef<number | null>(null);
   const [dragging, setDragging] = useState<number | null>(null);
   /** 放下时会落到哪个位置之前（等于长度时是末尾） */
   const [target, setTarget] = useState<number | null>(null);
 
   function locate(e: PointerEvent): number | null {
-    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>("[data-reorder-row]");
+    const row = scope === undefined ? "[data-reorder-row]" : `[data-reorder-row][data-reorder-scope="${CSS.escape(scope)}"]`;
+    const el = document.elementFromPoint(e.clientX, e.clientY)?.closest<HTMLElement>(row);
     if (!el) return null;
     const i = Number(el.dataset.reorderRow);
     const r = el.getBoundingClientRect();

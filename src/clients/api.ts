@@ -104,4 +104,6 @@ export const api = {
   /** 换位置：几处一起生效 */
   setLocations: (id: string, edit: LocationEdit | null) =>
     invoke<void>("set_client_locations", { id, edit }),
+  /** 存下客户端页上客户端的顺序（客户端 id，排在前面的在前）。只存在这台电脑上 */
+  setOrder: (order: string[]) => invoke<void>("set_client_order", { order }),
 };
