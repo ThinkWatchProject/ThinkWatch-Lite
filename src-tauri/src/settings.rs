@@ -1,4 +1,4 @@
-//! 设置页：语言、外观、开机启动、提醒方式、菜单栏样式。
+//! 设置页：语言、外观、界面大小、开机启动、提醒方式、菜单栏样式。
 
 use std::sync::Arc;
 
@@ -6,7 +6,7 @@ use tauri::{Emitter, Manager};
 
 use crate::{
     AppState, autostart, data_dir, error::Out, gateway::locate_core, i18n, menubar, notices, prefs,
-    theme,
+    theme, zoom,
 };
 
 /// 这个应用自己的信息。
@@ -102,6 +102,51 @@ pub async fn set_theme(app: tauri::AppHandle, setting: Option<theme::Theme>) -> 
     crate::client_prefs::changed(&app);
     theme::apply(&app, setting);
     Ok(theme_view())
+}
+
+/// 界面大小，百分比（见 `zoom`）
+#[tauri::command]
+pub fn ui_zoom() -> zoom::Zoom {
+    zoom::current()
+}
+
+/// 设置页选一档
+#[tauri::command]
+pub async fn set_ui_zoom(app: tauri::AppHandle, zoom: zoom::Zoom) -> Out<zoom::Zoom> {
+    change_zoom(app, move |_| zoom).await
+}
+
+/// 快捷键：放大一档、缩小一档、回到 100%。**新的一档在这边算**：按住 ⌘= 不放时一连串
+/// 的按键各自读、改、写，在界面那边算的话几次读到的是同一档
+#[tauri::command]
+pub async fn step_ui_zoom(app: tauri::AppHandle, step: zoom::Step) -> Out<zoom::Zoom> {
+    change_zoom(app, move |z| z.step(step)).await
+}
+
+/// 换一档：存下来、开着的窗口当场换，设置页那一行听 `ui-zoom-changed` 跟着动。
+///
+/// **不通知同步**（不调 `client_prefs::changed`）：界面大小是这台电脑自己的。
+///
+/// **记下的那一档在存设置的锁里定**（`prefs::update` 一次只改一处）：接连几次换档各自
+/// 在阻塞线程上存、各自回来应用，回来的先后不一定是存的先后；应用时一律取最后存下的那
+/// 一档，先回来的那次应用到的也已经是它
+async fn change_zoom(
+    app: tauri::AppHandle,
+    f: impl FnOnce(zoom::Zoom) -> zoom::Zoom + Send + 'static,
+) -> Out<zoom::Zoom> {
+    let saved = prefs::change(move |p| {
+        p.zoom = f(p.zoom);
+        zoom::remember(p.zoom);
+    })
+    .await;
+    if saved.is_err() {
+        // 没存上：记下的退回存着的那一档
+        zoom::remember(prefs::load(&data_dir()).zoom);
+    }
+    let now = zoom::current();
+    zoom::apply(&app, now);
+    let _ = app.emit("ui-zoom-changed", now);
+    saved.map(|_| now)
 }
 
 /// 开机自启现在是开着的吗。

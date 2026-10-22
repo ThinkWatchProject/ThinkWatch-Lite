@@ -828,7 +828,11 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
             crate::i18n::init_script(),
             reason
         ))
-        .inner_size(PICKER_WIDTH, 300.0)
+        // 按界面大小放大，高度由 `picker_fit` 按内容定（见 `window::fit`）
+        .inner_size(
+            PICKER_WIDTH * crate::zoom::current().factor(),
+            300.0 * crate::zoom::current().factor(),
+        )
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -839,7 +843,8 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
         Some(dir) => b.data_directory(dir),
         None => b,
     };
-    b.build()?;
+    let w = b.build()?;
+    crate::zoom::zoom_new(&w);
     Ok(())
 }
 

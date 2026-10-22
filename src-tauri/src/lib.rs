@@ -76,6 +76,7 @@ pub mod window;
 pub mod winreg;
 pub mod wire;
 pub mod zai;
+pub mod zoom;
 
 use control::ControlClient;
 use gateway::{
@@ -259,6 +260,9 @@ pub fn run() {
             settings::set_language,
             settings::app_theme,
             settings::set_theme,
+            settings::ui_zoom,
+            settings::set_ui_zoom,
+            settings::step_ui_zoom,
             updater::update_check,
             updater::update_show,
             updater::update_pending,
@@ -315,6 +319,8 @@ pub fn run() {
             i18n::set(i18n::effective(saved.language));
             // 外观在窗口出现之前就设好，不然会先画一帧系统那一档的颜色
             theme::init(&handle, saved.theme);
+            // 界面大小也是：窗口一建出来就按它缩放（见 `window::show_main_window`）
+            zoom::remember(saved.zoom);
             // 链接、开机自启、通知登记改成指向正在运行的这个 exe（见 `winreg`）。
             // 要在下面判断系统通知能不能用之前
             winreg::claim(&handle);

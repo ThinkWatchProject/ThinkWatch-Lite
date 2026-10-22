@@ -23,7 +23,8 @@ import { useRepair } from "@/repair";
 import { DropImport } from "@/backup/DropImport";
 import { NavContext, SURFACES, type Nav, type NavDelivery, type NavParams, type Surface } from "@/nav";
 import { paletteText } from "@/palette/palette.i18n";
-import { COMBOS, DIGIT_PAGES, Keys, isTyping, modalOpen } from "@/palette/keys";
+import { COMBOS, DIGIT_PAGES, Keys, isTyping, modalOpen, zoomStep } from "@/palette/keys";
+import { stepZoom } from "@/settings/zoom";
 import { SidebarProvider, SidebarTrigger } from "@/ui/sidebar";
 import { Banners } from "./Banners";
 import { CONFIG_PAGES, describeCore, surfaceOf } from "./describe";
@@ -259,6 +260,8 @@ export default memo(function Workspace({
    *
    * · ⌘K 命令面板 · ⌘1…⌘9 按源列表的顺序换页（设置之外的前九页，`DIGIT_PAGES`）
    * · ⌘F 流量搜索 · ⌘, 设置 · ⌘R 刷新
+   * · ⌘= 放大界面（`+` 也认）· ⌘- 缩小 · ⌘0 回到 100%（`zoomStep`；Tauri 自带的缩放快捷键
+   *   没开，见 `src-tauri/src/zoom.rs`）
    * · `?` 快捷键一览（在打字时不接管）
    * · ⌘⌥S 收起/展开源列表（访达、邮件、备忘录都是这个键；判 `code` 不判 `key`：
    *   ⌥ 会把 s 变成 ß）。**只在 macOS 上有**：Windows 上 Ctrl+Alt 常是 AltGr，
@@ -285,6 +288,13 @@ export default memo(function Workspace({
         return;
       }
       if (!isMod(e) || e.altKey) return;
+      // 界面大小（⌘= / ⌘- / ⌘0）。开着对话框、正在输入时照样换：不换页，什么都不会丢
+      const zoom = zoomStep(e.key);
+      if (zoom) {
+        e.preventDefault();
+        stepZoom(zoom);
+        return;
+      }
       const k = e.key.toLowerCase();
       const busy = modalOpen();
       const go = <S extends Surface>(s: S, params?: NavParams[S]) => {

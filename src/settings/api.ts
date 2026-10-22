@@ -28,6 +28,12 @@ export interface LanguageView {
   system: Lang;
 }
 
+/** 界面大小的几档，百分比（和 `src-tauri/src/zoom.rs` 的 `STEPS` 一致） */
+export const ZOOM_STEPS = [90, 100, 110, 125, 150] as const;
+export type UiZoom = (typeof ZOOM_STEPS)[number];
+/** 快捷键：放大一档、缩小一档、回到 100% */
+export type ZoomStep = "in" | "out" | "reset";
+
 /** 菜单栏：标识和数值 / 仅标识 / 仅数值 / 不显示（只有 macOS 有） */
 export type MenubarStyle = "full" | "icon" | "numbers" | "hidden";
 
@@ -48,6 +54,10 @@ export interface AppInfo {
 export const settingsApi = {
   theme: () => invoke<ThemeView>("app_theme"),
   setTheme: (setting: Theme | null) => invoke<ThemeView>("set_theme", { setting }),
+  zoom: () => invoke<UiZoom>("ui_zoom"),
+  setZoom: (zoom: UiZoom) => invoke<UiZoom>("set_ui_zoom", { zoom }),
+  /** 新的一档由 Rust 那边算（按住快捷键时一连串的按键不会读到同一档） */
+  stepZoom: (step: ZoomStep) => invoke<UiZoom>("step_ui_zoom", { step }),
   language: () => invoke<LanguageView>("app_language"),
   setLanguage: (setting: Lang | null) => invoke<LanguageView>("set_language", { setting }),
   menubar: () => invoke<MenubarStyle>("menubar_style"),
@@ -76,6 +86,7 @@ export const settingsApi = {
  */
 export const APP_KEYS = {
   theme: "app:theme",
+  zoom: "app:zoom",
   language: "app:language",
   menubar: "app:menubar",
   noticeMode: "app:notice-mode",

@@ -184,8 +184,12 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     let b = WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
         .title(tr!("软件更新", "Software Update"))
         .initialization_script(i18n::init_script())
-        // 高度先随便给一个：网页画完量出内容有多高，再由 `update_fit` 定下来
-        .inner_size(UPDATE_WIDTH, 220.0)
+        // 高度先随便给一个：网页画完量出内容有多高，再由 `update_fit` 定下来。
+        // 宽度按界面大小放大（见 `window::fit`）
+        .inner_size(
+            UPDATE_WIDTH * crate::zoom::current().factor(),
+            220.0 * crate::zoom::current().factor(),
+        )
         .resizable(false)
         .minimizable(false)
         .maximizable(false)
@@ -196,7 +200,8 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         Some(dir) => b.data_directory(dir),
         None => b,
     };
-    b.build()?;
+    let w = b.build()?;
+    crate::zoom::zoom_new(&w);
     Ok(())
 }
 

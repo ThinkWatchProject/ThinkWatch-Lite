@@ -23,13 +23,14 @@ import { syncBackupText } from "@/settings/SyncBackupSection.i18n";
  * · `local`：只在连本机时有（诊断包生成在本机的数据目录里）。
  *
  * 设置页上一节（`SettingsGroup`）或一行（`SettingsRow` 的 `anchor`）的锚点就是这里的
- * `id`：语言、外观、菜单栏、开机启动、提醒是「通用」里的几行，更新、诊断包是「关于」
+ * `id`：语言、外观、界面大小、菜单栏、开机启动、提醒是「通用」里的几行，更新、诊断包是「关于」
  * 里的几行，其余各是一节（见 settings/kit.tsx 的 `jump`）。
  */
 export type SettingsSection =
   | "connections"
   | "language"
   | "appearance"
+  | "zoom"
   | "menubar"
   | "autostart"
   | "listen"
@@ -54,6 +55,7 @@ export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: "connections", title: pick(connText, (t) => t.title) },
   { id: "language", title: pick(generalText, (t) => t.language) },
   { id: "appearance", title: pick(generalText, (t) => t.appearance) },
+  { id: "zoom", title: pick(generalText, (t) => t.zoom) },
   // 只有 macOS 有菜单栏这一行（别处的通知区放不下两行数字）
   ...(isMac ? [{ id: "menubar" as const, title: pick(generalText, (t) => t.menubar) }] : []),
   { id: "autostart", title: pick(generalText, (t) => t.autostart) },

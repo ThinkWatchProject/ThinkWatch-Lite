@@ -10,8 +10,11 @@ import {
   HistoryIcon,
   PlusIcon,
   RotateCwIcon,
+  ScanIcon,
   SearchIcon,
   ZapIcon,
+  ZoomInIcon,
+  ZoomOutIcon,
 } from "lucide-react";
 import { textOf, type Lang } from "@/i18n";
 import { appText } from "@/App.i18n";
@@ -44,6 +47,7 @@ import { NotSentIcon } from "@/traffic/cells";
 import type { ConnView } from "@/connection/api";
 import { connText } from "@/connection/connection.i18n";
 import { profileName } from "@/connection/describe";
+import { stepZoom } from "@/settings/zoom";
 import { COMBOS, pageCombo, type Combo } from "./keys";
 import { paletteText } from "./palette.i18n";
 import { SETTINGS_SECTIONS } from "./sections";
@@ -234,6 +238,25 @@ export function buildItems(s: Sources): Item[] {
   action("rail", s.railOpen ? app.collapseRail : app.expandRail, <IconSidebar />, s.shell.toggleRail, {
     keywords: [appText.zh.collapseRail, appText.zh.expandRail, appText.en.collapseRail, appText.en.expandRail],
     combo: COMBOS.rail,
+  });
+  // 界面大小：只在搜的时候出现（平常按快捷键），设置页那一行跟着动（`ui-zoom-changed`）
+  action("zoom-in", t.zoomIn, <ZoomInIcon />, () => stepZoom("in"), {
+    keywords: other((x) => x.zoomIn),
+    alias: "zoom",
+    combo: COMBOS.zoomIn,
+    searchOnly: true,
+  });
+  action("zoom-out", t.zoomOut, <ZoomOutIcon />, () => stepZoom("out"), {
+    keywords: other((x) => x.zoomOut),
+    alias: "zoom",
+    combo: COMBOS.zoomOut,
+    searchOnly: true,
+  });
+  action("zoom-reset", t.zoomReset, <ScanIcon />, () => stepZoom("reset"), {
+    keywords: other((x) => x.zoomReset),
+    alias: "zoom",
+    combo: COMBOS.zoomReset,
+    searchOnly: true,
   });
   if (linked) {
     action("config-file", app.configFile, <FileCodeIcon />, s.shell.configFile, {

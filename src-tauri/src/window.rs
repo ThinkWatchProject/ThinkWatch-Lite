@@ -117,15 +117,32 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             state => matches!(state, crate::connection::LinkState::Connected { .. }),
         });
+    // **界面大小**（见 `zoom`）：窗口的大小和最小尺寸跟着它放大，放不下的夹在屏幕里。
+    // 窗口还没建出来，不知道会落在哪块屏幕上，先按主屏算；建好之后按它实际所在的那块
+    // 再定一次最小尺寸
+    let zoom = crate::zoom::current();
+    let room = app
+        .primary_monitor()
+        .ok()
+        .flatten()
+        .and_then(|m| crate::zoom::room_on(&m));
+    let (width, height) = crate::zoom::scaled(crate::zoom::MAIN_SIZE, zoom, room);
+    let (min_width, min_height) = crate::zoom::scaled(crate::zoom::MAIN_MIN, zoom, room);
     let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
         .initialization_script(format!(
             "{} window.__TW_WARM__ = {warm}; window.__TW_VIBRANT__ = {VIBRANT};",
             i18n::init_script()
         ))
-        .inner_size(1100.0, 720.0)
-        .min_inner_size(820.0, 560.0)
+        .inner_size(width, height)
+        .min_inner_size(min_width, min_height)
         .visible(!warm);
+    // 放大后的窗口占满了屏幕的一边：放在正中，不让系统按层叠的位置摆、一截落到屏幕外
+    let b = if room.is_some_and(|(rw, rh)| width >= rw || height >= rh) {
+        b.center()
+    } else {
+        b
+    };
     // 绿色版的 WebView2 数据放在它自己的文件夹里（见 `portable::webview_data_dir`）。
     // 三扇窗（这里、更新窗口、连接选择）要一致：同一个进程里的 WebView2 共用一个数据目录
     let b = match crate::portable::webview_data_dir() {
@@ -154,6 +171,12 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
                 .build(),
         );
     let w = b.build()?;
+    // **建好立刻缩放**，不等网页读设置：冷启动的窗口这时已经在屏幕上了，等网页来设的话，
+    // 先画出来的是 100% 的那一帧。缩放排在主线程的队列上，页面这时还没开始载入
+    if zoom != crate::zoom::Zoom::default() {
+        let _ = w.set_zoom(zoom.factor());
+        crate::zoom::fit_main_min(&w, zoom);
+    }
     if !warm {
         return reveal(app, &w);
     }
@@ -214,7 +237,13 @@ pub(crate) fn reveal(app: &tauri::AppHandle, w: &tauri::WebviewWindow) -> tauri:
 /// 标题栏多高不写死 —— 各版本不一样（Tahoe 上是 32 点），没有标题栏的窗
 /// 是 0。`contentLayoutRect` 给的正是没被标题栏盖住的那一块，和整扇窗户
 /// 一减就是要补上的数。
+///
+/// **宽高是 CSS 像素**（`width` 是 100% 时的宽度，`height` 是网页量出来的），按界面
+/// 大小（见 `zoom`）换成窗口的点：两扇小窗跟着主窗口一起缩放，150% 时 CSS 的 1px 是
+/// 1.5 个点。标题栏是系统画的，不跟着缩放，所以只乘网页那一块
 pub(crate) fn fit(window: &tauri::Window, width: f64, height: f64) -> tauri::Result<()> {
+    let z = crate::zoom::current().factor();
+    let (width, height) = (width * z, height * z);
     #[cfg(target_os = "macos")]
     {
         let w = window.clone();

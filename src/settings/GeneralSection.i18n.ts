@@ -1,7 +1,7 @@
 import { messages } from "@/i18n";
 import { isLinux, isWindows } from "@/platform";
 
-/** 设置 → 通用：语言、外观、菜单栏、开机启动、提醒 */
+/** 设置 → 通用：语言、外观、界面大小、菜单栏、开机启动、提醒 */
 export const generalText = messages(
   {
     title: "通用",
@@ -16,6 +16,11 @@ export const generalText = messages(
     dark: "深色",
     /** 选了跟随系统时，把系统现在是哪一档写出来 */
     systemNow: (name: string) => `系统当前为${name}。`,
+
+    zoom: "界面大小",
+    /** 三个快捷键，按平台写好的键名（⌘= / Ctrl+=） */
+    zoomKeys: (bigger: string, smaller: string, reset: string) =>
+      `按 ${bigger} 放大、${smaller} 缩小，${reset} 恢复为 100%。`,
 
     menubar: "菜单栏",
     menubarWhat: "数值为今日的 token 用量与费用。",
@@ -51,6 +56,10 @@ export const generalText = messages(
     light: "Light",
     dark: "Dark",
     systemNow: (name: string) => `The system is currently set to ${name.toLowerCase()}.`,
+
+    zoom: "Interface size",
+    zoomKeys: (bigger: string, smaller: string, reset: string) =>
+      `Press ${bigger} to enlarge, ${smaller} to reduce, or ${reset} to reset to 100%.`,
 
     menubar: "Menu bar",
     menubarWhat: "The numbers are today's token usage and cost.",

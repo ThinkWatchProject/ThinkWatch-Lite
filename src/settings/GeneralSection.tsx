@@ -12,14 +12,17 @@ import { invalidate, useResource } from "@/lib/resource";
 import { useTauriEvent } from "@/lib/tauriEvent";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
 import { isMac } from "@/platform";
+import { COMBOS, comboText } from "@/palette/keys";
 import {
   APP_KEYS,
   settingsApi,
+  ZOOM_STEPS,
   type LanguageView,
   type MenubarStyle,
   type NoticeMode,
   type ThemeChoice,
   type ThemeView,
+  type UiZoom,
 } from "./api";
 import { generalText } from "./GeneralSection.i18n";
 import { Loaded, SettingsCard, SettingsGroup, SettingsRow, useWrite } from "./kit";
@@ -39,6 +42,7 @@ export function GeneralSection() {
       <SettingsCard>
         <LanguageRow />
         <AppearanceRow />
+        <ZoomRow />
         {/*
           **只有 macOS 有这几档。**别处的通知区只认一张正方形图标（100% DPI 下
           16×16），塞不下两行数字 —— 那几行在右键菜单里给；「不显示」也不给，见
@@ -144,6 +148,41 @@ function AppearanceRow() {
               onChange={(c) => {
                 const setting = c === "system" ? null : c;
                 void set({ ...v, setting, current: setting ?? v.system });
+              }}
+            />
+          )}
+        </Loaded>
+      }
+    />
+  );
+}
+
+/**
+ * 界面大小：整个界面等比缩放（webview 的缩放，见 `src-tauri/src/zoom.rs`），存在这台
+ * 电脑上、不同步。快捷键（`shell/Workspace.tsx`）和命令面板换了档，Rust 发
+ * `ui-zoom-changed`，这一行跟着动。
+ */
+function ZoomRow() {
+  const t = useText(generalText);
+  const r = useResource(APP_KEYS.zoom, settingsApi.zoom);
+  const [, set] = useWrite(r, settingsApi.setZoom);
+  const { mutate } = r;
+  useTauriEvent<UiZoom>("ui-zoom-changed", (e) => void mutate(e.payload));
+  return (
+    <SettingsRow
+      anchor="zoom"
+      label={t.zoom}
+      description={t.zoomKeys(comboText(COMBOS.zoomIn), comboText(COMBOS.zoomOut), comboText(COMBOS.zoomReset))}
+      control={
+        <Loaded r={r} width="w-72">
+          {(zoom) => (
+            <Segmented<string>
+              label={t.zoom}
+              value={String(zoom)}
+              options={ZOOM_STEPS.map((s) => ({ id: String(s), label: `${s}%` }))}
+              onChange={(s) => {
+                const next = ZOOM_STEPS.find((z) => String(z) === s);
+                if (next !== undefined) void set(next);
               }}
             />
           )}

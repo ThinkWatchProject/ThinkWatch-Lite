@@ -29,6 +29,10 @@ pub struct Prefs {
     pub language: Option<Lang>,
     /// 界面外观。`None` 是跟随系统，理由同上。
     pub theme: Option<Theme>,
+    /// 界面大小（整个界面等比缩放，见 `zoom`）。**每台电脑各自的**：合适的大小取决于这台
+    /// 电脑的屏幕，不同步（不在 `client_prefs` 的列表里）。没写就是 100%
+    #[serde(default)]
+    pub zoom: crate::zoom::Zoom,
     /// 提醒：系统通知 / 仅在应用内 / 关闭。**只有这一个，不分类。**
     pub notices: Mode,
     /// 菜单栏上显示什么：标识和数值（出厂）/ 仅标识 / 仅数值 / 不显示。
@@ -54,6 +58,7 @@ impl Default for Prefs {
             check_updates: true,
             language: None,
             theme: None,
+            zoom: crate::zoom::Zoom::default(),
             notices: Mode::System,
             menubar: crate::menubar::Style::Full,
             client_locations: BTreeMap::new(),
@@ -102,6 +107,7 @@ fn from_fields(fields: &Fields) -> Prefs {
         check_updates: field(fields, "check_updates").unwrap_or(d.check_updates),
         language: field(fields, "language").unwrap_or(d.language),
         theme: field(fields, "theme").unwrap_or(d.theme),
+        zoom: field(fields, "zoom").unwrap_or(d.zoom),
         notices: field(fields, "notices").unwrap_or(d.notices),
         menubar: field(fields, "menubar").unwrap_or(d.menubar),
         // 一个客户端一个客户端地读：读不懂的只丢那一个
@@ -286,6 +292,7 @@ mod tests {
             check_updates: false,
             language: Some(Lang::Zh),
             theme: Some(Theme::Dark),
+            zoom: crate::zoom::Zoom::try_from(125).unwrap(),
             notices: Mode::App,
             menubar: crate::menubar::Style::Numbers,
             client_locations: BTreeMap::from([(
@@ -326,6 +333,7 @@ mod tests {
         assert_eq!(p.language, Some(Lang::En));
         assert!(!p.check_updates);
         assert_eq!(p.menubar, crate::menubar::Style::Full);
+        assert_eq!(p.zoom, crate::zoom::Zoom::default());
         assert!(p.client_locations.is_empty());
     }
 
@@ -394,13 +402,14 @@ mod tests {
         let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
-            br#"{"check_updates":"no","language":"ja","theme":1,"notices":"off","menubar":"icon"}"#,
+            br#"{"check_updates":"no","language":"ja","theme":1,"zoom":120,"notices":"off","menubar":"icon"}"#,
         )
         .unwrap();
         let p = load(&dir);
         assert!(p.check_updates);
         assert_eq!(p.language, None);
         assert_eq!(p.theme, None);
+        assert_eq!(p.zoom, crate::zoom::Zoom::default(), "不是那几档的按 100%");
         assert_eq!(p.notices, Mode::Off);
         assert_eq!(p.menubar, crate::menubar::Style::Icon);
     }

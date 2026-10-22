@@ -67,7 +67,23 @@ export const COMBOS = {
   // macOS 上和访达、邮件一样是 ⌘⌥S；别的平台 Ctrl+Alt 常被输入法和桌面拿去，用 Ctrl+B
   rail: isMac ? ["mod", "alt", "S"] : ["mod", "B"],
   shortcuts: ["?"],
+  // 界面大小：和浏览器一样。键帽上写 `=`（不按 Shift 的那个键），`+` 也认（`zoomStep`）
+  zoomIn: ["mod", "="],
+  zoomOut: ["mod", "-"],
+  zoomReset: ["mod", "0"],
 } as const satisfies Record<string, Combo>;
+
+/**
+ * 主修饰键加上的这个键是不是在换界面大小：`=` 和 `+` 放大一档（按不按 Shift 都算，
+ * 小键盘的 + 也是），`-` 缩小一档，`0` 回到 100%。判 `key` 不判 `code`：键盘布局
+ * 不同，这几个字符在的位置不同
+ */
+export function zoomStep(key: string): "in" | "out" | "reset" | null {
+  if (key === "=" || key === "+") return "in";
+  if (key === "-") return "out";
+  if (key === "0") return "reset";
+  return null;
+}
 
 /**
  * 占数字键的那几页：源列表从上往下，**设置除外**，最多九页。

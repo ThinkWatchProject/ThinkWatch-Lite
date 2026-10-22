@@ -52,6 +52,9 @@ export function ShortcutSheet({ open, onOpenChange }: { open: boolean; onOpenCha
               <Line label={t.openPalette} combos={[COMBOS.palette]} />
               <Line label={t.refresh} combos={[COMBOS.refresh]} />
               <Line label={t.rail} combos={[COMBOS.rail]} />
+              <Line label={t.zoomIn} combos={[COMBOS.zoomIn]} />
+              <Line label={t.zoomOut} combos={[COMBOS.zoomOut]} />
+              <Line label={t.zoomReset} combos={[COMBOS.zoomReset]} />
               <Line label={t.shortcuts} combos={[COMBOS.shortcuts]} />
             </Section>
             <Section title={t.pages}>

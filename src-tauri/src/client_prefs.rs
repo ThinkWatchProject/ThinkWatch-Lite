@@ -341,6 +341,20 @@ mod tests {
         assert_eq!(merged(&p, None)["check_updates"], true);
     }
 
+    /// 界面大小跟着这台电脑的屏幕走：不交上去，别处交下来的也不盖
+    #[test]
+    fn the_interface_size_stays_on_this_computer() {
+        let big = crate::zoom::Zoom::try_from(150).unwrap();
+        let p = Prefs {
+            zoom: big,
+            ..Prefs::default()
+        };
+        assert!(!general(&p).contains_key("zoom"));
+        assert!(same(&Prefs::default(), &p));
+        let got = overlay(&Prefs::default(), &serde_json::json!({ "zoom": 150 }));
+        assert_eq!(got.zoom, crate::zoom::Zoom::default());
+    }
+
     #[test]
     fn sameness_only_looks_at_the_shared_settings() {
         let a = Prefs::default();
