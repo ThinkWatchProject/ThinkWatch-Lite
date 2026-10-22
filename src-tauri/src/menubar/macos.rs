@@ -26,11 +26,10 @@ use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
     NSAppearanceCustomization, NSApplication, NSAttributedStringNSStringDrawing, NSBezierPath,
     NSColor, NSCompositingOperation, NSControlStateValueOff, NSControlStateValueOn, NSEvent,
-    NSEventMask, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightMedium,
-    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGradient,
-    NSGraphicsContext, NSImage, NSImageSymbolConfiguration, NSLineCapStyle, NSLineJoinStyle,
-    NSMenu, NSMenuDelegate, NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
-    NSWorkspace,
+    NSEventMask, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightRegular,
+    NSFontWeightSemibold, NSForegroundColorAttributeName, NSGradient, NSGraphicsContext, NSImage,
+    NSImageSymbolConfiguration, NSLineCapStyle, NSLineJoinStyle, NSMenu, NSMenuDelegate,
+    NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength, NSWorkspace,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint,
@@ -439,8 +438,9 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
         .numbers
         .clone()
         .unwrap_or_else(|| ("—".to_string(), "—".to_string()));
-    let top_font = mono(10.0, weight(Weight::Semibold));
-    let bottom_font = mono(10.0, weight(Weight::Medium));
+    // 和菜单栏上别的数字（网速、电量这些）一个样子：9pt 常规，两行一样
+    let font = mono(9.0, weight(Weight::Regular));
+    let (top_font, bottom_font) = (font.clone(), font);
     let numbers_w = if show_numbers {
         let a = attributed(&top, &top_font, &NSColor::labelColor())
             .size()
@@ -508,7 +508,7 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
             let a = attributed(&top, &top_font, &color);
             let b = attributed(&bottom, &bottom_font, &color);
             let right = x + numbers_w;
-            let line = 10.5;
+            let line = 9.5;
             let y0 = (height - line * 2.0) / 2.0 - 0.5;
             a.drawAtPoint(NSPoint::new(right - a.size().width, y0));
             b.drawAtPoint(NSPoint::new(right - b.size().width, y0 + line));
@@ -954,7 +954,6 @@ pub fn inform(mtm: MainThreadMarker, title: &str, body: &str) {
 #[derive(Clone, Copy)]
 enum Weight {
     Regular,
-    Medium,
     Semibold,
 }
 
@@ -963,7 +962,6 @@ fn weight(w: Weight) -> f64 {
     unsafe {
         match w {
             Weight::Regular => NSFontWeightRegular,
-            Weight::Medium => NSFontWeightMedium,
             Weight::Semibold => NSFontWeightSemibold,
         }
     }
