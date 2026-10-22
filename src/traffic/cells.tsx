@@ -5,7 +5,7 @@ import { keyText } from "@/KeyLabel";
 import { cn } from "@/lib/utils";
 import type { NotSent } from "@/requestRouting";
 import type { RequestRow } from "@/types";
-import { IconBusy, IconDenied, IconLimitReached, IconNoUpstream, IconRemote } from "@/ui/icons";
+import { IconBusy, IconDenied, IconLimitReached, IconNoModel, IconNoUpstream, IconRemote } from "@/ui/icons";
 import { ClientLogo } from "@/ui/logos";
 import { Tip } from "@/ui/tip";
 import { coreNow, onTick, stopwatch } from "./clock";
@@ -99,6 +99,8 @@ export function RowKeyCell({ r, hints }: { r: RequestRow; hints: boolean }) {
 const NOT_SENT: Record<NotSent, { Icon: typeof IconDenied; color: string }> = {
   denied: { Icon: IconDenied, color: "text-destructive" },
   unavailable: { Icon: IconNoUpstream, color: "text-muted-foreground" },
+  model: { Icon: IconNoModel, color: "text-muted-foreground" },
+  unrouted: { Icon: IconNoUpstream, color: "text-muted-foreground" },
   limited: { Icon: IconLimitReached, color: "text-warning" },
   busy: { Icon: IconBusy, color: "text-muted-foreground" },
   throttled: { Icon: IconBusy, color: "text-muted-foreground" },
@@ -108,7 +110,7 @@ const NOT_SENT: Record<NotSent, { Icon: typeof IconDenied; color: string }> = {
 
 /**
  * 没有上游接下的请求在上游标志的位置上画什么：被规则拒绝是禁止符号（和路由图上
- * 「拒绝」那个节点同一个），没有可用的上游是划掉的上游，密钥的用量到了上限是顶到线的
+ * 「拒绝」那个节点同一个），没有可用的上游和没选出去向的是划掉的上游，模型用不了是划掉的放大镜，密钥的用量到了上限是顶到线的
  * 箭头，上游都满着是沙漏。上游都在限流暂停、几种都有的同样是沙漏（等过了没等到），上游
  * 到了自己的用量上限和密钥的一样是顶到线的箭头。和上游标志一样大，名字对得齐。
  *

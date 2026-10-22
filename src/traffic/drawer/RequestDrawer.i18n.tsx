@@ -128,6 +128,8 @@ export const requestDrawerText = messages(
     deniedAfterPick: (rule: string) => `选定上游后，规则「${rule}」拒绝了此请求，未发往任何上游。`,
     deniedBeforePick: (rule: string) => `选定上游之前，规则「${rule}」已拒绝此请求，未发往任何上游。`,
     unavailable: "规则选中的上游均无法服务此请求，未发往任何上游。",
+    model: "请求的模型无法使用，未发往任何上游。",
+    unrouted: "未能为此请求选出去向，未发往任何上游。",
     /** 前面几跳里有满着跳过的：它们不是上游的失败 */
     switched: (n: number) => `已自动切换上游：前 ${n} 次尝试未接下此请求。`,
     /** 最后接下它的是前面试过的一家：等它恢复之后发了过去 */
@@ -300,6 +302,8 @@ export const requestDrawerText = messages(
     deniedBeforePick: (rule: string) =>
       `Rule “${rule}” denied this request before an upstream was chosen; it was not sent to any upstream.`,
     unavailable: "No upstream the rule selected can serve this request; it was not sent to any upstream.",
+    model: "The requested model cannot be used; the request was not sent to any upstream.",
+    unrouted: "No destination could be chosen for this request; it was not sent to any upstream.",
     switched: (n: number) =>
       n === 1
         ? "Switched upstreams automatically: the first attempt did not take this request."

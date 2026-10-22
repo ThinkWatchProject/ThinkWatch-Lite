@@ -247,6 +247,10 @@ function noteText(n: RoutingNote, t: (typeof requestDrawerText)["zh"]): string {
       return t.deniedBeforePick(n.rule);
     case "unavailable":
       return t.unavailable;
+    case "model":
+      return t.model;
+    case "unrouted":
+      return t.unrouted;
     case "pending":
       return t.routingPending;
     case "none":

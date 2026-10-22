@@ -26,6 +26,7 @@ export { Plug as IconMcp } from "lucide-react"; // MCP —— 给客户端接上
 export { Puzzle as IconPlugin } from "lucide-react"; // 插件 —— 拼进链路里的一块（插头已经是 MCP）
 export { Server as IconServer } from "lucide-react"; // 上游 —— 一摞机器
 export { ServerOff as IconNoUpstream } from "lucide-react"; // 没有可用的上游 —— 那一摞机器划掉
+export { SearchX as IconNoModel } from "lucide-react"; // 请求的模型用不了 —— 找不到
 export { Ban as IconDenied } from "lucide-react"; // 被规则拒绝 —— 禁止符号
 export { ArrowUpToLine as IconLimitReached } from "lucide-react"; // 密钥的用量到了上限 —— 顶到那条线
 export { Hourglass as IconBusy } from "lucide-react"; // 上游都满着、等不到空位 —— 沙漏

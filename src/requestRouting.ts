@@ -12,6 +12,16 @@ const KEY_LIMIT = "gw.key_limit.";
 /** 能服务的上游都满着、等过了也没空出位置：`gw.busy_all {upstreams}` */
 const BUSY_ALL = "gw.busy_all";
 /**
+ * 模型过不了准入时 core 说的那几句：`gw.model.*`（写错了、没有上游提供、密钥不让用、别名或
+ * 指定模型对不上），WebSocket 一轮里别名对不上的是 `gw.ws.alias_unserved*`。注意不是
+ * `gw.models.*`（那是查模型清单的）。`gw.model.no_upstream_available` 也不算：那是规则选中的
+ * 上游都不提供这个模型，归「无可用上游」
+ */
+const MODEL = ["gw.model.", "gw.ws.alias_unserved"];
+const SELECTED_CANNOT_SERVE = "gw.model.no_upstream_available";
+/** 规则还没做出决定（没有一条命中、求不了值），或者一个上游都还没配 */
+const UNROUTED: ReadonlySet<string> = new Set(["gw.route.failed", "gw.config.no_upstreams"]);
+/**
  * 能服务的上游都暂时发不出去、等到期限也没有一家恢复：都在限流暂停（`gw.wait.rate_limited`）、
  * 都到了分钟或小时的用量上限（`gw.wait.window_full`）、都用完了天周月的用量上限
  * （`gw.wait.used_up`，不等）、几种都有（`gw.wait.mixed`）。和 `gw.busy_all` 一样，上游那一格
@@ -29,6 +39,8 @@ const WAIT: Record<string, NotSent> = {
  *
  * · `denied`：规则拒绝了它（选定上游之前）
  * · `unavailable`：规则选中的上游一个都接不了（停用、不在范围内、不提供这个模型）
+ * · `model`：请求的模型过不了准入（名字写错了、没有上游提供、密钥不让用）
+ * · `unrouted`：没有为它选出去向（没有规则命中、规则求不了值、还没配上游）
  * · `limited`：这把网关密钥的用量上限拒绝了它（选定上游之后、发出之前）
  * · `busy`：能服务它的上游都满着（各自的并发上限），等过了也没空出位置
  * · `throttled`：能服务它的上游都因 429 暂停着，等过了也没恢复
@@ -39,15 +51,22 @@ const WAIT: Record<string, NotSent> = {
  *
  * **上游是空的就是没有发往任何上游**：core 只在请求一个上游都不会去时把上游记成空的
  * （本地应答另有 `local`）。是哪一种看失败的那一句：规则拒绝的是 `gw.route.denied`，
- * 用量上限的是 `gw.key_limit.*`，其余是选中的上游接不了。
+ * 用量上限的是 `gw.key_limit.*`，模型的是 `gw.model.*`，没选出去向的是 `gw.route.failed`、
+ * `gw.config.no_upstreams`，其余是选中的上游接不了。
  *
  * **`busy` 的上游不是空的**：那一行归在尝试链的最后一跳，也就是最后看过、满着的那一家。
  * 可那一家一个字节都没收到，结局也不是它的失败 —— 这一格写「并发已满」，不写它的名字
  */
-export type NotSent = "denied" | "unavailable" | "limited" | "busy" | "throttled" | "full" | "timeout";
-
-/** 等过了、没有一家上游接下的那几种：上游那一格不是空的，也不写它的名字 */
-const WAITED_OUT: ReadonlySet<NotSent> = new Set(["busy", "throttled", "full", "timeout"]);
+export type NotSent =
+  | "denied"
+  | "unavailable"
+  | "model"
+  | "unrouted"
+  | "limited"
+  | "busy"
+  | "throttled"
+  | "full"
+  | "timeout";
 
 export function notSent(r: { local?: boolean; provider: string; error?: Msg | null }): NotSent | null {
   if (r.local || !r.error) return null;
@@ -55,8 +74,11 @@ export function notSent(r: { local?: boolean; provider: string; error?: Msg | nu
   const waited = WAIT[r.error.code];
   if (waited) return waited;
   if (r.provider !== "") return null;
-  if (r.error.code === DENIED) return "denied";
-  return r.error.code.startsWith(KEY_LIMIT) ? "limited" : "unavailable";
+  const code = r.error.code;
+  if (code === DENIED) return "denied";
+  if (code !== SELECTED_CANNOT_SERVE && MODEL.some((p) => code.startsWith(p))) return "model";
+  if (UNROUTED.has(code)) return "unrouted";
+  return code.startsWith(KEY_LIMIT) ? "limited" : "unavailable";
 }
 
 /**
@@ -98,6 +120,8 @@ export interface Hop {
  * · `denied_after_pick`：唯一的那一跳被规则 `rule` 拒绝：没有发往任何上游
  * · `denied_before_pick`：选定上游之前规则 `rule` 就拒绝了它：没有发往任何上游
  * · `unavailable`：规则选中的上游都接不了：没有发往任何上游
+ * · `model`：请求的模型过不了准入：没有发往任何上游
+ * · `unrouted`：没有为它选出去向：没有发往任何上游
  * · `pending`：还在跑，路由还没有结论
  * · `none`：没有尝试记录（上游应答之前客户端就走了、被请求防护挡下……）
  *
@@ -112,7 +136,7 @@ export type RoutingNote =
   | { kind: "failover_denied"; failed: number; rule: string }
   | { kind: "denied_after_pick"; rule: string }
   | { kind: "denied_before_pick"; rule: string }
-  | { kind: "unavailable" }
+  | { kind: "unavailable" | "model" | "unrouted" }
   | { kind: "pending" }
   | { kind: "none" };
 
@@ -171,8 +195,9 @@ export function routingFacts(
   if (ruleDenied || deniedBy) {
     const text = denyReason(deniedHop?.error) ?? denyReason(r.error);
     reason = text ? { text } : null;
-  } else if ((why === "unavailable" || why === "limited" || (why && WAITED_OUT.has(why))) && r.error) {
-    // 用量上限的那一句说清是哪一条、用了多少、什么时候重置；满着的那一句列出是哪几家
+  } else if (why && why !== "denied" && r.error) {
+    // 用量上限的那一句说清是哪一条、用了多少、什么时候重置；满着的那一句列出是哪几家；
+    // 模型的那一句说清是哪个名字、为什么用不了
     reason = { msg: r.error };
   }
 
@@ -182,7 +207,7 @@ export function routingFacts(
     note = { kind: why, tried: attempts.filter((a) => !skippedHop(a)).length };
   } else if (n === 0) {
     if (ruleDenied) note = { kind: "denied_before_pick", rule: routing.rule };
-    else if (why === "unavailable") note = { kind: "unavailable" };
+    else if (why === "unavailable" || why === "model" || why === "unrouted") note = { kind: why };
     else if (why === "limited") note = { kind: "limited" };
     else note = { kind: running ? "pending" : "none" };
   } else if (deniedBy) {

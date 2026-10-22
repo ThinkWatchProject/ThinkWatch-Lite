@@ -62,6 +62,21 @@ describe("没有发往任何上游的请求", () => {
     expect(notSent({ provider: "", error: { code: "gw.route.all_selected_disabled", args: {}, text: "" } })).toBe("unavailable");
   });
 
+  it("模型过不了准入的、没选出去向的：各是一种，gw.models.* 不算模型的", () => {
+    const m = (code: string) => ({ provider: "", error: { code, args: {}, text: "" } });
+    expect(notSent(m("gw.model.unknown"))).toBe("model");
+    expect(notSent(m("gw.model.not_allowed_rewritten"))).toBe("model");
+    expect(notSent(m("gw.ws.alias_unserved"))).toBe("model");
+    expect(notSent(m("gw.models.empty"))).toBe("unavailable");
+    expect(notSent(m("gw.model.no_upstream_available"))).toBe("unavailable");
+    expect(notSent(m("gw.route.failed"))).toBe("unrouted");
+    expect(notSent(m("gw.config.no_upstreams"))).toBe("unrouted");
+    const err = { code: "gw.model.unknown", args: { model: "claude-x" }, text: "" };
+    const f = routingFacts(row({ rule: "", attempts: [] }, { provider: "", error: err }), false)!;
+    expect(f.reason).toEqual({ msg: err });
+    expect(f.note).toEqual({ kind: "model" });
+  });
+
   it("密钥的用量上限拒绝的：上游是空的，失败的那一句是 gw.key_limit.*", () => {
     expect(notSent({ provider: "", error: limited })).toBe("limited");
     expect(notSent({ provider: "", error: { ...limited, code: "gw.key_limit.requests_rolling" } })).toBe("limited");

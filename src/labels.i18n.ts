@@ -88,6 +88,8 @@ export const labelsText = messages(
     notSent: {
       denied: "规则拒绝",
       unavailable: "无可用上游",
+      model: "模型不可用",
+      unrouted: "未能路由",
       limited: "用量上限",
       busy: "并发已满",
       throttled: "上游限流中",
@@ -199,6 +201,8 @@ export const labelsText = messages(
     notSent: {
       denied: "Denied",
       unavailable: "No upstream",
+      model: "Model unavailable",
+      unrouted: "Not routed",
       limited: "Usage limit",
       busy: "At capacity",
       throttled: "Rate limited",
