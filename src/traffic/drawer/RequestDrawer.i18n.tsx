@@ -103,6 +103,7 @@ export const requestDrawerText = messages(
     heldRoute: "沿用本轮开头的路由决定",
     stayedTurn: "同一轮内留在上次回答的上游",
     stayedCache: "上次回答的缓存仍有效，留在该上游",
+    stayedSealed: "对话带有该上游加密的内容，只能送回该上游",
     /** 选定上游之后才判断、拒绝了此请求的规则 */
     deniedBy: "拒绝规则",
     /** 规则写的拒绝理由，或者选中的上游为何都无法服务 */
@@ -275,6 +276,7 @@ export const requestDrawerText = messages(
     heldRoute: "Kept the route decided at the start of this turn",
     stayedTurn: "Stayed with the upstream that answered earlier in this turn",
     stayedCache: "Stayed with the upstream that answered last, while its cache is warm",
+    stayedSealed: "Sent back to the upstream that encrypted content in this conversation",
     deniedBy: "Denied by",
     reason: "Reason",
     attempts: "Attempts",

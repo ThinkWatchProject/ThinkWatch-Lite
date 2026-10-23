@@ -5487,7 +5487,7 @@ gateway_reachable: Array<string>, };
 /**
  * 留在上次回答这段对话的那一家的理由。
  */
-export type Stay = "turn" | "cache";
+export type Stay = "turn" | "cache" | "sealed";
 
 /**
  * 观测这一层在不在记。

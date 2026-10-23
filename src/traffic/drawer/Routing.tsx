@@ -70,6 +70,7 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                 {f.continuity.heldRoute && <span>{t.heldRoute}</span>}
                 {f.continuity.stayed === "turn" && <span>{t.stayedTurn}</span>}
                 {f.continuity.stayed === "cache" && <span>{t.stayedCache}</span>}
+                {f.continuity.stayed === "sealed" && <span>{t.stayedSealed}</span>}
               </span>
             }
           />
