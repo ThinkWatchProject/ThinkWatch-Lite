@@ -56,18 +56,38 @@ export function Logo({
  */
 export function LetterTile({ name, size = 16, className }: { name: string; size?: number; className?: string }) {
   const ch = Array.from(name.trim().replace(/^[^\p{L}\p{N}]+/u, ""))[0]?.toUpperCase() ?? "?";
+  // 画成 SVG 而不是带字的 span：基线在底边，和标志一样，夹在一行字里时对齐方式通用
   return (
-    <span
+    <svg
       data-slot="logo"
       aria-hidden
-      className={cn(
-        "inline-flex shrink-0 items-center justify-center rounded-[4px] border border-current/35 font-semibold leading-none",
-        className,
-      )}
-      style={{ width: size, height: size, fontSize: Math.max(8, Math.round(size * 0.58)) }}
+      viewBox={`0 0 ${size} ${size}`}
+      width={size}
+      height={size}
+      className={cn("shrink-0", className)}
     >
-      {ch}
-    </span>
+      <rect
+        x={0.5}
+        y={0.5}
+        width={size - 1}
+        height={size - 1}
+        rx={3.5}
+        fill="none"
+        stroke="currentColor"
+        strokeOpacity={0.35}
+      />
+      <text
+        x={size / 2}
+        y={size / 2}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill="currentColor"
+        fontSize={Math.max(8, Math.round(size * 0.58))}
+        fontWeight={600}
+      >
+        {ch}
+      </text>
+    </svg>
   );
 }
 
