@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { useHitTone, useMarker, type Mark } from "@/security/Highlight";
 import { prettyJson } from "@/prettyJson";
 import { BodyText } from "./drawer/Payload";
+import { Markdown } from "./Markdown";
 import type {
   RequestRow,
   Transcript,
@@ -687,7 +688,8 @@ export function BlockLine({ b }: { b: Block }) {
   const t = useText(conversationText);
   return (
     <Line label={b.kind === "said" ? roleLabel(b.role, t) : undefined}>
-      <Parts parts={b.parts} />
+      {/* 用户自己打的字原样显示，模型写的按 Markdown 排 */}
+      <Parts parts={b.parts} plain={b.kind === "said" && b.role === "user"} />
     </Line>
   );
 }
@@ -731,7 +733,7 @@ function EarlierBlocks({ messages }: { messages: readonly TranscriptMessage[] })
 }
 
 /** 一块里的几段，上下排。相邻的图片和附件排成一行 */
-export function Parts({ parts }: { parts: readonly TranscriptPart[] }) {
+export function Parts({ parts, plain = false }: { parts: readonly TranscriptPart[]; plain?: boolean }) {
   const runs: (TranscriptPart | TranscriptPart[])[] = [];
   for (const p of parts) {
     const chip = p.kind === "image" || p.kind === "other";
@@ -749,17 +751,17 @@ export function Parts({ parts }: { parts: readonly TranscriptPart[] }) {
             ))}
           </div>
         ) : (
-          <Part key={i} p={x} />
+          <Part key={i} p={x} plain={plain} />
         ),
       )}
     </div>
   );
 }
 
-function Part({ p }: { p: TranscriptPart }) {
+function Part({ p, plain }: { p: TranscriptPart; plain: boolean }) {
   switch (p.kind) {
     case "text":
-      return <Prose text={p.text} />;
+      return <Prose text={p.text} plain={plain} />;
     case "thinking":
       return <Thinking text={p.text} />;
     case "tool_call":
@@ -773,27 +775,34 @@ function Part({ p }: { p: TranscriptPart }) {
 }
 
 /**
- * 说的话：原样的空白和换行，不当 Markdown 解析（模型写的 `**` 和 `#` 就是那几个字符）。
- * 长的先显示开头，「展开全部」看整段。
+ * 说的话：模型写的（回答、思考、系统提示）按 Markdown 排（`Markdown`）；`plain` 的（用户打的字）
+ * 原样的空白和换行。长的先显示开头，「展开全部」看整段。
  */
-export function Prose({ text, muted = false }: { text: string; muted?: boolean }) {
+export function Prose({ text, muted = false, plain = false }: { text: string; muted?: boolean; plain?: boolean }) {
   const t = useText(conversationText);
   const [all, setAll] = useState(false);
   const head = useMemo(() => clip(text, PROSE), [text]);
   const cut = head !== null && !all;
   const mark = useMarker();
+  const ellipsis = <span className="text-muted-foreground"> …</span>;
   return (
     <div>
       {/* 上边 2px：一行字的中线和左边标签的中线对齐（标签那一格 24px 高，字的行高 19.5px） */}
-      <p
-        className={cn(
-          "pt-0.5 whitespace-pre-wrap wrap-break-word",
-          muted ? "text-muted-foreground" : "text-foreground",
-        )}
-      >
-        {mark(cut ? head : text)}
-        {cut && <span className="text-muted-foreground"> …</span>}
-      </p>
+      {plain ? (
+        <p
+          className={cn(
+            "pt-0.5 whitespace-pre-wrap wrap-break-word",
+            muted ? "text-muted-foreground" : "text-foreground",
+          )}
+        >
+          {mark(cut ? head : text)}
+          {cut && ellipsis}
+        </p>
+      ) : (
+        <div className={cn("pt-0.5", muted ? "text-muted-foreground" : "text-foreground")}>
+          <Markdown text={cut ? head : text} tail={cut ? ellipsis : undefined} />
+        </div>
+      )}
       {head !== null && (
         <Button
           variant="ghost"

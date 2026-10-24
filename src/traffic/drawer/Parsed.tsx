@@ -22,6 +22,7 @@ import {
   TextFold,
 } from "../Conversation";
 import { conversationText } from "../Conversation.i18n";
+import { Markdown } from "../Markdown";
 import { argsPreview, blocksOf, clip, splitRestart, type ToolCall } from "../transcript";
 import { contentText } from "./Content.i18n";
 import { AnswerReader, readRequest, type ClientDialect } from "./dialect";
@@ -367,7 +368,7 @@ function Growing({ text, live }: { text: string; live: boolean }) {
 }
 
 /**
- * 回答的正文：原样的空白和换行，不当 Markdown。**收到时就在看的，不收起**：读到一半折回开头
+ * 回答的正文：按 Markdown 排（`Markdown`），在长时光标跟在最后一行后面。**收到时就在看的，不收起**：读到一半折回开头
  * 没有道理；之后点开的长回答照常先显示开头
  */
 function AnswerText({ text, live, streaming }: { text: string; live: boolean; streaming: boolean }) {
@@ -378,10 +379,12 @@ function AnswerText({ text, live, streaming }: { text: string; live: boolean; st
   const cut = head !== null && !all;
   return (
     <div>
-      <p className="pt-0.5 whitespace-pre-wrap wrap-break-word text-foreground">
-        <Growing text={cut ? head : text} live={live} />
-        {cut && <span className="text-muted-foreground"> …</span>}
-      </p>
+      <div className="pt-0.5 text-foreground">
+        <Markdown
+          text={cut ? head : text}
+          tail={live ? <Caret /> : cut ? <span className="text-muted-foreground"> …</span> : undefined}
+        />
+      </div>
       {head !== null && (
         <Button variant="ghost" size="xs" className="mt-0.5 -ml-2 text-muted-foreground" onClick={() => setAll((a) => !a)}>
           {all ? c.collapse : c.showAll}
