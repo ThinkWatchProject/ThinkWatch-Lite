@@ -83,6 +83,39 @@ fn windows(rows: &[Row]) -> Vec<(&str, &WindowRow)> {
         .collect()
 }
 
+/// 升级之后旧 core 还在排空：**它手上的算进进行中的个数**，不单独提示；它们没有实时行，
+/// 落在「另有 N 个」里。菜单栏照样标成忙
+#[test]
+fn requests_left_on_the_draining_core_count_as_in_progress() {
+    with_lang(Lang::Zh, || {
+        let mut s = running();
+        s.live = vec![Live {
+            id: 1,
+            started_ms: NOW - 1_000,
+            ..Default::default()
+        }];
+        s.draining = 2;
+        let (bar, rows) = build(&s, Style::Full);
+        assert!(bar.busy);
+        assert!(bar.tooltip.contains("3 个请求进行中"), "{}", bar.tooltip);
+        let count = rows.iter().find_map(|r| match r {
+            Row::Section { title, right } if title == "进行中" => right.clone(),
+            _ => None,
+        });
+        assert_eq!(count.as_deref(), Some("3"));
+        assert_eq!(
+            item(&rows, "live-more").map(|i| i.title.as_str()),
+            Some("另有 2 个")
+        );
+
+        // 只剩旧 core 手上的
+        s.live.clear();
+        let (bar, rows) = build(&s, Style::Icon);
+        assert!(bar.busy);
+        assert!(outline(&rows).contains(&"[进行中]".to_string()));
+    });
+}
+
 /// 网关在运行、什么都有：打开主界面在最上面；提醒；今日、额度连在一起；进行中；策略组和
 /// 两个复制；有新版本时「安装新版本」在设置前面；退出
 #[test]

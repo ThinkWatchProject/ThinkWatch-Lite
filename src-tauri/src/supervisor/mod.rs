@@ -27,19 +27,76 @@ const HEALTHY_AFTER: Duration = Duration::from_secs(30);
 /// 进程起来之后，控制面多久还不答应就算这次没起来：换掉它，按一次失败算。
 const READY_WITHIN: Duration = Duration::from_secs(15);
 
-/// 问一次控制面答不答应。
+/// 新起来的 core 接管一个等接替者的旧 core，最多给它多久（方案 9.4 的接管超时，从连上旧 core
+/// 到提交）。这段里控制面还是旧 core 在答（[`Answer::HandingOver`]），**算启动中，不算没答应**
+const TAKEOVER_WITHIN: Duration = Duration::from_secs(30);
+
+/// 问一次控制面，答成什么样（见 [`Probe`]）
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Answer {
+    /// 这一个 core 答应了
+    Ready,
+    /// 还没人答，或者答不上来
+    NotYet,
+    /// 答话的是另一个**正在交接**的 core（等接替者的旧 core、接管还没交出控制面）：这一个
+    /// 正在接管它，接着等
+    HandingOver,
+}
+
+/// 问一次控制面答不答应。参数是刚起来的这个 core 的 pid。
 ///
 /// **守护不认识控制面**，由外面给（lib.rs 里是一次带超时的 `/status`）。这样
 /// 测试可以换成一个假的，不用真起一个会说 HTTP 的 core。
-pub type Probe = Arc<dyn Fn() -> Pin<Box<dyn Future<Output = bool> + Send>> + Send + Sync>;
+///
+/// **要带 pid**：升级不断线以后，新 core 刚起来时控制面那个 socket 上答话的可能还是等着
+/// 被接替的旧 core（见 [`readiness`]）。只问「有没有人答」的话，旧 core 一答就报了「运行中」，
+/// 界面去连的是旧的那个
+pub type Probe = Arc<dyn Fn(u32) -> Pin<Box<dyn Future<Output = Answer> + Send>> + Send + Sync>;
 
-/// 把一个返回 future 的闭包包成 [`Probe`]。
+/// 把一个只回答「答没答应」的闭包包成 [`Probe`]（测试里用：不看是谁答的）。
 pub fn probe<F, Fut>(f: F) -> Probe
 where
     F: Fn() -> Fut + Send + Sync + 'static,
     Fut: Future<Output = bool> + Send + 'static,
 {
-    Arc::new(move || -> Pin<Box<dyn Future<Output = bool> + Send>> { Box::pin(f()) })
+    let f = Arc::new(f);
+    probe_pid(move |_| {
+        let f = f.clone();
+        async move {
+            if f().await {
+                Answer::Ready
+            } else {
+                Answer::NotYet
+            }
+        }
+    })
+}
+
+/// 把一个按 pid 回答的闭包包成 [`Probe`]。
+pub fn probe_pid<F, Fut>(f: F) -> Probe
+where
+    F: Fn(u32) -> Fut + Send + Sync + 'static,
+    Fut: Future<Output = Answer> + Send + 'static,
+{
+    Arc::new(move |pid| -> Pin<Box<dyn Future<Output = Answer> + Send>> { Box::pin(f(pid)) })
+}
+
+/// 控制面答了话（`/status`），对刚起来的 `child` 来说算什么。
+///
+/// - 答话的就是它：答应了；
+/// - 答话的是另一个 core、它说自己在等接替者或者正被接管：`child` 正在接手它，接着等；
+/// - 答话的是另一个 core、它不在交接（多出来的一个、上一次没退干净的）：**和以前一样算答应**。
+///   那种时候 `child` 取不到锁，马上会以「已有实例在运行」退出，守护照崩溃处理 —— 不在这里
+///   另立一套判断；pid 对不上也可能只是开发时套了一层不 `exec` 的启动脚本
+pub fn readiness(child: u32, answered_by: u32, handover: tw_api::HandoverState) -> Answer {
+    use tw_api::HandoverState;
+    if answered_by == child {
+        return Answer::Ready;
+    }
+    match handover {
+        HandoverState::Armed | HandoverState::TakingOver => Answer::HandingOver,
+        HandoverState::Idle | HandoverState::Draining => Answer::Ready,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -220,6 +277,11 @@ pub struct Supervisor {
     /// 叫醒。只是一个标志的话，那两段里没人看它 —— 以前切到远程时，一个还在启动的 core
     /// 照样起来、照样占着网关端口，一个在退避里的睡醒了照样被拉起来
     stopping: watch::Sender<bool>,
+    /// 手上这个 core 已经 arm 了，要起一个新的来接替它（见 [`Supervisor::hand_over`]）。
+    ///
+    /// **和 `intentional` 的区别在于旧的那个不等它退出**：它还要接着把手上的请求做完，可能
+    /// 要几十分钟；守护循环放开它（不再等、不杀），当场起下一个
+    handing_over: watch::Sender<bool>,
     /// 起 core 之前补上用户配的环境变量。见 [`user_env`]。
     ///
     /// 测试里不开：那要真去跑一次用户的登录 shell。
@@ -274,6 +336,7 @@ impl Supervisor {
             state: watch::channel(CoreState::Stopped).0,
             intentional: Arc::new(AtomicBool::new(false)),
             stopping: watch::channel(false).0,
+            handing_over: watch::channel(false).0,
             user_env: false,
         }
     }
@@ -430,6 +493,41 @@ impl Supervisor {
         Ok(())
     }
 
+    /// 手上这个 core 已经 arm 了（在等接替者）：放开它，当场起一个新的来接替。
+    ///
+    /// 「重新启动网关」（方案 R5）和更新没装成、要把 arm 过的 core 接回来时用。**旧的那个不停**：
+    /// 守护循环不再等它、不杀它，它接着把手上的请求做完，新起来的 core 连上它、接过监听，它
+    /// 排空了自己退出。新的那个起来之前、接管的那几秒里网关照常由旧的服务。
+    ///
+    /// 不计入退避（和 `request_restart` 一样是我们要求的）。新的那个接管失败、退出了，守护按
+    /// 崩溃处理：再起一个，再接管一次（旧的那个这时回到等接替者，方案 F4）
+    pub async fn hand_over(&self) -> anyhow::Result<()> {
+        let pid = match self.state() {
+            CoreState::Running { pid } => pid,
+            CoreState::Starting | CoreState::Restarting { .. } | CoreState::SafeMode { .. } => {
+                anyhow::bail!(tr!(
+                    "core 正在启动，请稍后再试",
+                    "Core is starting; try again in a moment"
+                ))
+            }
+            CoreState::Stopped | CoreState::Exited { .. } | CoreState::Failed { .. } => {
+                anyhow::bail!(tr!(
+                    "core 未运行，无法重启",
+                    "Core is not running and cannot be restarted"
+                ))
+            }
+        };
+        if self.user_env {
+            tokio::spawn(user_env::read_ahead());
+        }
+        self.handing_over.send_replace(true);
+        // 守护循环收到就换状态（放开它、报「重启中」），几乎是当场的
+        if !self.wait_gone(pid, Duration::from_secs(3)).await {
+            tracing::warn!(pid, "守护循环没有按时放开要交出去的 core");
+        }
+        Ok(())
+    }
+
     /// 停掉 core、守护不再拉它，**并且等它真的退出**。
     ///
     /// 应用重启（装完更新）之前要用它。只是自己退出、让 core 靠 `--parent`
@@ -502,6 +600,27 @@ impl Supervisor {
     pub fn resume(&self) {
         self.stopping.send_replace(false);
         self.intentional.store(false, Ordering::SeqCst);
+        self.handing_over.send_replace(false);
+    }
+
+    /// 放开一个已经 arm 的 core：不再等它、不杀它，报「重启中」，守护循环当场起下一个来接替。
+    ///
+    /// **子进程交给一个后台任务去等**：丢掉句柄会杀掉它（`kill_on_drop`），而它要接着把手上
+    /// 的请求做完；等到它退出也顺带把它收走，不留僵尸。它的 stderr 照旧有人读（[`Tail`] 的
+    /// 读取任务不随句柄结束），管道不会写满
+    fn let_go(&self, mut child: tokio::process::Child, last_words: Option<Tail>) -> Next {
+        let pid = child.id();
+        tracing::info!(?pid, "交出 core：它做完手上的请求再退出，起一个新的接替它");
+        tokio::spawn(async move {
+            let status = child.wait().await;
+            tracing::info!(?pid, ?status, "交出去的 core 已退出");
+            drop(last_words);
+        });
+        self.set(CoreState::Restarting {
+            attempt: 0,
+            in_ms: 0,
+        });
+        Next::Again
     }
 
     /// 按要求停下：报「已停止」，守护循环不再起它。
@@ -557,17 +676,28 @@ impl Supervisor {
         &self.binary
     }
 
-    /// 等控制面答应，最多 [`READY_WITHIN`]。答应了是 true。
+    /// 等 `pid` 这个 core 的控制面答应，最多 [`READY_WITHIN`]。答应了是 true。
     ///
     /// 先密后疏：通常一两百毫秒就好了，那时候隔半秒才问一次，启动画面就平白
     /// 多停半秒。
-    async fn until_ready(&self) -> bool {
+    ///
+    /// **接管进行中算启动中**：答话的是一个正在交接的旧 core（[`Answer::HandingOver`]）时，
+    /// 期限放宽到再给它一个接管超时（[`TAKEOVER_WITHIN`]）—— 旧 core 要先做完手上的令牌续期、
+    /// 上传没传的配置改动，才把控制面交过来
+    async fn until_ready(&self, pid: u32) -> bool {
         // tokio 的时钟：测试里暂停时钟就能跑过这 15 秒
-        let deadline = tokio::time::Instant::now() + READY_WITHIN;
+        let mut deadline = tokio::time::Instant::now() + READY_WITHIN;
+        let mut extended = false;
         let mut gap = Duration::from_millis(25);
         loop {
-            if (self.ready)().await {
-                return true;
+            match (self.ready)(pid).await {
+                Answer::Ready => return true,
+                Answer::HandingOver if !extended => {
+                    extended = true;
+                    deadline = deadline.max(tokio::time::Instant::now() + TAKEOVER_WITHIN);
+                    tracing::info!(pid, "新起的 core 正在接管等接替者的那一个");
+                }
+                Answer::HandingOver | Answer::NotYet => {}
             }
             if tokio::time::Instant::now() >= deadline {
                 return false;
@@ -585,6 +715,8 @@ impl Supervisor {
         if *stop.borrow_and_update() {
             return Ok(self.stopped());
         }
+        // 「交出去」只对上一轮那一个有意义：它没等到就自己退出了的话，记号不能落到这一个身上
+        self.handing_over.send_replace(false);
         self.set(if safe {
             CoreState::SafeMode { pid: None }
         } else {
@@ -663,9 +795,11 @@ impl Supervisor {
             Ready(bool),
             Stop,
         }
+        // 已经退出的话没有 pid：那一支马上就会先到
+        let pid = child.id().unwrap_or(0);
         let waited = tokio::select! {
             status = child.wait() => Waited::Exited(status),
-            ready = self.until_ready() => Waited::Ready(ready),
+            ready = self.until_ready(pid) => Waited::Ready(ready),
             _ = until_stopped(&mut stop) => Waited::Stop,
         };
         // 信号一：子进程退出事件。**最快最准**，但只覆盖我们自己 spawn
@@ -675,6 +809,7 @@ impl Supervisor {
             // 答应的那一刻「要停」也到了：不报「运行中」，和下面一样停掉
             Waited::Ready(true) if *self.stopping.borrow() => stop_starting(&mut child).await?,
             Waited::Ready(ready) => {
+                let mut running = false;
                 match (ready, child.id()) {
                     (true, Some(pid)) => {
                         self.set(if safe {
@@ -682,6 +817,7 @@ impl Supervisor {
                         } else {
                             CoreState::Running { pid }
                         });
+                        running = !safe;
                         tracing::info!(pid, safe, elapsed = ?started.elapsed(), "core 已就绪");
                     }
                     (true, None) => {}
@@ -690,7 +826,17 @@ impl Supervisor {
                         let _ = child.start_kill();
                     }
                 }
-                child.wait().await?
+                // **跑着的时候也听着「交出去」**（[`Supervisor::hand_over`]）。只有正常模式里
+                // 答应了的才会被交出去：`hand_over` 只认「运行中」
+                let mut over = self.handing_over.subscribe();
+                tokio::select! {
+                    status = child.wait() => status?,
+                    // 拿到的那个借用当场放掉：它握着 watch 的读锁，下面要写
+                    _ = async { let _ = over.wait_for(|h| *h).await; }, if running => {
+                        self.handing_over.send_replace(false);
+                        return Ok(self.let_go(child, last_words));
+                    }
+                }
             }
             Waited::Stop => stop_starting(&mut child).await?,
         };

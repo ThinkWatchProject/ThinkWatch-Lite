@@ -100,6 +100,18 @@ pub(crate) fn bundled_core(product: &str) -> Option<PathBuf> {
 /// 让环境变量替换掉网关本体，在开发机上是便利，在用户机器上是一个口子。
 pub fn locate_core(app: &tauri::AppHandle) -> anyhow::Result<PathBuf> {
     if let Some(inside) = bundled_core(&app.package_info().name) {
+        // **Linux AppImage 从数据目录里的按版本缓存运行**：挂载点随这个进程退出而卸载，
+        // 交接时旧 core 还要接着跑（见 `handover::core_cache`）
+        #[cfg(target_os = "linux")]
+        if inside.exists()
+            && tauri::utils::platform::bundle_type()
+                == Some(tauri::utils::config::BundleType::AppImage)
+        {
+            return Ok(crate::handover::core_cache::from_cache(
+                inside,
+                &app.package_info().version.to_string(),
+            ));
+        }
         if inside.exists() {
             return Ok(inside);
         }
@@ -238,10 +250,25 @@ pub(crate) async fn restart_gateway(app: &tauri::AppHandle) -> Out<()> {
         return Err(why.clone().into());
     }
     if state.supervising.swap(true, Ordering::SeqCst) {
-        return state.supervisor.request_restart().await.map_err(text);
+        return restart_running(&state).await;
     }
     spawn_supervise(app, state.supervisor.clone(), state.supervising.clone());
     Ok(())
+}
+
+/// 守护在跑时的「重新启动」：**同版本交接**（方案 R5）。请正在跑的 core 等接替者，守护起一个
+/// 新的接过监听，旧的做完手上的请求再走 —— 和换版本时一样，网关不断、在跑的流不被截断。
+///
+/// arm 不上（安全模式里的、还在启动的、登录进行中、core 太旧）就照以前停了再起。安全模式之后
+/// 配置修好了的那次自动重启也走这里：安全模式的 core 不交接，照旧停了再起
+async fn restart_running(state: &AppState) -> Out<()> {
+    if matches!(state.supervisor.state(), CoreState::Running { .. }) {
+        match crate::handover::arm(state.supervisor.control(), None).await {
+            Ok(_) => return state.supervisor.hand_over().await.map_err(text),
+            Err(e) => tracing::info!("重新启动网关：core 没能等接替者，停了再起（{e}）"),
+        }
+    }
+    state.supervisor.request_restart().await.map_err(text)
 }
 
 /// 守护没在跑就接回来；在跑就什么都不做。切回本机时用：远程模式下它停了

@@ -188,6 +188,7 @@ export function Mismatch({ view, ours, theirs }: { view: ConnView; ours: string;
 export function ConfigBroken({
   rejection,
   path,
+  held = false,
   fixes,
   repairing,
   onRepair,
@@ -196,6 +197,11 @@ export function ConfigBroken({
 }: {
   rejection: ConfigRejection;
   path: string;
+  /**
+   * 升级之后的新 core 读不了配置、只接过了控制面（`handover` 为 `taking_over`）：网关还在
+   * 旧 core 上按更新前的配置转发，配置修好后新 core 再接过网关
+   */
+  held?: boolean;
   /** 一键修复要改的几处（见 `useRepair`）。空的就是修不了，只剩另外两条路 */
   fixes: ConfigFix[];
   repairing: boolean;
@@ -212,6 +218,7 @@ export function ConfigBroken({
   return (
     <Frame icon={<FileWarningIcon />} tone="error" title={t.configBroken} status={t.safeMode}>
       <p className="tw-body text-muted-foreground">{t.configBrokenLead}</p>
+      {held && <p className="tw-body text-foreground">{t.configBrokenHeld}</p>}
       <div className="flex flex-col gap-2">
         <Facts
           rows={[

@@ -22,6 +22,8 @@
   "providers": 1,
   "uptime_secs": 19,
   "in_flight": 0,
+  "handover": "idle",
+  "draining": 0,
   "remote_control": { "enabled": false, "addr": null, "allow_from": [], "reachable": [] },
   "gateway_reachable": []
  },

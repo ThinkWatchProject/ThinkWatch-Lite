@@ -104,12 +104,19 @@ fn bundle_of(exe: &Path) -> Option<&Path> {
 /// **不去 exec `brew`。**Finder 拉起来的进程 PATH 里没有它；而且为了回答
 /// 一个布尔值去跑一个 Ruby 程序，代价和失败面都不对。
 fn from_homebrew(bundle: &Path, roots: &[PathBuf]) -> bool {
+    homebrew_root(bundle, roots).is_some()
+}
+
+/// 放这个 `.app` 的那一份 Homebrew 的前缀（[`from_homebrew`] 比对上的那一个）。
+///
+/// `brew upgrade` 退出应用时要认出发起的是不是这一份 Homebrew（见 `handover::brew`），
+/// 前缀就取这里认出来的，不另猜、不调用 brew。
+#[cfg(target_os = "macos")]
+fn homebrew_root<'a>(bundle: &Path, roots: &'a [PathBuf]) -> Option<&'a PathBuf> {
     // 两边都解引用之后再比。`/Applications` 本身可能是链接，Caskroom 里
     // 那一项一定是链接 —— 比路径字符串会两边都判错。
-    let Ok(me) = bundle.canonicalize() else {
-        return false;
-    };
-    roots.iter().any(|root| {
+    let me = bundle.canonicalize().ok()?;
+    roots.iter().find(|root| {
         let Ok(versions) = std::fs::read_dir(root.join("Caskroom").join(CASK)) else {
             return false;
         };
@@ -120,6 +127,20 @@ fn from_homebrew(bundle: &Path, roots: &[PathBuf]) -> bool {
             })
         })
     })
+}
+
+/// 自己所在的 `.app`（见 [`bundle_of`]）。不在一个 `.app` 里是 `None`
+#[cfg(target_os = "macos")]
+pub(crate) fn own_bundle() -> Option<PathBuf> {
+    let exe = std::env::current_exe().ok()?;
+    bundle_of(&exe).map(Path::to_path_buf)
+}
+
+/// 这一份是 Homebrew 装的话，那份 Homebrew 的前缀（`/opt/homebrew` 或 `/usr/local`）
+#[cfg(target_os = "macos")]
+pub(crate) fn homebrew_prefix() -> Option<PathBuf> {
+    let bundle = own_bundle()?;
+    homebrew_root(&bundle, &BREW_PREFIXES.map(PathBuf::from)).cloned()
 }
 
 /// 给定可执行文件和 brew 的前缀，判断这是哪一种安装。

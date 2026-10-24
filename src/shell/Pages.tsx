@@ -282,6 +282,7 @@ export function Pages({
           <ConfigBroken
             rejection={broken}
             path={status?.config_path ?? ""}
+            held={status?.handover === "taking_over"}
             fixes={repair.fixes}
             repairing={repair.repairing}
             onRepair={repair.repair}

@@ -224,6 +224,8 @@ mod tests {
             "Diagnostics",
             "Fixture",
             "Status",
+            // 请 core 等接替者：只在更新、重启网关时由 Rust 这边发（`handover`）
+            "HandoverArm",
             "StartChatgptLogin",
             "CancelChatgptLogin",
             "StartZaiLogin",

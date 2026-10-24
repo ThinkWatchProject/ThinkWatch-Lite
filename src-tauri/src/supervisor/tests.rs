@@ -881,3 +881,109 @@ async fn asking_a_core_whose_control_plane_never_answers_gives_up() {
         .expect("请它退出挂住了");
     assert!(!asked, "控制面没答、信号也没处送，却说请到了");
 }
+
+/// 控制面答话的是谁：刚起的那一个才算答应；等接替者、正被接管的旧 core 答的算「接管中」；
+/// 不在交接的另一个 core 答的照以前算答应（刚起的那个取不到锁，马上会以崩溃退出）
+#[test]
+fn who_answered_decides_whether_the_new_core_is_ready() {
+    use tw_api::HandoverState as H;
+    for h in [H::Idle, H::Armed, H::TakingOver, H::Draining] {
+        assert_eq!(readiness(7, 7, h), Answer::Ready, "{h:?}");
+    }
+    assert_eq!(readiness(7, 3, H::Armed), Answer::HandingOver);
+    assert_eq!(readiness(7, 3, H::TakingOver), Answer::HandingOver);
+    assert_eq!(readiness(7, 3, H::Idle), Answer::Ready);
+    assert_eq!(readiness(7, 3, H::Draining), Answer::Ready);
+}
+
+/// 一直是旧 core 在答（接管中）：**期限放宽一个接管超时**，过了这个也还没交过来才换掉它
+#[tokio::test(start_paused = true)]
+async fn a_takeover_in_progress_counts_as_starting() {
+    let (_dir, bin) = long_runner("takeover");
+    let s = Supervisor::new(
+        bin,
+        None,
+        probe_pid(|_| async { Answer::HandingOver }),
+        test_address(),
+        PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+    );
+    let t0 = tokio::time::Instant::now();
+    assert!(!s.until_ready(1).await);
+    assert!(
+        t0.elapsed() >= TAKEOVER_WITHIN,
+        "接管中只等了 {:?}",
+        t0.elapsed()
+    );
+    // 没人答的：照旧 READY_WITHIN
+    let s = Supervisor::new(
+        PathBuf::from("/x"),
+        None,
+        probe_pid(|_| async { Answer::NotYet }),
+        test_address(),
+        PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+    );
+    let t0 = tokio::time::Instant::now();
+    assert!(!s.until_ready(1).await);
+    assert!(t0.elapsed() < TAKEOVER_WITHIN);
+}
+
+/// 「重新启动网关」走交接：**旧的那个不停**（它还要把手上的请求做完），守护放开它、当场起
+/// 一个新的，不计入退避
+#[cfg(unix)]
+#[tokio::test]
+async fn handing_over_lets_the_old_core_run_and_starts_a_new_one() {
+    let (_dir, bin) = long_runner("handover");
+    let s = Arc::new(Supervisor::new(
+        bin,
+        None,
+        always_ready(),
+        test_address(),
+        PathBuf::from("/tw-no-such-dir-xyz/config.yaml"),
+    ));
+    let looped = {
+        let s = s.clone();
+        tokio::spawn(async move { s.run_once(false).await.unwrap() })
+    };
+    let old = until_running(&s).await;
+    s.hand_over().await.unwrap();
+    assert_eq!(
+        tokio::time::timeout(PATIENCE, looped)
+            .await
+            .unwrap()
+            .unwrap(),
+        Next::Again
+    );
+    assert_eq!(
+        s.state(),
+        CoreState::Restarting {
+            attempt: 0,
+            in_ms: 0
+        }
+    );
+    // SAFETY: 信号 0 只问这个 pid 还在不在，什么都不送
+    assert_eq!(
+        unsafe { libc::kill(old as i32, 0) },
+        0,
+        "交出去的 core 被停了"
+    );
+
+    // 下一轮照常起一个新的
+    let again = {
+        let s = s.clone();
+        tokio::spawn(async move { s.run_once(false).await.unwrap() })
+    };
+    let new = until_running(&s).await;
+    assert_ne!(new, old);
+    // 交出去的那一个还在跑，停新的不碰它
+    s.stop_and_wait(Duration::from_secs(5)).await;
+    assert_eq!(again.await.unwrap(), Next::Stop);
+    assert_eq!(unsafe { libc::kill(old as i32, 0) }, 0);
+    // 收拾：测试自己停掉它
+    unsafe { libc::kill(old as i32, libc::SIGKILL) };
+}
+
+/// 没在运行的（启动中、安全模式、停着）不交接：调用方退回停了再起
+#[tokio::test]
+async fn only_a_running_core_is_handed_over() {
+    assert!(sup().hand_over().await.is_err());
+}

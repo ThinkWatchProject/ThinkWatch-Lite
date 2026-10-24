@@ -1,10 +1,17 @@
 import { useEffect, useReducer, useRef } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { call } from "@/control";
 import { subscribe } from "@/lib/tauriEvent";
 import { isRunning, parseCoreState } from "@/coreState";
 import { textOf } from "@/i18n";
-import type { CoreEvent, HistoryRow } from "@/types";
+import type { CoreEvent, CoreStatus, HistoryRow } from "@/types";
 import { liveText } from "./useLive.i18n";
+
+/**
+ * 升级之后旧 core 还在排空时，隔多久问一次它还剩几个请求（见 `useInFlight`）。旧 core 结束
+ * 一个请求，这边没有事件；排空通常几十秒到几分钟，两秒一问，数字跟得上又不密
+ */
+export const DRAINING_POLL_MS = 2_000;
 
 /**
  * 实时档一格多宽。十秒：十分钟铺六十格。
@@ -198,14 +205,38 @@ function useFrame(): [() => void, () => void] {
  *
  * **别拿 `Status::in_flight`**：那个从连接进数据面就算，鉴权失败、排队的都在
  * 里面。
+ *
+ * **升级之后还在排空的旧 core 手上的也算进来**（`Status::draining`），不单独提示。它们
+ * 不在事件流上（旧 core 的事件不到这边），所以对账时问一次 `/status`，还有剩的就每隔
+ * {@link DRAINING_POLL_MS} 再问，直到归零。
  */
 export function useInFlight(): number {
   const flying = useRef(new Set<number>());
+  const draining = useRef(0);
   const [, soon] = useFrame();
 
   useEffect(() => {
     let alive = true;
     let since: { started: Set<number>; ended: Set<number> } | null = null;
+    let drainTimer: ReturnType<typeof setTimeout> | null = null;
+    const stopDraining = () => {
+      if (drainTimer) clearTimeout(drainTimer);
+      drainTimer = null;
+    };
+    const askDraining = async () => {
+      stopDraining();
+      try {
+        const s = await invoke<CoreStatus>("core_status");
+        if (!alive) return;
+        if (s.draining !== draining.current) {
+          draining.current = s.draining;
+          soon();
+        }
+        if (s.draining > 0) drainTimer = setTimeout(() => void askDraining(), DRAINING_POLL_MS);
+      } catch {
+        // 问不到就当没有：core 回来的时候（`running:<pid>`）还会再问
+      }
+    };
     const start = (id: number) => {
       flying.current.add(id);
       since?.started.add(id);
@@ -250,6 +281,7 @@ export function useInFlight(): number {
       } finally {
         if (since === mark) since = null;
       }
+      void askDraining();
     };
     void resync();
     /*
@@ -262,17 +294,20 @@ export function useInFlight(): number {
       } else {
         since = null;
         flying.current.clear();
+        stopDraining();
+        draining.current = 0;
         soon();
       }
     });
     return () => {
       alive = false;
+      stopDraining();
       un();
       unState();
     };
   }, [soon]);
 
-  return flying.current.size;
+  return flying.current.size + draining.current;
 }
 
 /**

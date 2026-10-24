@@ -173,6 +173,8 @@ export const connText = messages(
     openConfigFile: "打开配置文件",
     restoreFromBackup: "从备份恢复…",
     configBrokenResume: "保存修正后的配置后，网关自动恢复。",
+    /** 升级之后新 core 读不了配置：网关还在旧 core 上按更新前的配置转发 */
+    configBrokenHeld: "网关暂按更新前的配置运行，配置修复后自动切换。",
 
     // 断线横幅
     lostBanner: (name: string, attempt: number) =>
@@ -328,6 +330,8 @@ export const connText = messages(
     openConfigFile: "Open configuration file",
     restoreFromBackup: "Restore from backup…",
     configBrokenResume: "Once a corrected configuration is saved, the gateway resumes on its own.",
+    configBrokenHeld:
+      "The gateway runs with the configuration from before the update and switches over once the configuration is fixed.",
 
     lostBanner: (name: string, attempt: number) =>
       attempt > 0

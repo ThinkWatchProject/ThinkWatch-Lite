@@ -58,6 +58,9 @@ pub struct Snapshot {
     pub quotas: Vec<Quota>,
     /// 进行中的请求，开始得早的在前
     pub live: Vec<Live>,
+    /// 升级之后还在排空的旧 core 手上的请求数（`/status` 的 `draining`）。**算进进行中的个数**，
+    /// 不单独提示；它们不在 `live` 里（旧 core 的请求没有实时行）
+    pub draining: usize,
     /// 此刻每秒生成多少 token：在跑的请求各自的速度加起来（core 的 `/live`）。**没有在跑的
     /// 请求是 None**；有请求在跑、却都还没开始生成（在等第一个 token，或者是非流式的）是 0
     pub rate: Option<u32>,
@@ -74,6 +77,13 @@ pub struct Snapshot {
     /// 连着远程时是那台服务器的名字。跟在状态后面写：菜单里的数字、提醒都是那台的
     pub remote: Option<String>,
     pub now_ms: u64,
+}
+
+impl Snapshot {
+    /// 进行中的个数：这个 core 手上的，加上升级之后还在排空的旧 core 手上的
+    pub fn in_progress(&self) -> usize {
+        self.live.len() + self.draining
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -580,7 +590,7 @@ fn bar(s: &Snapshot, style: Style) -> Bar {
             None
         },
         dim: !running,
-        busy: running && !s.live.is_empty(),
+        busy: running && s.in_progress() > 0,
         alert: !running && !matches!(s.gateway, Gateway::Starting),
         tooltip: tooltip(s, tight),
     }
@@ -663,8 +673,8 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
                 )
             ));
         }
-        if !s.live.is_empty() {
-            parts.push(live_count(s.live.len()));
+        if s.in_progress() > 0 {
+            parts.push(live_count(s.in_progress()));
         }
     }
     parts.join(tr!("，", ", "))
@@ -798,10 +808,10 @@ fn rows(s: &Snapshot) -> Vec<Row> {
     }
     out.push(Row::Separator);
 
-    if !s.live.is_empty() {
+    if s.in_progress() > 0 {
         out.push(section(
             tr!("进行中", "In Progress"),
-            Some(s.live.len().to_string()),
+            Some(s.in_progress().to_string()),
         ));
         for l in s.live.iter().take(MAX_LIVE) {
             out.push(Row::Live {
@@ -817,8 +827,10 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 action: Action::OpenRequest(l.id),
             });
         }
-        if s.live.len() > MAX_LIVE {
-            let more = s.live.len() - MAX_LIVE;
+        // 列不出来的那几个：超出行数的，加上排空中的旧 core 手上的（它们没有实时行）
+        let shown = s.live.len().min(MAX_LIVE);
+        if s.in_progress() > shown {
+            let more = s.in_progress() - shown;
             out.push(Row::Item(Item {
                 icon: None,
                 ..Item::new(

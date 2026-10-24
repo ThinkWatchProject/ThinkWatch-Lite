@@ -8,7 +8,9 @@ use tauri::{Emitter, Manager, WebviewUrl, WebviewWindowBuilder};
 use crate::dmg;
 #[cfg(windows)]
 use crate::gateway::restart_gateway;
-use crate::{AppState, control::ControlClient, data_dir, error::Out, i18n, notices, prefs, update};
+use crate::{
+    AppState, control::ControlClient, data_dir, error::Out, handover, i18n, notices, prefs, update,
+};
 
 /// 更新这件事的当前状态，一次说完。
 ///
@@ -456,15 +458,20 @@ pub(crate) async fn wait_for_quiet(control: &ControlClient, on_wait: impl Fn(usi
     }
 }
 
-/// 下载、等手上的请求结束、替换、重启。**按一次之后不再问任何问题。**
+/// 下载、替换、请 core 等接替者（arm）、重启。**按一次之后不再问任何问题。**
 ///
 /// **Homebrew 装的一律拒绝。**理由在 `update` 模块开头。这里再挡一次，是
 /// 因为这是一条策略 —— 只靠界面上那个按钮不显示来维持，等于让一次渲染的
 /// 疏忽去降级用户的安装。
 ///
-/// **先下载，再等，最后才替换。**反过来的话，磁盘上的包在等待的那几分钟
-/// 里已经是新版本了 —— 这期间 core 万一退出，守护会从磁盘上拉起一个和
-/// 正在运行的界面不是同一版的网关。
+/// **不再等手上的请求结束**：旧 core arm 之后脱离这个进程接着服务，新版起来的 core 接过
+/// 监听，旧的做完手上的请求再走（见 `handover`）。arm 不上（core 太旧、登录进行中、安全
+/// 模式）才退回以前的做法：等请求结束、停掉 core、重启（[`hand_over_or_stop`]）。
+///
+/// **先替换，再 arm。**arm 之后旧 core 只等接替者一段时间（缺省 120 秒），替换要是在那之后
+/// 才完成（macOS 上要等用户输管理员密码），它就当新版没起来、自己排空退出了。代价是退回
+/// 现行流程时，等请求结束的那几分钟里磁盘上已经是新版：这期间 core 万一崩溃，守护拉起的是
+/// 新版的 core，界面要到重启之后才对得上 —— 只在 arm 不上又恰好崩溃时才会遇到。
 #[tauri::command]
 pub async fn update_install(
     app: tauri::AppHandle,
@@ -528,8 +535,7 @@ pub async fn update_install(
     if install == update::Install::Portable {
         return install_portable(&app, &state, bytes).await;
     }
-    // 发布页上只有 DMG，插件只装 `.app.tar.gz` —— 见 `dmg`。放在等请求之前：
-    // 包打不开的话，不该先让用户白等几分钟
+    // 发布页上只有 DMG，插件只装 `.app.tar.gz` —— 见 `dmg`
     #[cfg(target_os = "macos")]
     let bytes = tauri::async_runtime::spawn_blocking(move || dmg::app_archive(&bytes))
         .await
@@ -541,49 +547,22 @@ pub async fn update_install(
             )
         })?;
 
-    // 问的是本机的 core：要重启的是它。连着远程时它本来就停着，不用等
-    wait_for_quiet(state.supervisor.control(), |in_flight| {
-        let _ = app.emit("update-step", Step::Waiting { in_flight });
-    })
-    .await;
-
     let _ = app.emit("update-step", Step::Installing);
 
-    // **Windows 上 `install` 不回来。**插件拉起新版本的安装程序之后当场
-    // `exit(0)`，排在它后面的每一步都轮不到，退出时的那一套（记下窗口开没开、
-    // 停 core）也轮不到 —— 所以都得挪到它前面。停 core 在那边还是硬要求：
-    // `twcore.exe` 还在跑的话，安装程序覆盖不了一个被占用的文件。装不成的话这条
-    // 记录留着也不碍事：版本没变，下次启动不会把它当成更新之后重开
     #[cfg(windows)]
     {
-        record_exit(&app);
-        let _ = app.emit("update-step", Step::Restarting);
-        state
-            .supervisor
-            .stop_and_wait(std::time::Duration::from_secs(5))
-            .await;
-        let installed = install_blocking(up, bytes)
-            .await
-            .and_then(|r| r.map_err(|e| e.to_string()));
-        if let Err(e) = installed {
-            // 最常见的是 UAC 那一下点了「否」。**把停掉的网关接回来**：不接的话，
-            // 它就这么停着
-            resume_after_failed_update(&app).await;
-            return Err(tr!(
-                format!("安装失败：{e}"),
-                format!("Installation failed: {e}")
-            )
-            .into());
-        }
+        install_windows(&app, &state, up, bytes).await?;
         // 走到这里说明插件没有照它自己说的那样退出。那就和其他平台一样，自己重启
     }
     #[cfg(not(windows))]
     {
-        // Linux 上走到这里的只有 AppImage：插件原地换掉 `$APPIMAGE` 那个文件
+        // Linux 上走到这里的只有 AppImage：插件原地换掉 `$APPIMAGE` 那个文件。正在跑的
+        // core 不在那个文件里，在数据目录的缓存里（见 `handover::core_cache`）
         #[cfg(target_os = "linux")]
         install_blocking(up, bytes)
             .await?
             .map_err(|e| update::appimage_failure(&e))?;
+        // macOS 上整个 `.app` 被换掉；正在跑的 core 已经把旧文件映射进来了，不受影响
         #[cfg(target_os = "macos")]
         install_blocking(up, bytes).await?.map_err(|e| {
             tr!(
@@ -591,26 +570,144 @@ pub async fn update_install(
                 format!("Installation failed: {e}")
             )
         })?;
+        hand_over_or_stop(&app, &state).await;
+    }
+    let _ = app.emit("update-step", Step::Restarting);
+    app.restart()
+}
+
+/// 换好了新版、重启之前：请本机的 core 等接替者。arm 上了返回 `true`，这一次退出不停它
+/// （退出回调看 [`handover::armed`]），退出记录里也记上（[`record_exit`]）。
+///
+/// **arm 不上就照以前的做法**（方案 F2）：等手上的请求结束（更新窗口里显示「等待 N 个请求
+/// 结束」）、停掉 core、等它真的退出 —— 否则新起来的应用会先撞上旧 core 手里的锁（见
+/// `Supervisor::stop_and_wait`）。问的是本机的 core：要重启的是它，连着远程时它本来就停着，
+/// arm 不上、也不用等
+async fn hand_over_or_stop(app: &tauri::AppHandle, state: &AppState) -> bool {
+    let armed = handover::arm(state.supervisor.control(), handover::relaunch_for(app)).await;
+    let armed = handover::or_fall_back(&armed, wait_out(app, state), async {
         let _ = app.emit("update-step", Step::Restarting);
-        // 先停掉 core、等它真的退出，再重启应用 —— 否则新起来的应用会先撞上
-        // 旧 core 手里的锁。见 `Supervisor::stop_and_wait`。
         state
             .supervisor
             .stop_and_wait(std::time::Duration::from_secs(5))
             .await;
-    }
+    })
+    .await;
+    handover::set_armed(armed);
+    armed
+}
+
+/// 退回现行流程时的「等请求结束」：更新窗口里显示还剩几个
+async fn wait_out(app: &tauri::AppHandle, state: &AppState) {
+    wait_for_quiet(state.supervisor.control(), |in_flight| {
+        let _ = app.emit("update-step", Step::Waiting { in_flight });
+    })
+    .await;
+}
+
+/// Homebrew 没退出应用就把它换掉了（见 `handover::bundle_watch`）：照自动更新的样子交接、
+/// 重启。重启之后照退出时的窗口状态恢复（退出回调记下的）
+#[cfg(target_os = "macos")]
+pub(crate) async fn restart_into_replaced(app: &tauri::AppHandle) {
+    let Some(state) = app.try_state::<AppState>() else {
+        return;
+    };
+    // 连着远程时本机的 core 停着：arm 不上，等也是立刻回来，照样重启
+    hand_over_or_stop(app, &state).await;
     app.restart()
 }
 
-/// 绿色版的安装：拆包、等请求结束、停网关、换掉文件夹里的两个 exe、重启。**不弹
-/// UAC**：文件夹是用户自己解压的，启动时已经确认过能写（`portable::prepare`）。
+/// Windows 安装版：arm、把运行中的 `twcore.exe` 改名让出来、跑安装程序。
 ///
-/// **包先拆开看。**形状不对（见 `portable::unpack`）不该先让用户白等几分钟，网关
-/// 也还没停。
+/// **`install` 不回来。**插件拉起新版本的安装程序之后当场 `exit(0)`，排在它后面的每一步都
+/// 轮不到，退出时的那一套（记下窗口开没开、停不停 core）也轮不到 —— 所以都得挪到它前面。
 ///
-/// 换文件之前先记下退出时的样子（[`record_exit`]），和其他平台一样：重启之后照它
-/// 恢复窗口。换不成就把改过名的文件改回来（`portable::swap_in` 自己做）、把停掉的
-/// 网关接回来，说清楚去哪下载。
+/// **安装程序要覆盖 `twcore.exe`**：以前是先停掉它；现在 arm 上了就把它改名成
+/// `twcore.old-<pid>.exe`（`handover::retire`），它照常跑到排空，安装程序在腾出来的名字上
+/// 写新版本。改不了名（被别的程序占着、杀毒软件拦了）就和 arm 不上一样，退回停掉它。
+///
+/// 装不成（最常见的是 UAC 那一下点了「否」）：arm 过的，名字改回来、起一个同版本的 core
+/// 接替它（交接，网关不断）；停过的，把停掉的网关接回来
+#[cfg(windows)]
+async fn install_windows(
+    app: &tauri::AppHandle,
+    state: &AppState,
+    up: tauri_plugin_updater::Update,
+    bytes: Vec<u8>,
+) -> Out<()> {
+    use crate::supervisor::CoreState;
+    let dir = state
+        .supervisor
+        .binary()
+        .parent()
+        .map(std::path::Path::to_path_buf);
+    let pid = match state.supervisor.state() {
+        CoreState::Running { pid } => Some(pid),
+        _ => None,
+    };
+    let mut retired = None;
+    if let (Some(dir), Some(pid)) = (&dir, pid)
+        && handover::arm(state.supervisor.control(), handover::relaunch_for(app))
+            .await
+            .is_ok()
+    {
+        match handover::retire::retire(dir, pid) {
+            Ok(to) => retired = Some(to),
+            Err(e) => tracing::warn!("运行中的 twcore.exe 改不了名，退回停掉它：{e}"),
+        }
+    }
+    // arm 上了、也让出了文件才算交接；改不了名的和 arm 不上的一样退回停掉它
+    let handed = match &retired {
+        Some(_) => Ok(0),
+        None => Err("没有 arm，或者 twcore.exe 改不了名".to_string()),
+    };
+    let armed = handover::or_fall_back(&handed, wait_out(app, state), async {
+        let _ = app.emit("update-step", Step::Restarting);
+        state
+            .supervisor
+            .stop_and_wait(std::time::Duration::from_secs(5))
+            .await;
+    })
+    .await;
+    handover::set_armed(armed);
+    record_exit(app);
+    let _ = app.emit("update-step", Step::Restarting);
+    let installed = install_blocking(up, bytes)
+        .await
+        .and_then(|r| r.map_err(|e| e.to_string()));
+    let Err(e) = installed else {
+        return Ok(());
+    };
+    // 没装成：这次不算退出，记录删掉
+    forget_exit();
+    match (retired, dir) {
+        (Some(aside), Some(dir)) => {
+            handover::set_armed(false);
+            if let Err(r) = handover::retire::restore(&dir, &aside) {
+                tracing::error!("改了名的 twcore.exe 改不回来：{r}");
+            }
+            adopt_armed_core(app).await;
+        }
+        _ => resume_after_failed_update(app).await,
+    }
+    Err(tr!(
+        format!("安装失败：{e}"),
+        format!("Installation failed: {e}")
+    )
+    .into())
+}
+
+/// 绿色版的安装：拆包、arm、换掉文件夹里的两个 exe、重启。**不弹 UAC**：文件夹是用户自己
+/// 解压的，启动时已经确认过能写（`portable::prepare`）。
+///
+/// **包先拆开看。**形状不对（见 `portable::unpack`）不该先 arm、也不该让用户白等。
+///
+/// 换文件本来就是改名替换（`portable::swap_in`）：正在跑的 `twcore.exe` 改名成 `.old` 照常
+/// 跑到排空，所以 arm 上了就不停它。arm 不上才照以前的做法等请求结束、停掉它。
+///
+/// 换文件之前先记下退出时的样子（[`record_exit`]），和其他平台一样：重启之后照它恢复窗口。
+/// 换不成就把改过名的文件改回来（`swap_in` 自己做）：arm 过的起一个同版本的 core 接替它，
+/// 停过的把网关接回来；说清楚去哪下载。
 #[cfg(windows)]
 async fn install_portable(app: &tauri::AppHandle, state: &AppState, zip: Vec<u8>) -> Out<()> {
     use crate::portable;
@@ -619,29 +716,35 @@ async fn install_portable(app: &tauri::AppHandle, state: &AppState, zip: Vec<u8>
         .map_err(|e| e.to_string())?
         .map_err(|e| update::portable_failure(&e))?;
 
-    // 问的是本机的 core：要重启的是它。连着远程时它本来就停着，不用等
-    wait_for_quiet(state.supervisor.control(), |in_flight| {
-        let _ = app.emit("update-step", Step::Waiting { in_flight });
-    })
-    .await;
-
     let _ = app.emit("update-step", Step::Installing);
+    let armed = hand_over_or_stop(app, state).await;
     record_exit(app);
-    // `twcore.exe` 也要换：先停下，等它真的退出
-    state
-        .supervisor
-        .stop_and_wait(std::time::Duration::from_secs(5))
-        .await;
     let swapped = tauri::async_runtime::spawn_blocking(move || portable::install(package))
         .await
         .map_err(|e| e.to_string())
         .and_then(|r| r);
     if let Err(e) = swapped {
-        resume_after_failed_update(app).await;
+        forget_exit();
+        if armed {
+            handover::set_armed(false);
+            adopt_armed_core(app).await;
+        } else {
+            resume_after_failed_update(app).await;
+        }
         return Err(update::portable_failure(&e).into());
     }
     let _ = app.emit("update-step", Step::Restarting);
     app.restart()
+}
+
+/// 更新没装成，core 却已经 arm 了（它脱离了这个进程，在等接替者）：起一个同版本的 core
+/// 接替它。**交接，不是停掉再起**：网关不断，和「重新启动网关」走的是同一条路
+#[cfg(windows)]
+async fn adopt_armed_core(app: &tauri::AppHandle) {
+    let state = app.state::<AppState>();
+    if let Err(e) = state.supervisor.hand_over().await {
+        tracing::error!("更新没装成，也没能起一个 core 接替已经 arm 的那一个：{e:#}");
+    }
 }
 
 /// 装下载好的那一份，**在阻塞线程上**。
@@ -699,9 +802,17 @@ struct LastExit {
     at_ms: u64,
     /// 主窗口开着吗
     window: bool,
+    /// 这次退出前请 core 等接替者了（见 `handover`）：接下来要么是新版被打开（自动更新的
+    /// 重启、Homebrew 的 `open -b`、看到应用包被换掉之后的自己重启），要么是等不到接替者的
+    /// core 把桌面端重新打开 —— 后者版本没变，**只有这个记号说得出它是被重新打开的**。
+    ///
+    /// 缺省 `false`：上一版写的记录没有这一项（第一次升级到带交接的版本，走的还是现行流程，
+    /// 退出时写的是旧格式），读不出来就丢了那一次的窗口状态
+    #[serde(default)]
+    armed: bool,
 }
 
-/// 被更新换下来之后重新打开：换之前是哪一版，那时主窗口开着没有
+/// 被重新打开（更新换下来之后、core 等不到接替者之后）：之前是哪一版，那时主窗口开着没有
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Relaunch {
     pub from: String,
@@ -722,7 +833,8 @@ pub(crate) fn quitting_by_user() {
 ///
 /// **用户自己点的「退出」不记**（旧的记录也删掉）：之后再打开是用户要打开，照常开窗口。
 /// 别的退出都记 —— Homebrew 升级时用 Apple Event 让应用退出，和在 Dock 上点「退出」、注销时
-/// 系统让它退出是同一条路；应用自己装完更新是先正常退出再重启
+/// 系统让它退出是同一条路；应用自己装完更新是先正常退出再重启。**这次退出 arm 过就记上**
+/// （[`handover::armed`]）：重新打开时凭它照样恢复窗口，版本变没变都一样
 pub(crate) fn record_exit(app: &tauri::AppHandle) {
     let path = data_dir().join(LAST_EXIT);
     if QUIT_BY_USER.load(std::sync::atomic::Ordering::SeqCst) {
@@ -735,6 +847,7 @@ pub(crate) fn record_exit(app: &tauri::AppHandle) {
         window: app
             .get_webview_window("main")
             .is_some_and(|w| w.is_visible().unwrap_or(false)),
+        armed: handover::armed(),
     };
     let written = serde_json::to_vec(&exit)
         .map_err(std::io::Error::other)
@@ -744,11 +857,23 @@ pub(crate) fn record_exit(app: &tauri::AppHandle) {
     }
 }
 
-/// 这次启动是不是更新之后被重新打开的。启动时调一次，**读完就删**。
+/// 更新没装成、这次不退出了：删掉刚才记下的那一条（它标着「已 arm」，留着的话用户过一会儿
+/// 自己退出又打开，会被当成更新之后重新打开）
+#[cfg_attr(not(windows), allow(dead_code))]
+pub(crate) fn forget_exit() {
+    let _ = std::fs::remove_file(data_dir().join(LAST_EXIT));
+}
+
+/// 这次启动是不是被重新打开的（更新之后、core 等不到接替者之后）。启动时调一次，**读完就删**。
 ///
-/// 三条都要满足：上一个实例不是用户自己退出的（[`record_exit`] 记下了它）、那之后版本变了、
-/// 离它退出没多久（[`RELAUNCH_WITHIN_MS`]）。之前没在跑的，Homebrew 不会重新打开它，
-/// 之后是用户自己点开的
+/// 三条都要满足：上一个实例不是用户自己退出的（[`record_exit`] 记下了它）、那次退出 arm 过
+/// 或者那之后版本变了、离它退出没多久（[`RELAUNCH_WITHIN_MS`]）。之前没在跑的，Homebrew 不会
+/// 重新打开它，之后是用户自己点开的。
+///
+/// **arm 过的不看版本**：core 等不到接替者时会把桌面端重新打开（Homebrew 升级失败回滚了，
+/// 打开的还是这一版），那也是「之前什么样、现在什么样」。**版本变了而没 arm 的也算**：arm 不上
+/// 退回现行流程的那次更新、没认出是 `brew upgrade` 的那次退出、上一版写的记录 —— 都是被更新
+/// 换下来的
 pub(crate) fn relaunched(dir: &std::path::Path, version: &str, now_ms: u64) -> Option<Relaunch> {
     let path = dir.join(LAST_EXIT);
     let raw = std::fs::read(&path).ok();
@@ -759,7 +884,7 @@ pub(crate) fn relaunched(dir: &std::path::Path, version: &str, now_ms: u64) -> O
 
 fn after_update(exit: LastExit, version: &str, now_ms: u64) -> Option<Relaunch> {
     let recent = now_ms.saturating_sub(exit.at_ms) <= RELAUNCH_WITHIN_MS;
-    (exit.version != version && recent).then_some(Relaunch {
+    ((exit.armed || exit.version != version) && recent).then_some(Relaunch {
         from: exit.version,
         window: exit.window,
     })
@@ -870,7 +995,61 @@ mod tests {
             version: version.into(),
             at_ms: EXITED,
             window,
+            armed: false,
         }
+    }
+
+    fn armed_exit(version: &str, window: bool) -> LastExit {
+        LastExit {
+            armed: true,
+            ..exit(version, window)
+        }
+    }
+
+    /// 退出前 arm 过的（自动更新、`brew upgrade`、看到应用包被换掉之后的自己重启）：照退出
+    /// 时的样子恢复。**版本没变也算** —— core 等不到接替者时把桌面端重新打开（Homebrew 升级
+    /// 失败回滚了，打开的还是这一版）
+    #[test]
+    fn an_armed_exit_restores_the_window_even_without_a_new_version() {
+        let soon = EXITED + 8_000;
+        for (window, version) in [
+            (false, "2026.9.23"),
+            (true, "2026.9.23"),
+            (false, "2026.9.22"),
+        ] {
+            assert_eq!(
+                after_update(armed_exit("2026.9.22", window), version, soon),
+                Some(Relaunch {
+                    from: "2026.9.22".into(),
+                    window
+                }),
+                "{window} {version}"
+            );
+        }
+        // 太久之后才打开的不算，arm 过也一样
+        assert_eq!(
+            after_update(
+                armed_exit("2026.9.22", false),
+                "2026.9.22",
+                EXITED + RELAUNCH_WITHIN_MS + 1
+            ),
+            None
+        );
+    }
+
+    /// 上一版写的记录没有 `armed`：读得出来，当没 arm（版本变了照样恢复）
+    #[test]
+    fn a_record_from_the_previous_version_still_reads() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join(LAST_EXIT),
+            format!(r#"{{"version":"2026.9.22","at_ms":{EXITED},"window":false}}"#),
+        )
+        .unwrap();
+        assert_eq!(
+            relaunched(dir.path(), "2026.9.23", EXITED + 8_000).map(|r| r.window),
+            Some(false)
+        );
     }
 
     /// Homebrew 退出应用、换上新版、几秒后重新打开：照退出时的样子，窗口关着的还关着，开着

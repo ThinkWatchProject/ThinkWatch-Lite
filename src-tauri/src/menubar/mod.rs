@@ -193,8 +193,12 @@ async fn run(app: tauri::AppHandle) {
 
 /// 该不该每秒走一次：菜单开着；或者有请求在跑、菜单栏上挂着速度那一行（只有标识的、
 /// 不显示的没有）。**什么都没在跑、菜单关着时不走**：菜单栏上的破折号不会自己变
+///
+/// **升级之后旧 core 还在排空时也走**：它手上的请求结束了不会有事件过来，不走的话进行中的
+/// 个数（和菜单栏上的忙碌标记）就一直停在交接那一刻
 fn ticks(open: bool, snap: &Snapshot, style: Style) -> bool {
-    open || (!snap.live.is_empty() && matches!(style, Style::Full | Style::Numbers))
+    open || snap.draining > 0
+        || (!snap.live.is_empty() && matches!(style, Style::Full | Style::Numbers))
 }
 
 /// 叫醒菜单栏的几种理由（见 [`wait`]）：有事件（攒一攒再收）、要立刻收、有请求开始了
@@ -267,6 +271,12 @@ async fn refresh_live(state: &AppState, snap: &mut Snapshot) {
     }
     if let Ok(live) = ask(ASK, state.control.call::<ep::Live>(&[], &())).await {
         apply_live(snap, live);
+    }
+    // 排空中的旧 core 结束一个请求，这边没有事件：在排空的时候每一拍顺带问一下还剩几个
+    if snap.draining > 0
+        && let Ok(s) = ask(ASK, state.control.status()).await
+    {
+        snap.draining = s.draining;
     }
 }
 
@@ -476,6 +486,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
     }
     if let Ok(s) = &status {
         snap.listen_error = s.listen_error.clone().map(|e| crate::core_text::text(&e));
+        snap.draining = s.draining;
     }
     // 右边写的是「复制网关地址」复制的那一个：主机按连接（本机是 127.0.0.1），端口按配置。
     // 网关没在监听时不写

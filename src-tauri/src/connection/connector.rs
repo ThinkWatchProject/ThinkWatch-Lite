@@ -262,7 +262,7 @@ mod tests {
         serde_json::json!({
             "api_version": tw_api::CONTROL_API_VERSION, "version": "x", "pid": 1,
             "gateway_addr": gateway, "config_path": "/x", "clients": 0, "providers": 0,
-            "uptime_secs": 0, "in_flight": 0,
+            "uptime_secs": 0, "in_flight": 0, "handover": "idle", "draining": 0,
             "remote_control": { "enabled": true, "addr": null, "allow_from": [], "reachable": [] },
             "gateway_reachable": reachable,
         })

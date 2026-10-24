@@ -42,6 +42,8 @@ pub mod error;
 /// 导出文件时系统的「存储」对话框和写盘（安全日志的导出），见模块头上
 pub mod export;
 pub mod gateway;
+/// 升级不断线：请 core 等接替者、已 arm 的退出不停 core、`brew upgrade` 的识别，见模块头上
+pub mod handover;
 pub mod import_link;
 pub mod keys;
 /// 一个在跑的请求的实时内容，搬给请求详情的「内容」页
@@ -332,17 +334,23 @@ pub fn run() {
             // 只读）。**两样都只在这里定一次**，守护和客户端用的是同一对
             let at = control_address();
             let key_file = tw_api::control::config_file(&data_dir());
-            // 起好了没有，问控制面：`/status` 答得上来才算。半秒答不上这一次就
-            // 算没答应，守护隔一会儿再问
+            // 起好了没有，问控制面：`/status` 答得上来、**答话的就是刚起的那一个**才算
+            // （升级不断线时，先答话的可能是等着被接替的旧 core，见 `supervisor::readiness`）。
+            // 半秒答不上这一次就算没答应，守护隔一会儿再问
             let ready = {
                 let (at, key_file) = (at.clone(), key_file.clone());
-                supervisor::probe(move || {
+                supervisor::probe_pid(move |pid| {
                     let control = ControlClient::new(at.clone(), key_file.clone());
                     async move {
-                        control
-                            .ping(std::time::Duration::from_millis(500))
-                            .await
-                            .is_ok()
+                        match tokio::time::timeout(
+                            std::time::Duration::from_millis(500),
+                            control.call::<tw_api::ep::Status>(&[], &()),
+                        )
+                        .await
+                        {
+                            Ok(Ok(s)) => supervisor::readiness(pid, s.pid, s.handover),
+                            _ => supervisor::Answer::NotYet,
+                        }
                     }
                 })
             };
@@ -591,6 +599,19 @@ pub fn run() {
                 update_loop(h).await;
             });
 
+            // `brew upgrade` 退出应用时认出它来（arm 之后再退，见 `handover::brew`）；它没退出
+            // 应用就把包换掉了的话自己重启（`handover::bundle_watch`）
+            #[cfg(target_os = "macos")]
+            {
+                if let Some(mtm) = objc2::MainThreadMarker::new() {
+                    handover::brew::install_quit_handler(mtm);
+                }
+                handover::bundle_watch::spawn(&handle);
+            }
+            // 上次更新时改名让出来的 core，这次清掉（见 `handover::retire`）
+            #[cfg(windows)]
+            handover::retire::sweep_in_background();
+
             Ok(())
         })
         .on_window_event(|window, event| {
@@ -656,11 +677,16 @@ pub fn run() {
                         api.prevent_exit();
                     }
                 }
-                // 真要退了：先记下这个实例的样子（更新之后重新打开时照它恢复窗口），
-                // 再让 core 跟着走 —— 「一个程序」原则的另一半
+                // 真要退了：`brew upgrade` 发起的先请 core 等接替者（见 `handover::brew`），
+                // 再记下这个实例的样子（重新打开时照它恢复窗口），最后让 core 跟着走 ——
+                // 「一个程序」原则的另一半。**arm 过的不停**：自动更新、`brew upgrade` 换版本时，
+                // 旧 core 接着服务，等新版起来的 core 接手
                 tauri::RunEvent::Exit => {
+                    handover::arm_on_quit(app);
                     updater::record_exit(app);
-                    stop_core_on_exit(app);
+                    if !handover::armed() {
+                        stop_core_on_exit(app);
+                    }
                 }
                 _ => {}
             }
