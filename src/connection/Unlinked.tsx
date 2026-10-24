@@ -216,9 +216,13 @@ export function ConfigBroken({
   const [restarting, run] = usePending();
   const stage = stageLabel(rejection.stage);
   return (
-    <Frame icon={<FileWarningIcon />} tone="error" title={t.configBroken} status={t.safeMode}>
-      <p className="tw-body text-muted-foreground">{t.configBrokenLead}</p>
-      {held && <p className="tw-body text-foreground">{t.configBrokenHeld}</p>}
+    <Frame
+      icon={<FileWarningIcon />}
+      tone={held ? "warn" : "error"}
+      title={held ? t.configBrokenHeldTitle : t.configBroken}
+      status={t.safeMode}
+    >
+      <p className="tw-body text-muted-foreground">{held ? t.configBrokenHeld : t.configBrokenLead}</p>
       <div className="flex flex-col gap-2">
         <Facts
           rows={[
@@ -257,7 +261,7 @@ export function ConfigBroken({
           {tt.restart}
         </Button>
       </div>
-      <p className="tw-label text-muted-foreground">{t.configBrokenResume}</p>
+      <p className="tw-label text-muted-foreground">{held ? t.configBrokenHeldResume : t.configBrokenResume}</p>
     </Frame>
   );
 }
