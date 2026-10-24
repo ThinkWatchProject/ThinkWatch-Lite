@@ -43,7 +43,11 @@ pub fn stage(src: &Path, data: &Path, version: &str) -> std::io::Result<PathBuf>
         let tmp = slot.join(format!(".{}.partial", file.to_string_lossy()));
         // `copy` 连权限一起带过去：包里的 twcore 本来就是可执行的
         std::fs::copy(src, &tmp)?;
-        std::fs::File::open(&tmp)?.sync_all()?;
+        // **可写地打开**：Windows 上刷盘（FlushFileBuffers）要写权限，只读打开会被拒
+        std::fs::OpenOptions::new()
+            .write(true)
+            .open(&tmp)?
+            .sync_all()?;
         std::fs::rename(&tmp, &target)?;
     }
     touch(&slot);
