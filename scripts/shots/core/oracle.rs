@@ -56,6 +56,7 @@ async fn dump() {
         price_updater: Default::default(),
         chatgpt: Default::default(),
         zai: Default::default(),
+        handover: Default::default(),
     });
 
     let write = |name: &str, v: &serde_json::Value| {
