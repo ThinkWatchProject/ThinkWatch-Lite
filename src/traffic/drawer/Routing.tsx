@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
+import { Badge } from "@/ui/badge";
 import { useText } from "@/i18n";
 import { coreText } from "@/i18n/core.i18n";
 import { ms } from "@/format";
@@ -98,6 +99,12 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                       <UpstreamLogo name={a.provider} className="opacity-70" />
                       <span className="truncate">{a.provider}</span>
                     </span>
+                    {/* 第二轮起的几跳：候选都试过、最后一次是暂时的故障，退避之后又发的 */}
+                    {a.retry != null && (
+                      <Badge variant="secondary" className="h-[18px] shrink-0 rounded-[5px] px-1.5 font-normal">
+                        {t.retry(a.retry)}
+                      </Badge>
+                    )}
                     {/* 这一跳发出的模型名：有一跳改了名、或者用了别名、指定模型时每一跳都写，
                         费用也按它算 */}
                     {m.show && m.hops[i] && <SentModel hop={m.hops[i]} provider={a.provider} />}
@@ -124,6 +131,12 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                           outcome.text
                         )}
                       </StatusLabel>
+                    )}
+                    {/* 重试之前退避等的时间，和排队一样不算在这一跳的耗时里，另写一项 */}
+                    {a.backoff_ms != null && a.backoff_ms > 0 && (
+                      <span className="shrink-0 tw-label tw-num text-muted-foreground">
+                        {t.backoff(seconds(a.backoff_ms))}
+                      </span>
                     )}
                     {/* 排队的时间（等空位、等限流或用量恢复）不算在这一跳的耗时里，另写一项 */}
                     {a.queued_ms != null && a.queued_ms > 0 && (
@@ -180,7 +193,7 @@ function AbandonedUsage({ usage: u }: { usage: AttemptUsage }) {
   );
 }
 
-/** 排队等了多久：不到 10 秒的留一位小数，最少写 0.1 */
+/** 排队、重试前退避等了多久：不到 10 秒的留一位小数，最少写 0.1 */
 function seconds(ms: number): string {
   const s = ms / 1000;
   return String(s < 10 ? Math.max(0.1, Math.round(s * 10) / 10) : Math.round(s));
@@ -230,6 +243,8 @@ function noteText(n: RoutingNote, t: (typeof requestDrawerText)["zh"]): string {
       return t.switched(n.count);
     case "waited":
       return t.waited(n.count);
+    case "retried":
+      return t.retried(n.count);
     case "limited":
       return t.limited;
     case "busy":

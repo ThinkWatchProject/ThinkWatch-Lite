@@ -111,6 +111,10 @@ export const requestDrawerText = messages(
     attempts: "尝试链",
     /** 这一跳等空位等了多久（上游满着）。秒数已经按一位小数写好 */
     queued: (s: string) => `排队 ${s} 秒`,
+    /** 第二轮起的一跳：第几次重试 */
+    retry: (n: number) => `第 ${n} 次重试`,
+    /** 这一跳发出之前退避等了多久。秒数的写法同 `queued` */
+    backoff: (s: string) => `等待 ${s} 秒`,
     /** 放弃了的一跳（无响应超时）下面那一行：上游没报用量时，网关估的输入 */
     abandonedEstimate: (n: string) => `输入约 ${n} token`,
     mayBeBilled: "上游可能已计费",
@@ -135,6 +139,8 @@ export const requestDrawerText = messages(
     switched: (n: number) => `已自动切换上游：前 ${n} 次尝试未接下此请求。`,
     /** 最后接下它的是前面试过的一家：等它恢复之后发了过去 */
     waited: (n: number) => `前 ${n} 次尝试未接下此请求，上游恢复后已发出。`,
+    /** 最后一跳是重试：候选都试过、最后一次是暂时的故障，又发了一轮 */
+    retried: (n: number) => `前 ${n} 次尝试未接下此请求，已自动重试。`,
     limited: "网关密钥已达到用量上限，此请求未发往任何上游。",
     busy: "上游均已达到并发上限，等待期间没有空出位置，此请求未发往任何上游。",
     busyAfterTries: (n: number) => `发出的 ${n} 次尝试未成功，其余上游均已达到并发上限，等待期间没有空出位置。`,
@@ -281,6 +287,8 @@ export const requestDrawerText = messages(
     reason: "Reason",
     attempts: "Attempts",
     queued: (s: string) => `Queued ${s} s`,
+    retry: (n: number) => `Retry ${n}`,
+    backoff: (s: string) => `Waited ${s} s`,
     abandonedEstimate: (n: string) => `About ${n} input tokens`,
     mayBeBilled: "may have been billed by the upstream",
     mayBeBilledTip: "Whether the upstream charged for these tokens is unknown; they are not included in this request's cost.",
@@ -314,6 +322,10 @@ export const requestDrawerText = messages(
       n === 1
         ? "The first attempt did not take this request; it was sent once the upstream was available again."
         : `The first ${n} attempts did not take this request; it was sent once the upstream was available again.`,
+    retried: (n: number) =>
+      n === 1
+        ? "The first attempt did not take this request; it was retried automatically."
+        : `The first ${n} attempts did not take this request; it was retried automatically.`,
     limited: "The gateway key had reached a usage limit; this request was not sent to any upstream.",
     busy: "Every upstream was at its concurrency limit and none freed up in time; this request was not sent to any upstream.",
     busyAfterTries: (n: number) =>

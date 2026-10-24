@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EMPTY_FILTER, facets, filterRows, queuedFor, sortRows, upstreamText } from "./requestTable";
+import { EMPTY_FILTER, facets, filterRows, waitingFor, sortRows, upstreamText } from "./requestTable";
 import type { RequestRow } from "./types";
 import { setLang } from "@/i18n";
 import { plain } from "@/i18n/core.i18n";
@@ -249,16 +249,23 @@ describe("只看无法计价的", () => {
   });
 });
 
-describe("排着队的那一行", () => {
+describe("排着队、等着重试的那一行", () => {
   const waiting = { upstreams: ["anthropic", "openrouter"], untilMs: 2_000_000 };
 
   it("在跑、排着队：在等的那几家", () => {
-    expect(queuedFor(row({ id: 1, state: "in_flight", queued: waiting }))).toEqual(["anthropic", "openrouter"]);
+    expect(waitingFor(row({ id: 1, state: "in_flight", waiting }))).toEqual(["anthropic", "openrouter"]);
+  });
+
+  it("在跑、等着重试：在等的那几家，和排队一样", () => {
+    expect(waitingFor(row({ id: 1, state: "in_flight", waiting: { ...waiting, retry: 2 } }))).toEqual([
+      "anthropic",
+      "openrouter",
+    ]);
   });
 
   it("没在排、已经结束、说不出等谁的：没有", () => {
-    expect(queuedFor(row({ id: 1, state: "in_flight" }))).toBeNull();
-    expect(queuedFor(row({ id: 1, state: "failed", queued: waiting }))).toBeNull();
-    expect(queuedFor(row({ id: 1, state: "in_flight", queued: { upstreams: [], untilMs: 0 } }))).toBeNull();
+    expect(waitingFor(row({ id: 1, state: "in_flight" }))).toBeNull();
+    expect(waitingFor(row({ id: 1, state: "failed", waiting }))).toBeNull();
+    expect(waitingFor(row({ id: 1, state: "in_flight", waiting: { upstreams: [], untilMs: 0 } }))).toBeNull();
   });
 });

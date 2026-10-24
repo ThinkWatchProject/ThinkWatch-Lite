@@ -171,6 +171,18 @@ describe("路由那一页", () => {
     expect(f.note).toEqual({ kind: "waited", count: 2 });
   });
 
+  it("候选都暂时出错、退避之后又发了一轮：说已重试，不说成等它恢复", () => {
+    const retried: AttemptView = { ...overloaded("anthropic"), retry: 1, backoff_ms: 2_100 };
+    const last: AttemptView = { ...served("anthropic"), retry: 2, backoff_ms: 3_900 };
+    const f = routingFacts(row({ attempts: [overloaded("anthropic"), retried, last] }), false)!;
+    expect(f.note).toEqual({ kind: "retried", count: 2 });
+    expect(f.hops.map((h) => h.attempt.retry ?? null)).toEqual([null, 1, 2]);
+    // 两家都试过、第二轮换到了另一家：同样是重试
+    const again: AttemptView = { ...served("anthropic"), retry: 1, backoff_ms: 2_000 };
+    const two = routingFacts(row({ attempts: [overloaded("anthropic"), overloaded("openrouter"), again] }), false)!;
+    expect(two.note).toEqual({ kind: "retried", count: 2 });
+  });
+
   it("等到了空位：只有一跳，排队的时间在那一跳上，不加说明", () => {
     const f = routingFacts(row({ attempts: [{ ...served("anthropic"), queued_ms: 1_240 }] }), false)!;
     expect(f.note).toBeNull();

@@ -206,6 +206,7 @@ function touches(ev: CoreEvent): number | null {
     case "request_failed":
     case "request_routed":
     case "request_queued":
+    case "request_retrying":
     case "request_dequeued":
     case "request_priced":
     case "secrets_found":

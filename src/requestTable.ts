@@ -89,11 +89,11 @@ export function upstreamText(r: RequestRow): string {
 }
 
 /**
- * 排着队的那一行在等哪几家上游（`request_queued` 之后、路由出结论之前）。不在排队、
- * 已经结束的是 null。事件里说不出是哪几家（空的）也当没在排
+ * 排着队、等着重试的那一行在等哪几家上游（`request_queued`、`request_retrying` 之后，路由出
+ * 结论之前）。不在等、已经结束的是 null。事件里说不出是哪几家（空的）也当没在等
  */
-export function queuedFor(r: Pick<RequestRow, "state" | "queued">): string[] | null {
-  return r.state === "in_flight" && r.queued && r.queued.upstreams.length > 0 ? r.queued.upstreams : null;
+export function waitingFor(r: Pick<RequestRow, "state" | "waiting">): string[] | null {
+  return r.state === "in_flight" && r.waiting && r.waiting.upstreams.length > 0 ? r.waiting.upstreams : null;
 }
 
 function valueOf(r: RequestRow, key: SortKey): number | null {

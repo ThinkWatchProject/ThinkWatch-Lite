@@ -24,7 +24,7 @@ export const failoverText = messages(
       idle_timeout_secs:
         "上游连续这么久没有发出内容即放弃：尚未向客户端发出内容时转到下一个上游，已经发出时以错误结束。默认 300 秒。",
       wait_secs:
-        "上游并发已满、被限流或用量上限用满，以及密钥的分钟、小时上限用满时，请求合计最多等待的时长，超过后返回错误。默认 120 秒，0 表示不等待。",
+        "请求排队等待上游空出位置、限流结束或用量上限恢复（含密钥的分钟、小时上限），以及上游暂时出错后重试，两者合计最多等待的时长，超过后返回错误。默认 120 秒，0 表示不排队也不重试。",
     },
     times: "次",
     secs: "秒",
@@ -61,7 +61,7 @@ export const failoverText = messages(
       idle_timeout_secs:
         "An upstream that sends no content for this long is given up on: the request moves to the next upstream if nothing has reached the client yet, and ends with an error otherwise. 300 s by default.",
       wait_secs:
-        "Total time a request waits while upstreams are full, rate-limited or at a usage limit, or while a key's per-minute or per-hour limit is used up. After that it ends with an error. 120 s by default; 0 means no wait.",
+        "Total time a request spends queueing for a full, rate-limited or usage-limited upstream (or a key's per-minute or per-hour limit) and retrying upstreams that failed temporarily; after that it ends with an error. 120 s by default; 0 means no queueing or retrying.",
     },
     times: "times",
     secs: "s",

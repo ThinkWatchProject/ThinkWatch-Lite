@@ -239,15 +239,15 @@ const ENDED_CAP = 512;
  * 此刻每个上游有几个请求在途。
  *
  * 开始事件里就有上游；换了上游（转移）以 `request_routed` 的最后一跳为准；三种结局
- * 都算结束。**排着队的不算**（`request_queued` 之后、`request_dequeued` 或 `request_routed`
- * 之前）：它在等上游空出来，还没有发给哪一家。**页面半路挂上**时，已经在飞的那几个没有开始事件可听 —— 挂上时读一次
+ * 都算结束。**排着队、等着重试的不算**（`request_queued`、`request_retrying` 之后，
+ * `request_dequeued` 或 `request_routed` 之前）：它在等，还没有发给哪一家。**页面半路挂上**时，已经在飞的那几个没有开始事件可听 —— 挂上时读一次
  * `/in-flight` 的快照，把每个请求到目前为止的事件照原样重放（比快照先到的结束事件
  * 记下来，免得补回一个已经结束的）。core 停了、重启了，在途的全部作废：它们不会再有
  * 结局。
  */
 export function useInFlight(): ReadonlyMap<string, number> {
   const live = useRef(new Map<number, string>());
-  /** 正在排队的：在 `live` 里，但不算在哪一家头上 */
+  /** 正在排队、等着重试的：在 `live` 里，但不算在哪一家头上 */
   const queued = useRef(new Set<number>());
   const ended = useRef(new Set<number>());
   const [tick, setTick] = useState(0);
@@ -258,7 +258,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
     /** 开始、路由落到「哪个请求在哪个上游」上。事件流和快照重放用的是同一段 */
     const track = (ev: CoreEvent) => {
       if (ev.kind === "request_started") live.current.set(ev.id, ev.provider);
-      else if (ev.kind === "request_queued") {
+      else if (ev.kind === "request_queued" || ev.kind === "request_retrying") {
         if (live.current.has(ev.id)) queued.current.add(ev.id);
       } else if (ev.kind === "request_dequeued") queued.current.delete(ev.id);
       else if (ev.kind === "request_routed") {
@@ -299,6 +299,7 @@ export function useInFlight(): ReadonlyMap<string, number> {
           break;
         case "request_routed":
         case "request_queued":
+        case "request_retrying":
         case "request_dequeued":
           track(ev);
           break;

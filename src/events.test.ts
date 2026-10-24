@@ -865,9 +865,9 @@ describe("排队中（request_queued）", () => {
     const rows = new Map<number, RequestRow>();
     applyEvent(rows, started());
     applyEvent(rows, queued(1));
-    expect(rows.get(1)?.queued).toEqual({ upstreams: ["anthropic", "openrouter"], untilMs: 1_120_000 });
+    expect(rows.get(1)?.waiting).toEqual({ upstreams: ["anthropic", "openrouter"], untilMs: 1_120_000 });
     applyEvent(rows, routed(1));
-    expect(rows.get(1)?.queued).toBeUndefined();
+    expect(rows.get(1)?.waiting).toBeUndefined();
     expect(rows.get(1)?.provider).toBe("openrouter");
   });
 
@@ -877,7 +877,7 @@ describe("排队中（request_queued）", () => {
     applyEvent(rows, queued(1));
     applyEvent(rows, routed(1));
     applyEvent(rows, queued(1, ["openrouter"]));
-    expect(rows.get(1)?.queued?.upstreams).toEqual(["openrouter"]);
+    expect(rows.get(1)?.waiting?.upstreams).toEqual(["openrouter"]);
   });
 
   it("不排了（request_dequeued）：等到了、正在发，路由事件还没到也不再说在排队", () => {
@@ -887,7 +887,7 @@ describe("排队中（request_queued）", () => {
     const before = rows.get(1);
     expect(applyBatch(rows, [{ kind: "request_dequeued", id: 1, at_ms: 1_004_000 }])).toBe(true);
     expect(rows.get(1)).not.toBe(before);
-    expect(rows.get(1)?.queued).toBeUndefined();
+    expect(rows.get(1)?.waiting).toBeUndefined();
     expect(rows.get(1)?.state).toBe("in_flight");
     // 半路才打开：快照里排过、又不排了的，照原样重放之后也不在排队
     const later = new Map<number, RequestRow>();
@@ -896,7 +896,7 @@ describe("排队中（request_queued）", () => {
       [open(started({ id: 7 }), queued(7, ["anthropic"]), { kind: "request_dequeued", id: 7, at_ms: 1_004_000 })],
       { started: new Set(), ended: new Set() },
     );
-    expect(later.get(7)?.queued).toBeUndefined();
+    expect(later.get(7)?.waiting).toBeUndefined();
   });
 
   it("排着队就结束了（等到头、客户端断开、手动中止）：不再说在排队", () => {
@@ -922,13 +922,13 @@ describe("排队中（request_queued）", () => {
       sent_bytes: 1,
       received_bytes: 1,
     });
-    for (const id of [1, 2, 3]) expect(rows.get(id)?.queued).toBeUndefined();
+    for (const id of [1, 2, 3]) expect(rows.get(id)?.waiting).toBeUndefined();
   });
 
   it("半路才打开：快照里的排队照原样重放", () => {
     const rows = new Map<number, RequestRow>();
     applyInFlight(rows, [open(started({ id: 7 }), queued(7, ["anthropic"]))], { started: new Set(), ended: new Set() });
-    expect(rows.get(7)?.queued?.upstreams).toEqual(["anthropic"]);
+    expect(rows.get(7)?.waiting?.upstreams).toEqual(["anthropic"]);
   });
 
   it("排队那一条换成新对象（表格据此重画）；上游限流的事件不碰任何一行", () => {
@@ -950,5 +950,73 @@ describe("排队中（request_queued）", () => {
       ]),
     ).toBe(false);
     expect(rows.get(1)).toBe(now);
+  });
+});
+
+describe("重试中（request_retrying）", () => {
+  const retrying = (id: number, attempt = 1, upstreams: string[] = ["anthropic"]) =>
+    ({
+      kind: "request_retrying",
+      id,
+      upstreams,
+      attempt,
+      retry_at_ms: 1_002_000,
+      until_ms: 1_120_000,
+      at_ms: 1_000_000,
+    }) satisfies CoreEvent;
+  const dequeued = (id: number) => ({ kind: "request_dequeued", id, at_ms: 1_002_000 }) satisfies CoreEvent;
+
+  it("退避时在等：要重试的几家、第几次和最晚等到什么时候；发出去了就撤掉", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    const before = rows.get(1);
+    expect(applyBatch(rows, [retrying(1, 1, ["anthropic", "openrouter"])])).toBe(true);
+    expect(rows.get(1)).not.toBe(before);
+    expect(rows.get(1)?.waiting).toEqual({ upstreams: ["anthropic", "openrouter"], untilMs: 1_120_000, retry: 1 });
+    expect(rows.get(1)?.state).toBe("in_flight");
+    applyEvent(rows, dequeued(1));
+    expect(rows.get(1)?.waiting).toBeUndefined();
+    // 又失败、再退避：第二次
+    applyEvent(rows, retrying(1, 2));
+    expect(rows.get(1)?.waiting?.retry).toBe(2);
+  });
+
+  it("排队之后转为重试、重试之后又排队：以最后一条为准", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, { kind: "request_queued", id: 1, upstreams: ["anthropic"], until_ms: 1_120_000, at_ms: 1_000_500 });
+    applyEvent(rows, dequeued(1));
+    applyEvent(rows, retrying(1));
+    expect(rows.get(1)?.waiting?.retry).toBe(1);
+    applyEvent(rows, dequeued(1));
+    applyEvent(rows, { kind: "request_queued", id: 1, upstreams: ["anthropic"], until_ms: 1_120_000, at_ms: 1_004_000 });
+    expect(rows.get(1)?.waiting).toEqual({ upstreams: ["anthropic"], untilMs: 1_120_000 });
+  });
+
+  it("等着重试就结束了（等到头、手动中止）：不再说在重试", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, retrying(1));
+    applyEvent(rows, {
+      kind: "request_failed",
+      id: 1,
+      model: "claude-sonnet-4-5",
+      source: "upstream",
+      message: { code: "gw.request.aborted", text: "" },
+    });
+    expect(rows.get(1)?.waiting).toBeUndefined();
+    expect(rows.get(1)?.state).toBe("failed");
+  });
+
+  it("半路才打开：快照里的重试照原样重放，等过、发出去了的不再说在重试", () => {
+    const rows = new Map<number, RequestRow>();
+    applyInFlight(
+      rows,
+      [open(started({ id: 7 }), retrying(7, 3)), open(started({ id: 8 }), retrying(8), dequeued(8))],
+      { started: new Set(), ended: new Set() },
+    );
+    expect(rows.get(7)?.waiting).toEqual({ upstreams: ["anthropic"], untilMs: 1_120_000, retry: 3 });
+    expect(rows.get(8)?.waiting).toBeUndefined();
+    expect(rows.get(8)?.state).toBe("in_flight");
   });
 });

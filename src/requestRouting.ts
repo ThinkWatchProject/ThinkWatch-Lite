@@ -111,6 +111,8 @@ export interface Hop {
  *   429 暂停了的 —— 那不是上游的失败，不说「失败」（每一跳为什么没接下在它自己那一行）
  * · `waited`：前 `count` 跳没有接下它，最后接下的是前面试过的一家：等它恢复（限流结束、
  *   用量窗口空出来、空出位置）之后发了过去，没有换上游
+ * · `retried`：前 `count` 跳没有接下它，最后一跳是重试（`retry`）：候选都试过、最后一次是
+ *   暂时的故障，退避之后又发了一轮。和 `waited` 一样最后那一家可能是前面试过的，但不是等它恢复
  * · `limited`：这把网关密钥的用量上限拒绝了它：没有发往任何上游
  * · `busy`：剩下的上游都满着，等过了也没空出位置。`tried` 是在那之前真的发出去、没成的
  *   几跳；0 就是没有发往任何上游
@@ -131,6 +133,7 @@ export type RoutingNote =
   | { kind: "failover"; failed: number }
   | { kind: "switched"; count: number }
   | { kind: "waited"; count: number }
+  | { kind: "retried"; count: number }
   | { kind: "limited" }
   | { kind: "busy" | "throttled" | "full" | "timeout"; tried: number }
   | { kind: "failover_denied"; failed: number; rule: string }
@@ -221,11 +224,14 @@ export function routingFacts(
     const earlier = attempts.slice(0, -1);
     const last = attempts[n - 1]!;
     const plain = earlier.every((a) => !notFailed(a));
-    note = earlier.some((a) => a.provider === last.provider)
-      ? { kind: "waited", count: n - 1 }
-      : plain
-        ? { kind: "failover", failed: n - 1 }
-        : { kind: "switched", count: n - 1 };
+    note =
+      last.retry != null
+        ? { kind: "retried", count: n - 1 }
+        : earlier.some((a) => a.provider === last.provider)
+          ? { kind: "waited", count: n - 1 }
+          : plain
+            ? { kind: "failover", failed: n - 1 }
+            : { kind: "switched", count: n - 1 };
   }
 
   return {
