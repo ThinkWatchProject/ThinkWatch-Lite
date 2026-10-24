@@ -306,19 +306,20 @@ skipped?: ServeSkip | null,
  */
 pause_ms?: number | null, 
 /**
+ * 这一跳是第几次重试，从 1 数（见 [`Event::RequestRetrying`]）：一轮重试里的每一跳都带着。
+ * 第一轮的没有
+ */
+retry?: number | null, 
+/**
+ * 这一跳发出去之前退避了多少毫秒：一轮重试的头一跳带着。不算在 `ms` 里。别的没有
+ */
+backoff_ms?: number | null, 
+/**
  * 这一跳走的代理：这家上游配置的代理名（跟随系统的是 `system`），直连是 None。没发出去
  * 的一跳（满着、被拒、转换不了……）是它要走的那个 —— 连不上的那一跳，问题可能就出在
  * 这个代理上。WebSocket 只连直连的上游，一律是 None
  */
-proxy?: string | null, 
-/**
- * 这一跳是第几次重试（从 1 起）。第一轮的几跳没有
- */
-retry?: number | null, 
-/**
- * 这一跳发出之前退避等了多少毫秒。不算在 `ms` 里
- */
-backoff_ms?: number | null, };
+proxy?: string | null, };
 
 /**
  * 上游接不接受凭据。
@@ -1510,19 +1511,19 @@ upstreams: Array<string>,
  */
 until_ms: number, at_ms: number, } | { "kind": "request_dequeued", id: number, at_ms: number, } | { "kind": "request_retrying", id: number, 
 /**
- * 要重试哪几家，按候选的顺序
+ * 要再试哪几家，按候选的顺序
  */
 upstreams: Array<string>, 
 /**
- * 接下来是第几次重试，从 1 起
+ * 接下来是第几次重试，从 1 数
  */
 attempt: number, 
 /**
- * 下一次什么时候发出（Unix 毫秒）
+ * 下一次什么时候发出去（Unix 毫秒）
  */
 retry_at_ms: number, 
 /**
- * 最多等到什么时候（Unix 毫秒）：这个请求的等待期限，同 `RequestQueued::until_ms`
+ * 这个请求的等待期限（Unix 毫秒），同 [`Event::RequestQueued`] 的 `until_ms`
  */
 until_ms: number, at_ms: number, } | { "kind": "request_routed", id: number, 
 /**
