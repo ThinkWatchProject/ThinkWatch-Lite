@@ -507,6 +507,7 @@
     "gw.upstream.status": "上游「{upstream}」返回 {status}。",
     "gw.upstream.status_message": "上游「{upstream}」返回 {status}：{message}",
     "gw.upstream.stream_opening_error": "上游「{upstream}」开始回答后、给出任何内容之前报错（{kind}）：{message}",
+    "gw.upstream.stream_ended_early": "上游在给出任何内容之前结束了回答。",
     "gw.upstream.idle_timeout": "上游「{upstream}」在 {secs} 秒内没有发出内容。",
     "gw.upstream.idle_timeout_mid_stream": "上游「{upstream}」回答到一半后停止发送内容，{secs} 秒内没有新的内容。",
     "gw.request.aborted": "请求已被手动中止。",
