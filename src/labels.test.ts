@@ -129,8 +129,17 @@ describe("尝试链里一跳改了推理强度", () => {
     expect(effortText({ asked: "none", sent: null, reason: "remembered" })).toBe(
       "已去掉推理强度：该模型不支持关闭推理（none）",
     );
+    expect(effortText({ asked: "none", sent: "low", reason: "rejected" })).toBe(
+      "关闭推理（none）被上游拒收，已改用 low 重发",
+    );
+    expect(effortText({ asked: "none", sent: "minimal", reason: "remembered" })).toBe(
+      "推理强度 none → minimal：该模型不支持关闭推理",
+    );
     setLang("en");
     expect(effortText({ asked: "high", sent: "none", reason: "rule" })).toBe("Reasoning turned off: rewritten by a rule");
+    expect(effortText({ asked: "none", sent: "low", reason: "rejected" })).toBe(
+      "Turning reasoning off (none) was rejected by the upstream; resent with low",
+    );
   });
 });
 

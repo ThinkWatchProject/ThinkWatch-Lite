@@ -234,10 +234,10 @@ export function effortText(e: EffortChange): string {
       if (sent === "none") return t.ruleOff;
       return sent == null ? t.ruleRemoved : t.rule(e.asked, sent);
     case "rejected":
-      if (e.asked === "none") return t.rejectedOff;
+      if (e.asked === "none") return sent == null ? t.rejectedOff : t.rejectedOffTo(sent);
       return sent == null ? t.rejectedRemoved(e.asked) : t.rejected(e.asked, sent);
     case "remembered":
-      if (e.asked === "none") return t.rememberedOff;
+      if (e.asked === "none") return sent == null ? t.rememberedOff : t.rememberedOffTo(sent);
       return sent == null ? t.rememberedRemoved(e.asked) : t.remembered(e.asked, sent);
   }
 }

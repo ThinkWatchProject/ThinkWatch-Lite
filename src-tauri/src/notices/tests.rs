@@ -694,6 +694,7 @@ async fn an_unreachable_upstream_is_only_listed_and_needs_real_evidence_to_clear
             proxy: None,
             retry: None,
             backoff_ms: None,
+            effort: None,
         }],
         billing: tw_api::Billing::PerToken,
         egress: None,

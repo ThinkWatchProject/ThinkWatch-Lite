@@ -11,7 +11,7 @@ export const updateText = messages(
     available: (version: string) => `ThinkWatch Lite ${version} 可用`,
     closeWhileWaiting: "关闭此窗口不影响更新，更新完成后将发送通知。",
     /** 能在窗口里直接装的那几档（网页下载的、Windows 的绿色版）都是这一句 */
-    standalone: "下载完成后自动安装。网关将在进行中的请求全部结束后重新启动。",
+    standalone: "下载完成后自动安装并重新启动，进行中的请求不会中断。",
     later: "稍后",
     install: "下载并安装",
     /** 下载或安装中途失败时那条提示的标题，正文是原因 */
@@ -34,7 +34,7 @@ export const updateText = messages(
     available: (version: string) => `ThinkWatch Lite ${version} is available`,
     closeWhileWaiting: "Closing this window does not stop the update. A notification is sent when it is complete.",
     standalone:
-      "Installs automatically after downloading. The gateway restarts once all requests in progress have finished.",
+      "Installs and restarts automatically after downloading. Requests in progress are not interrupted.",
     later: "Later",
     install: "Download and install",
     failed: "The update did not finish",
