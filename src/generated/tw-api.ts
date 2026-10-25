@@ -315,16 +315,17 @@ retry?: number | null,
  */
 backoff_ms?: number | null, 
 /**
+ * 这一跳发出去的推理强度和客户端要的不一样：规则改写的、上游拒收了改用别的一档重发的、
+ * 记得这个模型不认那一档直接改了的（见 [`EffortChange`]）。一样的没有。被拒收的那一跳
+ * 自己是一跳普通的 `status`（400），重发的那一跳带着 `rejected`
+ */
+effort?: EffortChange | null, 
+/**
  * 这一跳走的代理：这家上游配置的代理名（跟随系统的是 `system`），直连是 None。没发出去
  * 的一跳（满着、被拒、转换不了……）是它要走的那个 —— 连不上的那一跳，问题可能就出在
  * 这个代理上。WebSocket 只连直连的上游，一律是 None
  */
-proxy?: string | null, 
-/**
- * 这一跳发出的推理强度和客户端要的不一样时才有：规则改写、上游拒收后改档重发、记住了该模型
- * 不支持的档位。被拒收的那一跳本身是一跳普通的 `status: 400`，改档重发的那一跳带着它
- */
-effort?: EffortChange | null, };
+proxy?: string | null, };
 
 /**
  * 上游接不接受凭据。
@@ -1306,21 +1307,20 @@ skipped: Array<SkippedView>,
 converted: Array<ConvertedView>, };
 
 /**
- * 一跳发出的推理强度和客户端要的不一样（[`AttemptView::effort`]）。
+ * 一跳发出去的推理强度和客户端要的不一样（[`AttemptView::effort`]）。
  */
 export type EffortChange = { 
 /**
- * 客户端要的档位（`minimal` … `max`）
+ * 客户端要的那一档：`minimal` / `low` / `medium` / `high` / `xhigh` / `max`
  */
 asked: string, 
 /**
- * 发出去的档位；None = 去掉了推理强度
+ * 发出去的那一档，同一个词表。null 是去掉了推理强度，按模型的默认
  */
 sent: string | null, reason: EffortReason, };
 
 /**
- * 推理强度为什么变了：`rule`（规则改写）/ `rejected`（上游拒收了原来的档位，改档重发）/
- * `remembered`（之前记住了该模型不支持原来的档位）
+ * 推理强度为什么改了（[`EffortChange::reason`]）。
  */
 export type EffortReason = "rule" | "rejected" | "remembered";
 
@@ -4729,6 +4729,11 @@ to?: RuleTarget | null,
 deny?: string | null, set?: RuleRewrite | null, };
 
 /**
+ * 规则改写的推理（[`RuleRewrite::reasoning`]）。没有 `minimal`
+ */
+export type RuleReasoning = "off" | "low" | "medium" | "high" | "xhigh" | "max";
+
+/**
  * 规则里的参数改写。每一项不写就是不改。
  */
 export type RuleRewrite = { 
@@ -4737,14 +4742,9 @@ export type RuleRewrite = {
  */
 model?: string | null, max_tokens?: number | null, 
 /**
- * 推理：`off` 去掉推理配置；一个档位只改已开启推理的请求的推理强度
+ * 推理：关掉，或者改成一档。**只改开着推理的请求**，没开推理的（生成标题这类）原样不动
  */
 reasoning?: RuleReasoning | null, };
-
-/**
- * 规则改写的推理：关闭，或者一个推理强度档位。
- */
-export type RuleReasoning = "off" | "low" | "medium" | "high" | "xhigh" | "max";
 
 /**
  * 命中那一刻的规则（[`SecurityEventView::rule_snapshot`]）。**跟着记录存**：规则之后改了、
@@ -5385,8 +5385,9 @@ export type SetField = "model" | "max_tokens" | "reasoning" | "only_at_session_s
  */
 export type SetView = { 
 /**
- * `model`（换模型，整个 prompt cache 作废）/ `max_tokens` / `reasoning`（值是 [`RuleReasoning`] 的标识）/
- * `only_at_session_start`（以上改写只在新会话开始时应用，值是 `true`）
+ * `model`（换模型，整个 prompt cache 作废）/ `max_tokens` / `reasoning`（值是
+ * [`RuleReasoning`] 的那个词）/ `only_at_session_start`（以上改写只在新会话开始时应用，
+ * 值是 `true`）
  */
 field: SetField, value: string, };
 
