@@ -15,9 +15,11 @@ import {
   type BalanceBy,
   type ConditionView,
   type ConfigStage,
+  type EffortChange,
   type GroupKind,
   type MismatchView,
   type ReplayQuote,
+  type RuleReasoning,
   type SetView,
   type TakesEffect,
   type TranslatedView,
@@ -146,6 +148,12 @@ export function mismatchText(m: MismatchView): string {
     : t.valueMismatch(name, want, got);
 }
 
+/** 规则改写的推理：`关闭推理` / `推理 max`。规则摘要和试算明细共用 */
+export function reasoningText(r: RuleReasoning): string {
+  const t = textOf(labelsText);
+  return r === "off" ? t.reasoningOff : t.reasoningLevel(r);
+}
+
 /** 规则命中后的一项参数改写 */
 export function setText(s: SetView): string {
   const t = textOf(labelsText);
@@ -154,6 +162,8 @@ export function setText(s: SetView): string {
       return t.setModel(s.value);
     case "only_at_session_start":
       return t.onlyAtSessionStart;
+    case "reasoning":
+      return reasoningText(s.value as RuleReasoning);
     default:
       return t.setField(s.field, s.value);
   }
@@ -209,6 +219,23 @@ export function attemptText(a: AttemptView): { text: string; ok: boolean; idle?:
       return { text: t.aborted, ok: false, idle: true, tip: null };
     default:
       return { text: said ?? t.noResponse, ok: false, tip: null };
+  }
+}
+
+/**
+ * 尝试链里一跳发出的推理强度和客户端要的不同（`AttemptView::effort`）：为什么、改成了什么。
+ * `sent` 为空是去掉了推理强度（按模型的默认）
+ */
+export function effortText(e: EffortChange): string {
+  const t = textOf(labelsText).effort;
+  const sent = e.sent ?? null;
+  switch (e.reason) {
+    case "rule":
+      return sent == null ? t.ruleRemoved : t.rule(e.asked, sent);
+    case "rejected":
+      return sent == null ? t.rejectedRemoved(e.asked) : t.rejected(e.asked, sent);
+    case "remembered":
+      return sent == null ? t.rememberedRemoved(e.asked) : t.remembered(e.asked, sent);
   }
 }
 

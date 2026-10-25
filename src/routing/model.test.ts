@@ -12,6 +12,7 @@ import {
   draftNotes,
   draftToInput,
   flowOf,
+  hasAddOns,
   insertIndex,
   liftShadowed,
   move,
@@ -97,7 +98,7 @@ describe("规则草稿", () => {
       conditions: v.conditions,
       to,
       deny: null,
-      set: { model: null, max_tokens: 8192, thinking: null },
+      set: { model: null, max_tokens: 8192, reasoning: null },
     });
     // 上游或策略组照旧是一个名称
     expect(draftFromView(view({ name: "兜底", to: "__all__" })).toKind).toBe("target");
@@ -105,7 +106,7 @@ describe("规则草稿", () => {
 
   it("指定模型时「模型改为」不起作用：不写进配置，也不算附加项", () => {
     const d = rule("a", { toKind: "pinned", pinned: [blankPinned("anthropic", "claude-opus-5")], model: "x", maxTokens: "4096" });
-    expect(draftToInput(d).set).toEqual({ model: null, max_tokens: 4096, thinking: null });
+    expect(draftToInput(d).set).toEqual({ model: null, max_tokens: 4096, reasoning: null });
     expect(addOnsText(d)).toBe("max_tokens 改为 4096");
     // 切回上游或策略组，留着的「模型改为」照常生效
     expect(draftToInput({ ...d, toKind: "target" }).set?.model).toBe("x");
@@ -151,6 +152,31 @@ describe("规则草稿", () => {
   it("max_tokens 要是正整数：0 写回去会被当成没填", () => {
     expect(ruleProblem(rule("a", { action: "continue", maxTokens: "0" }), [])).toContain("max_tokens");
     expect(ruleProblem(rule("a", { action: "continue", maxTokens: "4096" }), [])).toBeNull();
+  });
+
+  it("推理：读进来、交回去是同一个标识；不改变不写进配置", () => {
+    const max = draftFromView(view({ name: "a", to: "pool", set: { model: null, max_tokens: null, reasoning: "max" } }));
+    expect(max.reasoning).toBe("max");
+    expect(hasAddOns(max)).toBe(true);
+    expect(draftToInput(max).set).toEqual({ model: null, max_tokens: null, reasoning: "max" });
+    const off = draftFromView(view({ name: "b", to: "pool", set: { reasoning: "off" } }));
+    expect(off.reasoning).toBe("off");
+    expect(draftToInput(off).set?.reasoning).toBe("off");
+    // 没有改写的规则：不改变，整个 set 不写
+    const keep = draftFromView(view({ name: "c", to: "pool" }));
+    expect(keep.reasoning).toBe("keep");
+    expect(hasAddOns(keep)).toBe(false);
+    expect(draftToInput(keep).set).toBeNull();
+    // 拒绝时附加项不起作用
+    expect(draftToInput({ ...max, action: "deny", deny: "x" }).set).toBeNull();
+  });
+
+  it("推理写进规则摘要", () => {
+    expect(addOnsText(rule("a", { reasoning: "max" }))).toBe("推理 max");
+    expect(addOnsText(rule("a", { maxTokens: "4096", reasoning: "off" }))).toBe("max_tokens 改为 4096 · 关闭推理");
+    setLang("en");
+    expect(addOnsText(rule("a", { reasoning: "xhigh" }))).toBe("Reasoning xhigh");
+    expect(addOnsText(rule("a", { reasoning: "off" }))).toBe("Reasoning off");
   });
 });
 

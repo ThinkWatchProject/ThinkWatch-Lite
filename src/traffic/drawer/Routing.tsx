@@ -8,7 +8,7 @@ import { IconDenied } from "@/ui/icons";
 import { UpstreamLogo } from "@/ui/logos";
 import { StatusLabel } from "@/ui/status-dot";
 import { Tip } from "@/ui/tip";
-import { attemptText, deniedHopText, targetLabel } from "@/labels";
+import { attemptText, deniedHopText, effortText, targetLabel } from "@/labels";
 import { routingFacts, skippedHop, type RoutingNote } from "@/requestRouting";
 import type { AttemptUsage, HistoryRow, PluginRunView } from "@/types";
 import { egressLabel } from "@/upstreams/labels";
@@ -150,6 +150,9 @@ export function Routing({ r, plugins, running }: { r: HistoryRow; plugins: Plugi
                   {/* 这一跳走的代理，在下面一行（和上游名对齐）：挤在同一行会把结果那一格挤短。
                       直连的不写 —— 多数上游是直连的，每一跳都写一遍只是噪声 */}
                   {a.proxy && <p className="mt-0.5 pl-7 tw-label text-muted-foreground">{t.viaProxy(egressLabel(a.proxy))}</p>}
+                  {/* 这一跳发出的推理强度和客户端要的不同：规则改写、上游拒收后改档重发、记住了
+                      该模型不支持的档位。被拒收的那一跳是普通的 400，改档重发的这一跳带着它 */}
+                  {a.effort && <p className="mt-0.5 pl-7 tw-label text-muted-foreground">{effortText(a.effort)}</p>}
                   {/* 放弃了的这一跳（无响应超时）上游可能已经按输入收了钱：不在这个请求的费用里 */}
                   {a.usage && <AbandonedUsage usage={a.usage} />}
                 </li>

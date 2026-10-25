@@ -220,18 +220,25 @@ export function routingFacts(
         ? { kind: "failover_denied", failed: n - 1, rule: deniedBy }
         : { kind: "denied_after_pick", rule: deniedBy };
   } else if (n > 1) {
+    // 最后一跳是推理强度被拒收后、改档在同一家重发的：被拒收的那一跳和它算一次尝试，不是
+    // 「等上游恢复」。为什么重发在那一跳自己那一行
+    const resent = attempts[n - 1]!.effort?.reason === "rejected";
+    const chain = resent ? [...attempts.slice(0, -2), attempts[n - 1]!] : attempts;
+    const m = chain.length;
     // 满着、限流中跳过，收到 429 暂停，都不是上游的失败（无响应超时是）
-    const earlier = attempts.slice(0, -1);
-    const last = attempts[n - 1]!;
+    const earlier = chain.slice(0, -1);
+    const last = chain[m - 1]!;
     const plain = earlier.every((a) => !notFailed(a));
     note =
-      last.retry != null
-        ? { kind: "retried", count: n - 1 }
-        : earlier.some((a) => a.provider === last.provider)
-          ? { kind: "waited", count: n - 1 }
-          : plain
-            ? { kind: "failover", failed: n - 1 }
-            : { kind: "switched", count: n - 1 };
+      m === 1
+        ? null
+        : last.retry != null
+          ? { kind: "retried", count: m - 1 }
+          : earlier.some((a) => a.provider === last.provider)
+            ? { kind: "waited", count: m - 1 }
+            : plain
+              ? { kind: "failover", failed: m - 1 }
+              : { kind: "switched", count: m - 1 };
   }
 
   return {

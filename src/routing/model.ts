@@ -5,9 +5,9 @@
  * 能不能用、条件写得对不对，最后由 core 说；这里只做对话框里需要实时给出
  * 的那几件事：保存按钮旁边缺什么、哪条规则被兜底挡住。
  */
-import type { ClientView, ConditionField, ConditionView, Dialect, GroupKind, GroupView, KnownModel, PinnedModel, ProviderView, RouteView, RuleInput, RuleView } from "@/types";
+import type { ClientView, ConditionField, ConditionView, Dialect, GroupKind, GroupView, KnownModel, PinnedModel, ProviderView, RouteView, RuleInput, RuleReasoning, RuleView } from "@/types";
 import { textOf } from "@/i18n";
-import { ALL_UPSTREAMS, balanceByLabel, conditionName, groupKindLabel, targetLabel } from "@/labels";
+import { ALL_UPSTREAMS, balanceByLabel, conditionName, groupKindLabel, reasoningText, targetLabel } from "@/labels";
 import { protocolLabel } from "@/upstreams/labels";
 import { modelText } from "./model.i18n";
 import { routingText } from "./routing.i18n";
@@ -146,8 +146,12 @@ export interface RuleDraft {
   deny: string;
   model: string;
   maxTokens: string;
-  thinking: "keep" | "on" | "off";
+  /** 推理：不改变，或者改成关闭、某一档推理强度 */
+  reasoning: "keep" | RuleReasoning;
 }
+
+/** 规则里可选的推理改写，按对话框里的顺序：关闭，然后由低到高的推理强度 */
+export const REASONING: readonly RuleReasoning[] = ["off", "low", "medium", "high", "xhigh", "max"];
 
 let seq = 0;
 function nextKey(): string {
@@ -168,7 +172,7 @@ export function blankRule(to = ALL_UPSTREAMS): RuleDraft {
     deny: "",
     model: "",
     maxTokens: "",
-    thinking: "keep",
+    reasoning: "keep",
   };
 }
 
@@ -190,7 +194,7 @@ export function draftFromView(r: RuleView): RuleDraft {
     deny: r.deny ?? "",
     model: r.set?.model ?? "",
     maxTokens: r.set?.max_tokens != null ? String(r.set.max_tokens) : "",
-    thinking: r.set?.thinking == null ? "keep" : r.set.thinking ? "on" : "off",
+    reasoning: r.set?.reasoning ?? "keep",
   };
 }
 
@@ -216,7 +220,7 @@ function setModelOf(d: RuleDraft): string {
 
 /** 附加了改写 */
 export function hasAddOns(d: RuleDraft): boolean {
-  return setModelOf(d) !== "" || d.maxTokens.trim() !== "" || d.thinking !== "keep";
+  return setModelOf(d) !== "" || d.maxTokens.trim() !== "" || d.reasoning !== "keep";
 }
 
 /** 在选定上游之后才判断：条件里有「选定上游」 */
@@ -239,7 +243,7 @@ export function draftToInput(d: RuleDraft): RuleInput {
   const set = {
     model: setModelOf(d) || null,
     max_tokens: Number.isFinite(maxTokens) && maxTokens > 0 ? maxTokens : null,
-    thinking: d.thinking === "keep" ? null : d.thinking === "on",
+    reasoning: d.reasoning === "keep" ? null : d.reasoning,
   };
   return {
     name: d.name.trim(),
@@ -252,7 +256,7 @@ export function draftToInput(d: RuleDraft): RuleInput {
           : d.to,
     deny: deny ? d.deny.trim() : null,
     // 拒绝时附加项不起作用：不写进去
-    set: !deny && (set.model || set.max_tokens || set.thinking != null) ? set : null,
+    set: !deny && (set.model || set.max_tokens || set.reasoning != null) ? set : null,
   };
 }
 
@@ -481,7 +485,7 @@ export function addOnsText(d: RuleDraft, known: readonly KnownModel[] = []): str
   const model = setModelOf(d);
   if (model) parts.push(aliasNamed(model, known) ? t.setModelAlias(model) : t.setModel(model));
   if (d.maxTokens.trim()) parts.push(t.setMaxTokens(d.maxTokens.trim()));
-  if (d.thinking !== "keep") parts.push(d.thinking === "on" ? t.thinkingOn : t.thinkingOff);
+  if (d.reasoning !== "keep") parts.push(reasoningText(d.reasoning));
   return parts.join(" · ");
 }
 

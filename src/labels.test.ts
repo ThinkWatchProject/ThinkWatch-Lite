@@ -4,6 +4,7 @@ import {
   GROUP_KINDS,
   PROBES,
   attemptText,
+  effortText,
   conditionName,
   failureKind,
   conditionText,
@@ -71,6 +72,11 @@ describe("规则的条件与改写", () => {
       "Model set to claude-haiku-4-5; the entire prompt cache is invalidated",
     );
     expect(setText({ field: "max_tokens", value: "4096" })).toBe("max_tokens set to 4096");
+    expect(setText({ field: "reasoning", value: "max" })).toBe("Reasoning max");
+    expect(setText({ field: "reasoning", value: "off" })).toBe("Reasoning off");
+    setLang("zh");
+    expect(setText({ field: "reasoning", value: "low" })).toBe("推理 low");
+    expect(setText({ field: "reasoning", value: "off" })).toBe("关闭推理");
   });
 
   it("时段条件写成人话；写不对的按原文", () => {
@@ -81,6 +87,38 @@ describe("规则的条件与改写", () => {
     );
     // 写不对的按原文
     expect(conditionText({ field: "time", values: ["whenever"] })).toBe("时段 whenever");
+  });
+});
+
+describe("尝试链里一跳改了推理强度", () => {
+  it("规则改写、上游拒收后重发、记住了不支持的档位；改成别的档位和去掉各一句", () => {
+    expect(effortText({ asked: "xhigh", sent: "max", reason: "rule" })).toBe("推理强度 xhigh → max：规则改写");
+    expect(effortText({ asked: "xhigh", sent: null, reason: "rule" })).toBe("已去掉推理强度：规则改写");
+    expect(effortText({ asked: "xhigh", sent: "max", reason: "rejected" })).toBe(
+      "推理强度 xhigh 被上游拒收，已改用 max 重发",
+    );
+    expect(effortText({ asked: "xhigh", sent: null, reason: "rejected" })).toBe("推理强度 xhigh 被上游拒收，已去掉后重发");
+    expect(effortText({ asked: "xhigh", sent: "max", reason: "remembered" })).toBe(
+      "推理强度 xhigh → max：该模型不支持 xhigh",
+    );
+    expect(effortText({ asked: "xhigh", sent: null, reason: "remembered" })).toBe("已去掉推理强度：该模型不支持 xhigh");
+    setLang("en");
+    expect(effortText({ asked: "xhigh", sent: "max", reason: "rule" })).toBe(
+      "Reasoning effort xhigh → max: rewritten by a rule",
+    );
+    expect(effortText({ asked: "xhigh", sent: null, reason: "rule" })).toBe("Reasoning effort removed: rewritten by a rule");
+    expect(effortText({ asked: "xhigh", sent: "high", reason: "rejected" })).toBe(
+      "Reasoning effort xhigh was rejected by the upstream; resent with high",
+    );
+    expect(effortText({ asked: "xhigh", sent: null, reason: "rejected" })).toBe(
+      "Reasoning effort xhigh was rejected by the upstream; resent without it",
+    );
+    expect(effortText({ asked: "max", sent: "high", reason: "remembered" })).toBe(
+      "Reasoning effort max → high: the model does not support max",
+    );
+    expect(effortText({ asked: "max", sent: null, reason: "remembered" })).toBe(
+      "Reasoning effort removed: the model does not support max",
+    );
   });
 });
 

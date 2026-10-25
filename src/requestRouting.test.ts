@@ -183,6 +183,22 @@ describe("路由那一页", () => {
     expect(two.note).toEqual({ kind: "retried", count: 2 });
   });
 
+  it("推理强度被拒收、改档在同一家重发：和被拒收的那一跳算一次，不说成等它恢复", () => {
+    const rejected: AttemptView = { provider: "anthropic", outcome: "status", status: 400, ms: 420 };
+    const resent: AttemptView = { ...served("anthropic"), effort: { asked: "xhigh", sent: "high", reason: "rejected" } };
+    expect(routingFacts(row({ attempts: [rejected, resent] }), false)!.note).toBeNull();
+    // 之前换过上游：照常说故障转移，被拒收又重发的那一家只算一次
+    const f = routingFacts(row({ attempts: [overloaded("openrouter"), rejected, resent] }), false)!;
+    expect(f.note).toEqual({ kind: "failover", failed: 1 });
+    expect(f.hops).toHaveLength(3);
+    // 规则改写、记住了不支持的档位：不是重发，照常判断
+    const rule: AttemptView = { ...served("anthropic"), effort: { asked: "xhigh", sent: "max", reason: "rule" } };
+    expect(routingFacts(row({ attempts: [overloaded("openrouter"), rule] }), false)!.note).toEqual({
+      kind: "failover",
+      failed: 1,
+    });
+  });
+
   it("等到了空位：只有一跳，排队的时间在那一跳上，不加说明", () => {
     const f = routingFacts(row({ attempts: [{ ...served("anthropic"), queued_ms: 1_240 }] }), false)!;
     expect(f.note).toBeNull();

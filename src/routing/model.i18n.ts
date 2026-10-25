@@ -31,8 +31,6 @@ export const modelText = messages(
     setModelAlias: (model: string) => `模型改为 ${model}，按别名表对应到各上游`,
     withBackups: (first: string, n: number) => `${first}，备用 ${n} 个`,
     setMaxTokens: (value: string) => `max_tokens 改为 ${value}`,
-    thinkingOn: "开启扩展思考",
-    thinkingOff: "关闭扩展思考",
     strategies: {
       fallback: "依次使用成员，前一个不可用时使用下一个。",
       select: "使用选定的上游；它不可用时，按顺序使用其余成员。",
@@ -74,8 +72,6 @@ export const modelText = messages(
     setModelAlias: (model: string) => `Model set to ${model}, mapped to each upstream through the alias table`,
     withBackups: (first: string, n: number) => `${first}, ${n === 1 ? "1 backup" : `${n} backups`}`,
     setMaxTokens: (value: string) => `max_tokens set to ${value}`,
-    thinkingOn: "Extended thinking on",
-    thinkingOff: "Extended thinking off",
     strategies: {
       fallback: "Uses the members in order, moving to the next when one is unavailable.",
       select: "Uses the selected upstream; when it is unavailable, uses the other members in order.",

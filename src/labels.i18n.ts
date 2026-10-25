@@ -67,7 +67,18 @@ export const labelsText = messages(
     setModel: (model: string) => `模型改为 ${model}，prompt cache 整体失效`,
     onlyAtSessionStart: "以上改写仅在新会话开始时应用",
     setField: (field: string, value: string) => `${field} 改为 ${value}`,
+    reasoningLevel: (level: string) => `推理 ${level}`,
+    reasoningOff: "关闭推理",
     // 尝试链
+    /** 一跳发出的推理强度和客户端要的不同 */
+    effort: {
+      rule: (asked: string, sent: string) => `推理强度 ${asked} → ${sent}：规则改写`,
+      ruleRemoved: "已去掉推理强度：规则改写",
+      rejected: (asked: string, sent: string) => `推理强度 ${asked} 被上游拒收，已改用 ${sent} 重发`,
+      rejectedRemoved: (asked: string) => `推理强度 ${asked} 被上游拒收，已去掉后重发`,
+      remembered: (asked: string, sent: string) => `推理强度 ${asked} → ${sent}：该模型不支持 ${asked}`,
+      rememberedRemoved: (asked: string) => `已去掉推理强度：该模型不支持 ${asked}`,
+    },
     served: "成功",
     servedStatus: (status: number) => `成功 · ${status}`,
     rejected: (status: number) => `${status} · 请求被上游拒绝`,
@@ -185,6 +196,18 @@ export const labelsText = messages(
     setModel: (model: string) => `Model set to ${model}; the entire prompt cache is invalidated`,
     onlyAtSessionStart: "The rewrites above apply only when a new session starts",
     setField: (field: string, value: string) => `${field} set to ${value}`,
+    reasoningLevel: (level: string) => `Reasoning ${level}`,
+    reasoningOff: "Reasoning off",
+    effort: {
+      rule: (asked: string, sent: string) => `Reasoning effort ${asked} → ${sent}: rewritten by a rule`,
+      ruleRemoved: "Reasoning effort removed: rewritten by a rule",
+      rejected: (asked: string, sent: string) =>
+        `Reasoning effort ${asked} was rejected by the upstream; resent with ${sent}`,
+      rejectedRemoved: (asked: string) => `Reasoning effort ${asked} was rejected by the upstream; resent without it`,
+      remembered: (asked: string, sent: string) =>
+        `Reasoning effort ${asked} → ${sent}: the model does not support ${asked}`,
+      rememberedRemoved: (asked: string) => `Reasoning effort removed: the model does not support ${asked}`,
+    },
     served: "Succeeded",
     servedStatus: (status: number) => `Succeeded · ${status}`,
     rejected: (status: number) => `${status} · Rejected by the upstream`,

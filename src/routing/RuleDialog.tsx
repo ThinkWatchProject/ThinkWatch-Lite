@@ -33,6 +33,7 @@ import { TargetIcon } from "./parts";
 import {
   COND_FIELDS,
   DIALECTS,
+  REASONING,
   addOnsText,
   blankCondition,
   blankPinned,
@@ -101,7 +102,7 @@ export function RuleDialog({
   const [d, setD] = useState<RuleDraft>(initial);
   const set = (patch: Partial<RuleDraft>) => setD((x) => ({ ...x, ...patch }));
   const [rewriteOpen, setRewriteOpen] = useState(
-    () => initial.model !== "" || initial.maxTokens !== "" || initial.thinking !== "keep",
+    () => initial.model !== "" || initial.maxTokens !== "" || initial.reasoning !== "keep",
   );
   const [newGroup, setNewGroup] = useState(false);
 
@@ -276,9 +277,7 @@ export function RuleDialog({
                 <div
                   className={cn(
                     "grid items-start gap-3",
-                    pinned
-                      ? "grid-cols-[minmax(0,180px)_auto]"
-                      : "grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto]",
+                    pinned ? "grid-cols-[minmax(0,180px)]" : "grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]",
                   )}
                 >
                   {/* 指定模型：模型名原样发出，「模型改为」不起作用 */}
@@ -303,19 +302,21 @@ export function RuleDialog({
                       onChange={(e) => set({ maxTokens: e.target.value })}
                     />
                   </FormItem>
-                  <FormItem label={t.thinking}>
-                    <Segmented<RuleDraft["thinking"]>
-                      value={d.thinking}
-                      onChange={(v) => set({ thinking: v })}
-                      options={[
-                        { id: "keep", label: t.unchanged },
-                        { id: "on", label: t.on },
-                        { id: "off", label: t.off },
-                      ]}
-                    />
-                  </FormItem>
                 </div>
                 {!pinned && d.model.trim() && <Note>{t.modelChangeNote}</Note>}
+                {/* 七段放不进上面那一行：单独一行、各段等宽 */}
+                <FormItem label={t.reasoning} desc={t.reasoningNote}>
+                  <Segmented<RuleDraft["reasoning"]>
+                    block
+                    label={t.reasoning}
+                    value={d.reasoning}
+                    onChange={(v) => set({ reasoning: v })}
+                    options={[
+                      { id: "keep", label: t.unchanged },
+                      ...REASONING.map((r) => ({ id: r, label: r === "off" ? t.off : r })),
+                    ]}
+                  />
+                </FormItem>
               </Section>
             </div>
           )}

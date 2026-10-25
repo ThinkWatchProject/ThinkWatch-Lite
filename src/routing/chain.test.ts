@@ -129,7 +129,7 @@ describe("路由图的连线", () => {
         route(
           "default",
           [
-            rule("rewrite", { set: { model: "m", max_tokens: null, thinking: null } }),
+            rule("rewrite", { set: { model: "m", max_tokens: null, reasoning: null } }),
             rule("late", { to: null, deny: "x", phase_two: true }),
             catchAll("catch-all", "a"),
             rule("after", { to: "b", shadowed: true }),
