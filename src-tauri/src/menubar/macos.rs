@@ -26,10 +26,11 @@ use objc2_app_kit::{
     NSAlert, NSAlertFirstButtonReturn, NSAlertSecondButtonReturn, NSAlertStyle,
     NSAppearanceCustomization, NSApplication, NSAttributedStringNSStringDrawing, NSBezierPath,
     NSColor, NSCompositingOperation, NSControlStateValueOff, NSControlStateValueOn, NSEvent,
-    NSEventMask, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightRegular,
-    NSFontWeightSemibold, NSForegroundColorAttributeName, NSGradient, NSGraphicsContext, NSImage,
-    NSImageSymbolConfiguration, NSLineCapStyle, NSLineJoinStyle, NSMenu, NSMenuDelegate,
-    NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength, NSWorkspace,
+    NSEventMask, NSEventModifierFlags, NSFont, NSFontAttributeName, NSFontWeightMedium,
+    NSFontWeightRegular, NSFontWeightSemibold, NSForegroundColorAttributeName, NSGradient,
+    NSGraphicsContext, NSImage, NSImageSymbolConfiguration, NSLineCapStyle, NSLineJoinStyle,
+    NSMenu, NSMenuDelegate, NSMenuItem, NSStatusBar, NSStatusItem, NSVariableStatusItemLength,
+    NSWorkspace,
 };
 use objc2_foundation::{
     NSArray, NSAttributedString, NSDictionary, NSNumber, NSObject, NSObjectProtocol, NSPoint,
@@ -438,8 +439,9 @@ pub fn bar_image(bar: &Bar, phase: Option<f64>) -> Retained<NSImage> {
         .numbers
         .clone()
         .unwrap_or_else(|| ("—".to_string(), "—".to_string()));
-    // 和菜单栏上别的数字（网速、电量这些）一个样子：9pt 常规，两行一样
-    let font = mono(9.0, weight(Weight::Regular));
+    // 和菜单栏上别的数字（网速、电量这些）一样 9pt，两行一样。用中等字重：模板图被系统
+    // 着成约 85% 的黑，常规字重比别家画纯黑的读数显得淡
+    let font = mono(9.0, weight(Weight::Medium));
     let (top_font, bottom_font) = (font.clone(), font);
     let numbers_w = if show_numbers {
         let a = attributed(&top, &top_font, &NSColor::labelColor())
@@ -954,6 +956,7 @@ pub fn inform(mtm: MainThreadMarker, title: &str, body: &str) {
 #[derive(Clone, Copy)]
 enum Weight {
     Regular,
+    Medium,
     Semibold,
 }
 
@@ -962,6 +965,7 @@ fn weight(w: Weight) -> f64 {
     unsafe {
         match w {
             Weight::Regular => NSFontWeightRegular,
+            Weight::Medium => NSFontWeightMedium,
             Weight::Semibold => NSFontWeightSemibold,
         }
     }
