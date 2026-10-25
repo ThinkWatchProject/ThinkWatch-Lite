@@ -74,10 +74,13 @@ export const labelsText = messages(
     effort: {
       rule: (asked: string, sent: string) => `推理强度 ${asked} → ${sent}：规则改写`,
       ruleRemoved: "已去掉推理强度：规则改写",
+      ruleOff: "已关闭推理：规则改写",
       rejected: (asked: string, sent: string) => `推理强度 ${asked} 被上游拒收，已改用 ${sent} 重发`,
       rejectedRemoved: (asked: string) => `推理强度 ${asked} 被上游拒收，已去掉后重发`,
+      rejectedOff: "关闭推理（none）被上游拒收，已去掉该字段后重发",
       remembered: (asked: string, sent: string) => `推理强度 ${asked} → ${sent}：该模型不支持 ${asked}`,
       rememberedRemoved: (asked: string) => `已去掉推理强度：该模型不支持 ${asked}`,
+      rememberedOff: "已去掉推理强度：该模型不支持关闭推理（none）",
     },
     served: "成功",
     servedStatus: (status: number) => `成功 · ${status}`,
@@ -201,12 +204,15 @@ export const labelsText = messages(
     effort: {
       rule: (asked: string, sent: string) => `Reasoning effort ${asked} → ${sent}: rewritten by a rule`,
       ruleRemoved: "Reasoning effort removed: rewritten by a rule",
+      ruleOff: "Reasoning turned off: rewritten by a rule",
       rejected: (asked: string, sent: string) =>
         `Reasoning effort ${asked} was rejected by the upstream; resent with ${sent}`,
       rejectedRemoved: (asked: string) => `Reasoning effort ${asked} was rejected by the upstream; resent without it`,
+      rejectedOff: "Turning reasoning off (none) was rejected by the upstream; resent without the field",
       remembered: (asked: string, sent: string) =>
         `Reasoning effort ${asked} → ${sent}: the model does not support ${asked}`,
       rememberedRemoved: (asked: string) => `Reasoning effort removed: the model does not support ${asked}`,
+      rememberedOff: "Reasoning effort removed: the model does not support turning reasoning off (none)",
     },
     served: "Succeeded",
     servedStatus: (status: number) => `Succeeded · ${status}`,

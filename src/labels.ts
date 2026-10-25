@@ -231,10 +231,13 @@ export function effortText(e: EffortChange): string {
   const sent = e.sent ?? null;
   switch (e.reason) {
     case "rule":
+      if (sent === "none") return t.ruleOff;
       return sent == null ? t.ruleRemoved : t.rule(e.asked, sent);
     case "rejected":
+      if (e.asked === "none") return t.rejectedOff;
       return sent == null ? t.rejectedRemoved(e.asked) : t.rejected(e.asked, sent);
     case "remembered":
+      if (e.asked === "none") return t.rememberedOff;
       return sent == null ? t.rememberedRemoved(e.asked) : t.remembered(e.asked, sent);
   }
 }

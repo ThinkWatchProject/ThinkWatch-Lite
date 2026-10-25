@@ -120,6 +120,18 @@ describe("尝试链里一跳改了推理强度", () => {
       "Reasoning effort removed: the model does not support max",
     );
   });
+
+  it("关闭推理写成 none：规则关闭、none 被拒收、记住了不支持 none", () => {
+    expect(effortText({ asked: "high", sent: "none", reason: "rule" })).toBe("已关闭推理：规则改写");
+    expect(effortText({ asked: "none", sent: null, reason: "rejected" })).toBe(
+      "关闭推理（none）被上游拒收，已去掉该字段后重发",
+    );
+    expect(effortText({ asked: "none", sent: null, reason: "remembered" })).toBe(
+      "已去掉推理强度：该模型不支持关闭推理（none）",
+    );
+    setLang("en");
+    expect(effortText({ asked: "high", sent: "none", reason: "rule" })).toBe("Reasoning turned off: rewritten by a rule");
+  });
 });
 
 describe("尝试链里的一跳", () => {
