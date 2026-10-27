@@ -117,17 +117,18 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
             }
             state => matches!(state, crate::connection::LinkState::Connected { .. }),
         });
-    // **界面大小**（见 `zoom`）：窗口的大小和最小尺寸跟着它放大，放不下的夹在屏幕里。
-    // 窗口还没建出来，不知道会落在哪块屏幕上，先按主屏算；建好之后按它实际所在的那块
-    // 再定一次最小尺寸
+    // **界面大小**（见 `zoom`）：最小尺寸跟着它放大、放不下的夹在屏幕里；开窗的大小不变，
+    // 比最小尺寸小时才撑大（`zoom::main_sizes`）。窗口还没建出来，不知道会落在哪块屏幕
+    // 上，先按主屏算；建好之后按它实际所在的那块再定一次最小尺寸
     let zoom = crate::zoom::current();
     let room = app
         .primary_monitor()
         .ok()
         .flatten()
         .and_then(|m| crate::zoom::room_on(&m));
-    let (width, height) = crate::zoom::scaled(crate::zoom::MAIN_SIZE, zoom, room);
-    let (min_width, min_height) = crate::zoom::scaled(crate::zoom::MAIN_MIN, zoom, room);
+    let ((width, height), (min_width, min_height)) = crate::zoom::main_sizes(zoom, room);
+    // **每次都放在屏幕正中**：不记窗口位置，交给系统的话 Windows 按层叠的位置摆在左上，
+    // 放大后的窗口还会有一截落到屏幕外（lite#376）
     let b = WebviewWindowBuilder::new(app, "main", WebviewUrl::default())
         .title("ThinkWatch Lite")
         .initialization_script(format!(
@@ -136,13 +137,8 @@ pub(crate) fn show_main_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         ))
         .inner_size(width, height)
         .min_inner_size(min_width, min_height)
+        .center()
         .visible(!warm);
-    // 放大后的窗口占满了屏幕的一边：放在正中，不让系统按层叠的位置摆、一截落到屏幕外
-    let b = if room.is_some_and(|(rw, rh)| width >= rw || height >= rh) {
-        b.center()
-    } else {
-        b
-    };
     // 绿色版的 WebView2 数据放在它自己的文件夹里（见 `portable::webview_data_dir`）。
     // 三扇窗（这里、更新窗口、连接选择）要一致：同一个进程里的 WebView2 共用一个数据目录
     let b = match crate::portable::webview_data_dir() {

@@ -104,7 +104,7 @@ pub fn remember(z: Zoom) {
     CURRENT.store(z.0, Ordering::Relaxed);
 }
 
-/// 主窗口 100% 时的大小和最小尺寸（逻辑点）
+/// 主窗口开出来的大小和 100% 时的最小尺寸（逻辑点）
 pub const MAIN_SIZE: (f64, f64) = (1100.0, 720.0);
 pub const MAIN_MIN: (f64, f64) = (820.0, 560.0);
 
@@ -128,6 +128,16 @@ pub fn scaled(base: (f64, f64), z: Zoom, room: Option<(f64, f64)>) -> (f64, f64)
         Some((rw, rh)) => (w.min(rw).max(base.0.min(w)), h.min(rh).max(base.1.min(h))),
         None => (w, h),
     }
+}
+
+/// 主窗口开出来的大小和最小尺寸：`(大小, 最小尺寸)`。
+///
+/// **开窗的大小不跟着界面大小变**，和浏览器一样：放大的是里面的内容，不是窗口。
+/// 跟着放大的话，110% 起窗口就比 100% 的大一圈，1080p 屏上上下几乎贴边（lite#376）。
+/// 只有放大后的最小尺寸比 100% 的窗口还大（150% 的 1230×840）时，才撑到最小尺寸。
+pub fn main_sizes(z: Zoom, room: Option<(f64, f64)>) -> ((f64, f64), (f64, f64)) {
+    let min = scaled(MAIN_MIN, z, room);
+    ((MAIN_SIZE.0.max(min.0), MAIN_SIZE.1.max(min.1)), min)
 }
 
 /// 一块屏幕能放下多大的窗口内容（逻辑点）。工作区不算菜单栏、程序坞、任务栏
@@ -229,5 +239,20 @@ mod tests {
         // 屏幕比 100% 的最小尺寸还小：不往下夹
         assert_eq!(scaled(MAIN_MIN, z(125), Some((800.0, 500.0))), MAIN_MIN);
         assert_eq!(scaled(MAIN_MIN, z(90), Some((1920.0, 1000.0))).0, 738.0);
+    }
+
+    /// 开窗的大小不跟着放大；只有最小尺寸比它大时才撑到最小尺寸
+    #[test]
+    fn the_opening_size_stays_unless_the_minimum_needs_more() {
+        let room = Some((1920.0, 1000.0));
+        for pct in [90, 100, 110, 125] {
+            assert_eq!(main_sizes(z(pct), room).0, MAIN_SIZE, "{pct}%");
+        }
+        assert_eq!(main_sizes(z(150), room), ((1230.0, 840.0), (1230.0, 840.0)));
+        // 最小尺寸夹在屏幕里，开窗的大小也就跟着夹住的那一边
+        assert_eq!(
+            main_sizes(z(150), Some((1536.0, 792.0))),
+            ((1230.0, 792.0), (1230.0, 792.0))
+        );
     }
 }
