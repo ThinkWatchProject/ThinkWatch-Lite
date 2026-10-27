@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef, useState, type KeyboardEvent } from "react";
 import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Reveal } from "@/ui/motion";
 import { Segmented } from "@/ui/segmented";
@@ -12,11 +12,14 @@ import { invalidate, useResource } from "@/lib/resource";
 import { useTauriEvent } from "@/lib/tauriEvent";
 import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
 import { isMac } from "@/platform";
-import { COMBOS, comboText } from "@/palette/keys";
+import { errorText } from "@/i18n/core.i18n";
+import { COMBOS, comboText, hotkeyCombo, isInAppCombo, Keys } from "@/palette/keys";
 import {
   APP_KEYS,
   settingsApi,
   ZOOM_STEPS,
+  type HotkeyCombo,
+  type HotkeyView,
   type LanguageView,
   type MenubarStyle,
   type NoticeMode,
@@ -43,6 +46,7 @@ export function GeneralSection() {
         <LanguageRow />
         <AppearanceRow />
         <ZoomRow />
+        <HotkeyRow />
         {/*
           **只有 macOS 有这几档。**别处的通知区只认一张正方形图标（100% DPI 下
           16×16），塞不下两行数字 —— 那几行在右键菜单里给；「不显示」也不给，见
@@ -192,6 +196,172 @@ function ZoomRow() {
   );
 }
 
+/** 录入时不当主键的键：修饰键自己按下时还在等主键 */
+const MODIFIER_CODES = new Set([
+  "ShiftLeft",
+  "ShiftRight",
+  "ControlLeft",
+  "ControlRight",
+  "AltLeft",
+  "AltRight",
+  "MetaLeft",
+  "MetaRight",
+  "OSLeft",
+  "OSRight",
+  "CapsLock",
+  "Fn",
+]);
+
+const FUNCTION_KEY = /^F([1-9]|1[0-2])$/;
+
+/**
+ * 呼出快捷键（`src-tauri/src/hotkey.rs`）：出厂是 Ctrl+Alt+H（⌃⌥H），可以录一个别的、关掉、
+ * 恢复缺省。**点一下就生效**，和这一节别的行一样。
+ *
+ * 录入：点那个框，按下组合键；Esc 取消、点别处也取消。录入期间 Rust 先放掉现在的那一个
+ * （`setHotkeyRecording`），不然按下它窗口就收起了。**先在这里挡掉两种**：没带修饰键的
+ * （F1–F12 除外）、和界面里已有的快捷键相同的（拿去做呼出，界面里那个就按不到了）。
+ * 被别的程序占着的由 Rust 注册时发现，原来那一个照旧。
+ *
+ * 说明那一行在出问题时换成红字：录的不能用、注册不上，或者设置里那个启动时就被占着
+ * （`active` 是 false）。
+ */
+function HotkeyRow() {
+  const t = useText(generalText);
+  const r = useResource(APP_KEYS.hotkey, settingsApi.hotkey);
+  const { mutate, reload } = r;
+  const [recording, setRecording] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const field = useRef<HTMLButtonElement>(null);
+  const recordingNow = useRef(false);
+
+  const record = (on: boolean) => {
+    if (recordingNow.current === on) return;
+    recordingNow.current = on;
+    setRecording(on);
+    settingsApi.setHotkeyRecording(on).catch((e: unknown) => notify.error(e));
+    if (!on) void reload();
+  };
+  // 录到一半离开设置页：注册回去
+  useEffect(
+    () => () => {
+      if (recordingNow.current) void settingsApi.setHotkeyRecording(false).catch(() => undefined);
+    },
+    [],
+  );
+
+  // 取消录入：刚才那句「不能用」也不留
+  const cancel = () => {
+    setProblem(null);
+    record(false);
+  };
+
+  const save = async (combo: HotkeyCombo | null) => {
+    setPending(true);
+    try {
+      mutate(await settingsApi.setHotkey(combo));
+      setProblem(null);
+    } catch (e) {
+      setProblem(errorText(e));
+    } finally {
+      setPending(false);
+    }
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLButtonElement>) => {
+    if (!recording) return;
+    // 录入时按键都归这里：不翻页、不开命令面板、不触发按钮
+    e.preventDefault();
+    e.stopPropagation();
+    const mods = e.ctrlKey || e.altKey || e.metaKey || e.shiftKey;
+    if (e.code === "Escape" && !mods) {
+      cancel();
+      return;
+    }
+    if (MODIFIER_CODES.has(e.code)) return;
+    const combo: HotkeyCombo = { ctrl: e.ctrlKey, alt: e.altKey, shift: e.shiftKey, meta: e.metaKey, code: e.code };
+    if (!(combo.ctrl || combo.alt || combo.meta || FUNCTION_KEY.test(combo.code))) {
+      setProblem(t.hotkeyNeedModifier);
+      return;
+    }
+    const keys = hotkeyCombo(combo);
+    if (isInAppCombo(keys)) {
+      setProblem(t.hotkeyInApp(comboText(keys)));
+      return;
+    }
+    record(false);
+    void save(combo);
+  };
+
+  const v: HotkeyView | undefined = r.data;
+  const taken = v !== undefined && v.combo !== null && !v.active && !recording;
+  const note = !v
+    ? undefined
+    : !v.supported
+      ? t.hotkeyUnsupported
+      : (problem ?? (taken ? t.hotkeyTaken : null));
+  return (
+    <SettingsRow
+      anchor="hotkey"
+      label={t.hotkey}
+      description={
+        note ? (
+          <span className={v?.supported ? "text-destructive" : undefined}>{note}</span>
+        ) : (
+          t.hotkeyWhat
+        )
+      }
+      control={
+        <Loaded r={r} width="w-60">
+          {(v) => (
+            <div className="flex items-center gap-2">
+              <Button
+                ref={field}
+                size="sm"
+                variant="outline"
+                className="min-w-32 justify-center"
+                disabled={!v.supported || pending}
+                aria-label={t.hotkey}
+                aria-pressed={recording}
+                onClick={() => {
+                  setProblem(null);
+                  // WebKit 点按钮不给它焦点：不拿过来的话按键到不了这里
+                  if (!recording) field.current?.focus();
+                  record(!recording);
+                }}
+                onBlur={() => {
+                  if (recordingNow.current) cancel();
+                }}
+                onKeyDown={onKeyDown}
+              >
+                {recording ? (
+                  <span className="text-muted-foreground">{t.hotkeyPress}</span>
+                ) : v.combo ? (
+                  <Keys combo={hotkeyCombo(v.combo)} />
+                ) : (
+                  <span className="text-muted-foreground">{t.hotkeyNone}</span>
+                )}
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!v.supported || pending}
+                onClick={() => {
+                  setProblem(null);
+                  void save(v.combo ? null : v.default);
+                }}
+              >
+                {v.combo ? t.hotkeyOff : t.hotkeyRestore}
+              </Button>
+            </div>
+          )}
+        </Loaded>
+      }
+    />
+  );
+}
+
 /**
  * 菜单栏：标识和数值 / 仅标识 / 仅数值 / 不显示。数值是今日的 token 和费用。
  *
@@ -205,11 +375,16 @@ function MenubarRow() {
   const [, set] = useWrite(r, settingsApi.setMenubar);
   const { mutate } = r;
   useTauriEvent<MenubarStyle>("menubar-style-changed", (e) => void mutate(e.payload));
+  // 不显示时还能按呼出快捷键回来（注册着才算）
+  const hotkey = useResource(APP_KEYS.hotkey, settingsApi.hotkey).data;
+  const back = hotkey?.combo && hotkey.active ? comboText(hotkeyCombo(hotkey.combo)) : null;
   return (
     <SettingsRow
       anchor="menubar"
       label={t.menubar}
-      description={r.data === "hidden" ? t.menubarHiddenWhat : t.menubarWhat}
+      description={
+        r.data === "hidden" ? (back ? t.menubarHiddenWhatHotkey(back) : t.menubarHiddenWhat) : t.menubarWhat
+      }
       control={
         <Loaded r={r} width="w-72">
           {(style) => (

@@ -72,6 +72,8 @@ pub struct Snapshot {
     pub groups: Vec<Group>,
     /// 查到了、还没装的新版本
     pub update: Option<String>,
+    /// 注册着的呼出快捷键：写在「打开主界面」右边
+    pub hotkey: Option<crate::hotkey::Combo>,
     /// 连接列表，本机在最前。「连接」子菜单照它列
     pub connections: Vec<Connection>,
     /// 连着远程时是那台服务器的名字。跟在状态后面写：菜单里的数字、提醒都是那台的
@@ -449,6 +451,94 @@ pub struct SubItem {
     pub sep_before: bool,
 }
 
+/// 菜单项的快捷键：NSMenuItem 的 `keyEquivalent`（小写字母、数字、符号，或功能键那几个私用区
+/// 的字）和修饰键
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Key {
+    pub equivalent: String,
+    pub control: bool,
+    pub option: bool,
+    pub shift: bool,
+    pub command: bool,
+}
+
+impl Key {
+    fn command(equivalent: &str) -> Self {
+        Self {
+            equivalent: equivalent.into(),
+            control: false,
+            option: false,
+            shift: false,
+            command: true,
+        }
+    }
+
+    /// 系统菜单右边画出来的样子（`⌃⌥H`、`⌘,`），修饰键按 ⌃⌥⇧⌘ 的顺序。预览图用
+    pub fn label(&self) -> String {
+        let mut out = String::new();
+        for (on, glyph) in [
+            (self.control, '⌃'),
+            (self.option, '⌥'),
+            (self.shift, '⇧'),
+            (self.command, '⌘'),
+        ] {
+            if on {
+                out.push(glyph);
+            }
+        }
+        out.push_str(&self.equivalent.to_uppercase());
+        out
+    }
+
+    /// 呼出快捷键写在菜单上的样子。按物理键位记的主键换成 `keyEquivalent` 的字；换不出来的
+    /// 不写
+    fn of(c: &crate::hotkey::Combo) -> Option<Self> {
+        let code = c.code.as_str();
+        let equivalent = if let Some(k) = code.strip_prefix("Key") {
+            k.to_ascii_lowercase()
+        } else if let Some(d) = code.strip_prefix("Digit") {
+            d.to_string()
+        } else if let Some(n) = code.strip_prefix('F').and_then(|n| n.parse::<u32>().ok()) {
+            // NSF1FunctionKey 起一个挨一个
+            char::from_u32(0xF704 + n - 1)?.to_string()
+        } else {
+            let ch = match code {
+                "Space" => ' ',
+                "ArrowUp" => '\u{F700}',
+                "ArrowDown" => '\u{F701}',
+                "ArrowLeft" => '\u{F702}',
+                "ArrowRight" => '\u{F703}',
+                "Insert" => '\u{F727}',
+                "Delete" => '\u{F728}',
+                "Home" => '\u{F729}',
+                "End" => '\u{F72B}',
+                "PageUp" => '\u{F72C}',
+                "PageDown" => '\u{F72D}',
+                "Backquote" => '`',
+                "Minus" => '-',
+                "Equal" => '=',
+                "BracketLeft" => '[',
+                "BracketRight" => ']',
+                "Backslash" => '\\',
+                "Semicolon" => ';',
+                "Quote" => '\'',
+                "Comma" => ',',
+                "Period" => '.',
+                "Slash" => '/',
+                _ => return None,
+            };
+            ch.to_string()
+        };
+        Some(Self {
+            equivalent,
+            control: c.ctrl,
+            option: c.alt,
+            shift: c.shift,
+            command: c.meta,
+        })
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     /// 稳定的名字：菜单开着时按它就地更新，不重建
@@ -460,8 +550,8 @@ pub struct Item {
     pub right: Option<String>,
     pub enabled: bool,
     pub action: Option<Action>,
-    /// 菜单开着时的快捷键（`,`、`q`），配 ⌘
-    pub key: Option<&'static str>,
+    /// 标题右边写着的快捷键：菜单开着时按它也一样（`,`、`q` 配 ⌘；「打开主界面」是呼出快捷键）
+    pub key: Option<Key>,
     pub submenu: Vec<SubItem>,
     /// 图标用强调色（有新版本）
     pub accent: bool,
@@ -485,8 +575,8 @@ impl Item {
         self.right = Some(right.into());
         self
     }
-    fn key(mut self, key: &'static str) -> Self {
-        self.key = Some(key);
+    fn key(mut self, key: &str) -> Self {
+        self.key = Some(Key::command(key));
         self
     }
     fn disabled(mut self) -> Self {
@@ -709,12 +799,15 @@ fn live_count(n: usize) -> String {
 /// 设置、连接 ─ 退出。不在运行时：打开主界面 ─ 状态和能做的事 ─ 更新、设置、连接 ─ 退出
 fn rows(s: &Snapshot) -> Vec<Row> {
     let mut out = vec![
-        Row::Item(Item::new(
-            "open",
-            "macwindow",
-            tr!("打开主界面", "Open ThinkWatch Lite"),
-            Action::OpenMain,
-        )),
+        Row::Item(Item {
+            key: s.hotkey.as_ref().and_then(Key::of),
+            ..Item::new(
+                "open",
+                "macwindow",
+                tr!("打开主界面", "Open ThinkWatch Lite"),
+                Action::OpenMain,
+            )
+        }),
         Row::Separator,
     ];
     if !s.gateway.running() {

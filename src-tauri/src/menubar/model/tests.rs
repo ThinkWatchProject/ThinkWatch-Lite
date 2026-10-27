@@ -1213,3 +1213,49 @@ fn open_is_the_first_item_once_in_every_state() {
         }
     }
 }
+
+/// 「打开主界面」右边写着注册着的呼出快捷键；关掉了、没注册上就不写。设置、退出照旧配 ⌘
+#[test]
+fn the_open_item_shows_the_hotkey() {
+    let mut s = running();
+    let (_, rows) = build(&s, Style::Full);
+    assert_eq!(item(&rows, "open").unwrap().key, None);
+    assert_eq!(
+        item(&rows, "settings")
+            .unwrap()
+            .key
+            .as_ref()
+            .unwrap()
+            .label(),
+        "⌘,"
+    );
+
+    s.hotkey = Some(crate::hotkey::default_combo());
+    let (_, rows) = build(&s, Style::Full);
+    let k = item(&rows, "open").unwrap().key.clone().unwrap();
+    assert_eq!(k.label(), "⌃⌥H");
+    assert_eq!((k.equivalent.as_str(), k.command), ("h", false));
+}
+
+/// 按物理键位记的主键换成 `keyEquivalent` 的字：字母小写、功能键和方向键是私用区那几个字
+#[test]
+fn hotkey_keys_become_menu_key_equivalents() {
+    let k = |code: &str| {
+        let c = crate::hotkey::Combo {
+            ctrl: false,
+            alt: false,
+            shift: true,
+            meta: true,
+            code: code.into(),
+        };
+        Key::of(&c).map(|k| k.equivalent)
+    };
+    assert_eq!(k("KeyQ").as_deref(), Some("q"));
+    assert_eq!(k("Digit7").as_deref(), Some("7"));
+    assert_eq!(k("F1").as_deref(), Some("\u{F704}"));
+    assert_eq!(k("F12").as_deref(), Some("\u{F70F}"));
+    assert_eq!(k("ArrowUp").as_deref(), Some("\u{F700}"));
+    assert_eq!(k("Space").as_deref(), Some(" "));
+    assert_eq!(k("Backslash").as_deref(), Some("\\"));
+    assert_eq!(k("Escape"), None);
+}

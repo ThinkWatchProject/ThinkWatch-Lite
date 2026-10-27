@@ -1,6 +1,6 @@
 import { Kbd, KbdGroup } from "@/ui/kbd";
 import { cn } from "@/lib/utils";
-import { isMac } from "@/platform";
+import { isMac, isWindows } from "@/platform";
 import { SURFACES, type Surface } from "@/nav";
 
 /**
@@ -13,6 +13,9 @@ import { SURFACES, type Surface } from "@/nav";
  */
 export type KeyName =
   | "mod"
+  /** 呼出快捷键才用：写明是 Control（⌃）和 ⌘ / Win 键，不随平台换成主修饰键 */
+  | "ctrl"
+  | "meta"
   | "alt"
   | "shift"
   | "enter"
@@ -29,6 +32,8 @@ export type Combo = readonly KeyName[];
 
 const MAC: Record<string, string> = {
   mod: "⌘",
+  ctrl: "⌃",
+  meta: "⌘",
   alt: "⌥",
   shift: "⇧",
   enter: "↵",
@@ -39,6 +44,8 @@ const MAC: Record<string, string> = {
 };
 const OTHER: Record<string, string> = {
   mod: "Ctrl",
+  ctrl: "Ctrl",
+  meta: isWindows ? "Win" : "Super",
   alt: "Alt",
   shift: "Shift",
   enter: "Enter",
@@ -72,6 +79,56 @@ export const COMBOS = {
   zoomOut: ["mod", "-"],
   zoomReset: ["mod", "0"],
 } as const satisfies Record<string, Combo>;
+
+/** 物理键位上的那个字：`KeyH` → `H`、`Digit1` → `1`、`Comma` → `,`；方向键、空格写成键名 */
+const CODE_CHARS: Record<string, KeyName> = {
+  Space: "space",
+  ArrowUp: "up",
+  ArrowDown: "down",
+  ArrowLeft: "left",
+  ArrowRight: "right",
+  Backquote: "`",
+  Minus: "-",
+  Equal: "=",
+  BracketLeft: "[",
+  BracketRight: "]",
+  Backslash: "\\",
+  Semicolon: ";",
+  Quote: "'",
+  Comma: ",",
+  Period: ".",
+  Slash: "/",
+};
+
+export function codeKey(code: string): KeyName {
+  const ch = /^(?:Key|Digit)(.)$/.exec(code)?.[1];
+  return ch ?? CODE_CHARS[code] ?? code;
+}
+
+/** 呼出快捷键的一个组合写成键帽。macOS 按 ⌃⌥⇧⌘ 的顺序，和系统菜单一样 */
+export function hotkeyCombo(c: { ctrl: boolean; alt: boolean; shift: boolean; meta: boolean; code: string }): Combo {
+  const mods: KeyName[] = [];
+  if (c.ctrl) mods.push("ctrl");
+  if (c.alt) mods.push("alt");
+  if (c.shift) mods.push("shift");
+  if (c.meta) mods.push("meta");
+  return [...mods, codeKey(c.code)];
+}
+
+/**
+ * 这个组合是不是界面里已经有的快捷键（⌘K、⌘1…⌘9、⌘= 这些）。**拿去做呼出快捷键的话，
+ * 系统先把它交给呼出、界面里的那一个就再也按不到了**，所以录的时候拒掉
+ */
+export function isInAppCombo(c: Combo): boolean {
+  const norm = (x: Combo) =>
+    x
+      .map((k) => (k === "mod" ? (isMac ? "meta" : "ctrl") : k.length === 1 ? k.toUpperCase() : k))
+      .sort()
+      .join(" ");
+  const want = norm(c);
+  const all: Combo[] = [...Object.values(COMBOS), ...DIGIT_PAGES.map((_, i) => ["mod", String(i + 1)] as const)];
+  return all.some((x) => norm(x) === want);
+}
 
 /**
  * 主修饰键加上的这个键是不是在换界面大小：`=` 和 `+` 放大一档（按不按 Shift 都算，

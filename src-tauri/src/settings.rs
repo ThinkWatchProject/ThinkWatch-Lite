@@ -1,12 +1,12 @@
-//! 设置页：语言、外观、界面大小、开机启动、提醒方式、菜单栏样式。
+//! 设置页：语言、外观、界面大小、呼出快捷键、开机启动、提醒方式、菜单栏样式。
 
 use std::sync::Arc;
 
 use tauri::{Emitter, Manager};
 
 use crate::{
-    AppState, autostart, data_dir, error::Out, gateway::locate_core, i18n, menubar, notices, prefs,
-    theme, zoom,
+    AppState, autostart, data_dir, error::Out, gateway::locate_core, hotkey, i18n, menubar,
+    notices, prefs, theme, zoom,
 };
 
 /// 这个应用自己的信息。
@@ -147,6 +147,111 @@ async fn change_zoom(
     zoom::apply(&app, now);
     let _ = app.emit("ui-zoom-changed", now);
     saved.map(|_| now)
+}
+
+/// 呼出快捷键（见 `hotkey`）：设置里的、出厂的、注册上了没有、这个桌面支不支持。
+///
+/// **设置里有、却没注册上，就是被别的程序占着**：出厂的那一个在启动时注册不上不报错，
+/// 设置页那一行照这个说
+#[derive(serde::Serialize)]
+pub struct HotkeyView {
+    /// `None` 是关掉了
+    combo: Option<hotkey::Combo>,
+    default: hotkey::Combo,
+    active: bool,
+    supported: bool,
+}
+
+fn hotkey_view() -> HotkeyView {
+    let combo = prefs::load(&data_dir()).hotkey.0;
+    let active = hotkey::active();
+    HotkeyView {
+        active: combo.is_some() && active == combo,
+        combo,
+        default: hotkey::default_combo(),
+        supported: hotkey::supported(),
+    }
+}
+
+#[tauri::command]
+pub fn hotkey_state() -> HotkeyView {
+    hotkey_view()
+}
+
+/// ⌘ / Win / Super 键在这个平台上叫什么
+const META: &str = if cfg!(target_os = "macos") {
+    "⌘"
+} else if cfg!(windows) {
+    "Win"
+} else {
+    "Super"
+};
+
+/// 换一个（`None` 是关掉）。**先注册、注册上了才存**：被别的程序占着的组合存下来也用不了；
+/// 注册不上时旧的那一个照旧注册着、设置不变。
+///
+/// 不通知同步：这是这台电脑自己的（见 `hotkey`）
+#[tauri::command]
+pub async fn set_hotkey(app: tauri::AppHandle, combo: Option<hotkey::Combo>) -> Out<HotkeyView> {
+    if !hotkey::supported() {
+        return Err(tr!(
+            "当前桌面环境不支持全局快捷键",
+            "Global shortcuts are not supported on this desktop"
+        )
+        .into());
+    }
+    if let Some(c) = &combo {
+        c.check().map_err(|e| match e {
+            hotkey::Invalid::Key => tr!(
+                "这个键不能用作快捷键",
+                "This key cannot be used in a shortcut"
+            )
+            .to_string(),
+            hotkey::Invalid::NoModifier => tr!(
+                format!("须包含 Ctrl、Alt 或 {META} 中的至少一个"),
+                format!("The shortcut must include Ctrl, Alt or {META}")
+            ),
+        })?;
+    }
+    // 注册要在主线程上做完再回来（插件阻塞着等），不占异步线程
+    let a = app.clone();
+    let next = combo.clone();
+    crate::clients::blocking(move || hotkey::replace(&a, next.as_ref()))
+        .await?
+        .map_err(|e| {
+            tracing::debug!("呼出快捷键注册不上：{e}");
+            tr!(
+                "该组合键已被其他程序占用，请换一个",
+                "This shortcut is already used by another app. Choose another one."
+            )
+        })?;
+    let saved = prefs::change(move |p| p.hotkey = hotkey::Setting(combo)).await;
+    if saved.is_err() {
+        // 没存上：注册的退回存着的那一个
+        let a = app.clone();
+        let _ = crate::clients::blocking(move || {
+            let _ = hotkey::replace(&a, prefs::load(&data_dir()).hotkey.0.as_ref());
+        })
+        .await;
+    }
+    // 菜单栏「打开主界面」右边写着它
+    if let Some(state) = app.try_state::<AppState>() {
+        state.menubar_now.notify_one();
+    }
+    saved.map(|_| hotkey_view())
+}
+
+/// 设置页开始、结束录入新的组合（见 `hotkey::pause`）
+#[tauri::command]
+pub async fn set_hotkey_recording(app: tauri::AppHandle, on: bool) -> Out<()> {
+    crate::clients::blocking(move || {
+        if on {
+            hotkey::pause(&app);
+        } else {
+            hotkey::resume(&app);
+        }
+    })
+    .await
 }
 
 /// 开机自启现在是开着的吗。

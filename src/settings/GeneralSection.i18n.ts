@@ -1,7 +1,7 @@
 import { messages } from "@/i18n";
 import { isLinux, isWindows } from "@/platform";
 
-/** 设置 → 通用：语言、外观、界面大小、菜单栏、开机启动、提醒 */
+/** 设置 → 通用：语言、外观、界面大小、呼出快捷键、菜单栏、开机启动、提醒 */
 export const generalText = messages(
   {
     title: "通用",
@@ -22,6 +22,19 @@ export const generalText = messages(
     zoomKeys: (bigger: string, smaller: string, reset: string) =>
       `按 ${bigger} 放大、${smaller} 缩小，${reset} 恢复为 100%。`,
 
+    hotkey: "呼出快捷键",
+    hotkeyWhat: "在任意程序中按下即可打开主界面，主界面在最前时再按一次收起。",
+    hotkeyUnsupported: "当前桌面环境不支持全局快捷键。",
+    /** 设置里有、却没注册上 */
+    hotkeyTaken: "该组合键已被其他程序占用，请换一个。",
+    hotkeyNone: "未设置",
+    hotkeyPress: "请按下组合键",
+    hotkeyOff: "关闭",
+    hotkeyRestore: "恢复缺省",
+    hotkeyNeedModifier: `须包含 Ctrl、Alt 或 ${isWindows ? "Win" : isLinux ? "Super" : "⌘"} 中的至少一个。`,
+    /** 和界面里已有的快捷键相同 */
+    hotkeyInApp: (combo: string) => `${combo} 已用于界面内的操作，请换一个。`,
+
     menubar: "菜单栏",
     menubarWhat: "数值为今日的 token 用量与费用。",
     menubarFull: "标识和数值",
@@ -30,6 +43,9 @@ export const generalText = messages(
     menubarHidden: "不显示",
     /** 选了不显示时替换上面那句：窗口关着时怎么回来 */
     menubarHiddenWhat: "从访达或聚焦搜索再次打开 ThinkWatch Lite，即可显示主窗口。",
+    /** 同上，设了呼出快捷键时 */
+    menubarHiddenWhatHotkey: (combo: string) =>
+      `按 ${combo}，或从访达、聚焦搜索再次打开 ThinkWatch Lite，即可显示主窗口。`,
 
     autostart: "开机启动",
     autostartWhat: isWindows
@@ -61,6 +77,17 @@ export const generalText = messages(
     zoomKeys: (bigger: string, smaller: string, reset: string) =>
       `Press ${bigger} to enlarge, ${smaller} to reduce, or ${reset} to reset to 100%.`,
 
+    hotkey: "Global shortcut",
+    hotkeyWhat: "Opens the main window from any app. Press it again while the window is in front to close it.",
+    hotkeyUnsupported: "Global shortcuts are not supported on this desktop.",
+    hotkeyTaken: "This shortcut is already used by another app. Choose another one.",
+    hotkeyNone: "Not set",
+    hotkeyPress: "Press a shortcut",
+    hotkeyOff: "Turn Off",
+    hotkeyRestore: "Restore Default",
+    hotkeyNeedModifier: `The shortcut must include Ctrl, Alt or ${isWindows ? "Win" : isLinux ? "Super" : "⌘"}.`,
+    hotkeyInApp: (combo: string) => `${combo} is already used in the app. Choose another one.`,
+
     menubar: "Menu bar",
     menubarWhat: "The numbers are today's token usage and cost.",
     menubarFull: "Icon and numbers",
@@ -68,6 +95,8 @@ export const generalText = messages(
     menubarNumbers: "Numbers only",
     menubarHidden: "Hidden",
     menubarHiddenWhat: "To show the main window, open ThinkWatch Lite again from Finder or Spotlight.",
+    menubarHiddenWhatHotkey: (combo: string) =>
+      `To show the main window, press ${combo} or open ThinkWatch Lite again from Finder or Spotlight.`,
 
     autostart: "Launch at login",
     autostartWhat: isWindows

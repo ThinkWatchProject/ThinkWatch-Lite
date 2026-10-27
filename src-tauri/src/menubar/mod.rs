@@ -453,6 +453,7 @@ async fn collect(app: &tauri::AppHandle, state: &AppState, credits: &mut Credits
             .is_some_and(|n| n.mode() != notices::Mode::Off),
         notices: notices.map(|n| unread(&n.list())).unwrap_or_default(),
         update: crate::updater::pending_update(app),
+        hotkey: crate::hotkey::active(),
         connections: crate::connection::view(app)
             .profiles
             .into_iter()

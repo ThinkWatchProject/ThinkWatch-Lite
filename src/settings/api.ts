@@ -34,6 +34,28 @@ export type UiZoom = (typeof ZOOM_STEPS)[number];
 /** 快捷键：放大一档、缩小一档、回到 100% */
 export type ZoomStep = "in" | "out" | "reset";
 
+/**
+ * 呼出快捷键的一个组合（`src-tauri/src/hotkey.rs` 的 `Combo`）。`code` 是物理键位
+ * （`KeyboardEvent.code`：`KeyH`、`Digit1`、`F5`）；`meta` 是 macOS 的 ⌘、别处的 Win / Super 键
+ */
+export interface HotkeyCombo {
+  ctrl: boolean;
+  alt: boolean;
+  shift: boolean;
+  meta: boolean;
+  code: string;
+}
+
+/** 设置里的（`null` 是关掉了）、出厂的、注册上了没有、这个桌面支不支持 */
+export interface HotkeyView {
+  combo: HotkeyCombo | null;
+  default: HotkeyCombo;
+  /** 设置里有、却是 false：被别的程序占着 */
+  active: boolean;
+  /** Linux 的 Wayland 会话是 false */
+  supported: boolean;
+}
+
 /** 菜单栏：标识和数值 / 仅标识 / 仅数值 / 不显示（只有 macOS 有） */
 export type MenubarStyle = "full" | "icon" | "numbers" | "hidden";
 
@@ -58,6 +80,11 @@ export const settingsApi = {
   setZoom: (zoom: UiZoom) => invoke<UiZoom>("set_ui_zoom", { zoom }),
   /** 新的一档由 Rust 那边算（按住快捷键时一连串的按键不会读到同一档） */
   stepZoom: (step: ZoomStep) => invoke<UiZoom>("step_ui_zoom", { step }),
+  hotkey: () => invoke<HotkeyView>("hotkey_state"),
+  /** 先注册、注册上了才存；被占着时报错，原来那一个照旧 */
+  setHotkey: (combo: HotkeyCombo | null) => invoke<HotkeyView>("set_hotkey", { combo }),
+  /** 录入期间放掉现在的那一个，不然按下它窗口就收起了、录不进来 */
+  setHotkeyRecording: (on: boolean) => invoke<void>("set_hotkey_recording", { on }),
   language: () => invoke<LanguageView>("app_language"),
   setLanguage: (setting: Lang | null) => invoke<LanguageView>("set_language", { setting }),
   menubar: () => invoke<MenubarStyle>("menubar_style"),
@@ -87,6 +114,7 @@ export const settingsApi = {
 export const APP_KEYS = {
   theme: "app:theme",
   zoom: "app:zoom",
+  hotkey: "app:hotkey",
   language: "app:language",
   menubar: "app:menubar",
   noticeMode: "app:notice-mode",

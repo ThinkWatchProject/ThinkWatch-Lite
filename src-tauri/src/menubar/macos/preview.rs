@@ -240,7 +240,8 @@ fn preview_item(i: &Item, b: NSRect) {
     attributed(&i.title, &font, &color).drawAtPoint(NSPoint::new(TEXT_X, 3.0));
     let right = i
         .key
-        .map(|k| format!("⌘{}", k.to_uppercase()))
+        .as_ref()
+        .map(|k| k.label())
         .or_else(|| i.right.clone())
         .or_else(|| (!i.submenu.is_empty()).then(|| "›".to_string()));
     if let Some(r) = right {

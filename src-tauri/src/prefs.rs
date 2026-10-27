@@ -33,6 +33,10 @@ pub struct Prefs {
     /// 电脑的屏幕，不同步（不在 `client_prefs` 的列表里）。没写就是 100%
     #[serde(default)]
     pub zoom: crate::zoom::Zoom,
+    /// 呼出快捷键（见 `hotkey`）。**每台电脑各自的**，理由同界面大小。没写就是出厂的
+    /// Ctrl+Alt+H，关掉写成空串
+    #[serde(default)]
+    pub hotkey: crate::hotkey::Setting,
     /// 提醒：系统通知 / 仅在应用内 / 关闭。**只有这一个，不分类。**
     pub notices: Mode,
     /// 菜单栏上显示什么：标识和数值（出厂）/ 仅标识 / 仅数值 / 不显示。
@@ -64,6 +68,7 @@ impl Default for Prefs {
             language: None,
             theme: None,
             zoom: crate::zoom::Zoom::default(),
+            hotkey: crate::hotkey::Setting::default(),
             notices: Mode::System,
             menubar: crate::menubar::Style::Full,
             client_locations: BTreeMap::new(),
@@ -114,6 +119,7 @@ fn from_fields(fields: &Fields) -> Prefs {
         language: field(fields, "language").unwrap_or(d.language),
         theme: field(fields, "theme").unwrap_or(d.theme),
         zoom: field(fields, "zoom").unwrap_or(d.zoom),
+        hotkey: field(fields, "hotkey").unwrap_or(d.hotkey),
         notices: field(fields, "notices").unwrap_or(d.notices),
         menubar: field(fields, "menubar").unwrap_or(d.menubar),
         // 一个客户端一个客户端地读：读不懂的只丢那一个
@@ -310,6 +316,7 @@ mod tests {
             language: Some(Lang::Zh),
             theme: Some(Theme::Dark),
             zoom: crate::zoom::Zoom::try_from(125).unwrap(),
+            hotkey: crate::hotkey::Setting(None),
             notices: Mode::App,
             menubar: crate::menubar::Style::Numbers,
             client_locations: BTreeMap::from([(
@@ -420,7 +427,7 @@ mod tests {
         let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
-            br#"{"check_updates":"no","language":"ja","theme":1,"zoom":120,"notices":"off","menubar":"icon"}"#,
+            br#"{"check_updates":"no","language":"ja","theme":1,"zoom":120,"hotkey":"Shift+H","notices":"off","menubar":"icon"}"#,
         )
         .unwrap();
         let p = load(&dir);
@@ -428,6 +435,11 @@ mod tests {
         assert_eq!(p.language, None);
         assert_eq!(p.theme, None);
         assert_eq!(p.zoom, crate::zoom::Zoom::default(), "不是那几档的按 100%");
+        assert_eq!(
+            p.hotkey,
+            crate::hotkey::Setting::default(),
+            "不能用的按出厂那一个"
+        );
         assert_eq!(p.notices, Mode::Off);
         assert_eq!(p.menubar, crate::menubar::Style::Icon);
     }

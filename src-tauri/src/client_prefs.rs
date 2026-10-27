@@ -355,6 +355,19 @@ mod tests {
         assert_eq!(got.zoom, crate::zoom::Zoom::default());
     }
 
+    /// 呼出快捷键也是这台电脑自己的：不交上去，别处交下来的也不盖
+    #[test]
+    fn the_hotkey_stays_on_this_computer() {
+        let p = Prefs {
+            hotkey: crate::hotkey::Setting(None),
+            ..Prefs::default()
+        };
+        assert!(!general(&p).contains_key("hotkey"));
+        assert!(same(&Prefs::default(), &p));
+        let got = overlay(&Prefs::default(), &serde_json::json!({ "hotkey": "" }));
+        assert_eq!(got.hotkey, crate::hotkey::Setting::default());
+    }
+
     #[test]
     fn sameness_only_looks_at_the_shared_settings() {
         let a = Prefs::default();

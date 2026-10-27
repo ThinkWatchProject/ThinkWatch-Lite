@@ -692,9 +692,27 @@ fn fill_item(
             item.setImage(None);
         }
     }
-    if let Some(key) = i.key {
-        item.setKeyEquivalent(&NSString::from_str(key));
-        item.setKeyEquivalentModifierMask(NSEventModifierFlags::Command);
+    // **变了才设**，没有了要清掉（呼出快捷键在设置里关掉、换掉时）
+    if was.is_none_or(|w| w.key != i.key) {
+        let (equivalent, mask) = match &i.key {
+            Some(k) => {
+                let mut mask = NSEventModifierFlags::empty();
+                for (on, flag) in [
+                    (k.control, NSEventModifierFlags::Control),
+                    (k.option, NSEventModifierFlags::Option),
+                    (k.shift, NSEventModifierFlags::Shift),
+                    (k.command, NSEventModifierFlags::Command),
+                ] {
+                    if on {
+                        mask |= flag;
+                    }
+                }
+                (k.equivalent.as_str(), mask)
+            }
+            None => ("", NSEventModifierFlags::empty()),
+        };
+        item.setKeyEquivalent(&NSString::from_str(equivalent));
+        item.setKeyEquivalentModifierMask(mask);
     }
     let target_obj = ui.target.clone();
     let target: &AnyObject = &target_obj;

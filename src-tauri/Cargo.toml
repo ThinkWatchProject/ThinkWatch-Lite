@@ -57,6 +57,9 @@ tauri = { version = "2.12.1", default-features = false, features = [
 tauri-plugin-opener = "2"
 # 浏览器里授权完成之后，那一页把应用带回前台（`thinkwatch://`）
 tauri-plugin-deep-link = "2"
+# 呼出快捷键（设置 → 通用，见 `hotkey.rs`）：macOS 的 RegisterEventHotKey、Windows 的
+# RegisterHotKey、X11 的 XGrabKey
+tauri-plugin-global-shortcut = "2"
 
 # 控制面契约来自 core，版本钉在下面的 `[workspace.dependencies]` 里。
 tw-api = { workspace = true, features = ["ts"] }

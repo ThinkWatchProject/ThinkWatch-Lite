@@ -44,6 +44,8 @@ pub mod export;
 pub mod gateway;
 /// 升级不断线：请 core 等接替者、已 arm 的退出不停 core、`brew upgrade` 的识别，见模块头上
 pub mod handover;
+/// 呼出快捷键：按下叫出主界面，在最前时再按一次收起，见模块头上
+pub mod hotkey;
 pub mod import_link;
 pub mod keys;
 /// 一个在跑的请求的实时内容，搬给请求详情的「内容」页
@@ -192,6 +194,11 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_deep_link::init());
+    // 呼出快捷键。Wayland 上不装（插件只会 X11，见 `hotkey`）
+    let builder = match hotkey::plugin() {
+        Some(p) => builder.plugin(p),
+        None => builder,
+    };
     // Linux 上不注册：自启项是自己写的（见 `autostart::linux`）。插件在那边
     // 初始化时只是建个对象、不碰磁盘，留着它就是第二份说法 —— 它认的是另一个
     // 文件名，`is_enabled` 也不看桌面有没有把它关掉
@@ -265,6 +272,9 @@ pub fn run() {
             settings::ui_zoom,
             settings::set_ui_zoom,
             settings::step_ui_zoom,
+            settings::hotkey_state,
+            settings::set_hotkey,
+            settings::set_hotkey_recording,
             updater::update_check,
             updater::update_show,
             updater::update_pending,
@@ -324,6 +334,8 @@ pub fn run() {
             theme::init(&handle, saved.theme);
             // 界面大小也是：窗口一建出来就按它缩放（见 `window::show_main_window`）
             zoom::remember(saved.zoom);
+            // 呼出快捷键：主窗口没开、只在菜单栏跑着的时候也要能叫出来
+            hotkey::init(&handle, &saved.hotkey);
             // 链接、开机自启、通知登记改成指向正在运行的这个 exe（见 `winreg`）。
             // 要在下面判断系统通知能不能用之前
             winreg::claim(&handle);
@@ -644,6 +656,8 @@ pub fn run() {
                 // 开着的导入对话框跟着窗口没了：下一条导入链接可以进来
                 if closing == "main" {
                     import_link::window_destroyed();
+                    // 设置页录到一半窗口关了：放掉的呼出快捷键注册回去
+                    hotkey::resume(&app);
                 }
                 // **只有最后一个窗口关掉时才退回菜单栏应用。**更新窗口关掉
                 // 的时候主窗口可能还开着 —— 那时把 Dock 图标收掉，用户就没法
