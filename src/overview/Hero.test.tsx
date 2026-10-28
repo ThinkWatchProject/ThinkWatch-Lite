@@ -78,6 +78,7 @@ function dashboard(range: Range, over: Partial<Dashboard> = {}): Dashboard {
     token_rate: [],
     token_rate_by_provider: [],
     storage: null,
+    quotas: null,
     buckets: [bucket(at)],
     buckets_by_model: [],
     buckets_by_provider: [],

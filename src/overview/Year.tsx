@@ -43,12 +43,6 @@ const LEVEL = ["bg-surface", "bg-chart-5", "bg-chart-3", "bg-chart-2", "bg-chart
 const METRICS: YearMetric[] = ["tokens", "cost", "requests"];
 
 /**
- * 上次选的指标。**换时间范围时概览整块重挂**（点一个格子就是换范围），放在组件的 state
- * 里的话，选了「费用」再点一天，就弹回了 Token。只记在这一程里
- */
-let lastMetric: YearMetric = "tokens";
-
-/**
  * 最近一年：一天一格的热力图，固定一年，不跟时间范围走；所选时间范围在格子上描边。
  *
  * 53 列（周）× 7 行（周一在上），最右一列是本周，今天之后的不画；格子随卡片宽度伸缩。
@@ -63,21 +57,24 @@ let lastMetric: YearMetric = "tokens";
 export function Year({
   range,
   tick,
+  metric,
+  onMetric: setMetric,
   onPickDay,
 }: {
   range: Range;
   /** 库里多了请求、手动刷新：重取 */
   tick: number;
+  /**
+   * 选中的指标。**放在页面那一层**：换时间范围时概览整块重挂（点一个格子就是换范围），
+   * 放在这里的话选了「费用」再点一天就弹回了 Token
+   */
+  metric: YearMetric;
+  onMetric: (m: YearMetric) => void;
   /** 点了某一天：时间范围切到那一天 */
   onPickDay: (day: Date) => void;
 }) {
   const t = useText(yearText);
   const ot = useText(overviewText);
-  const [metric, setMetricState] = useState<YearMetric>(() => lastMetric);
-  const setMetric = (m: YearMetric) => {
-    lastMetric = m;
-    setMetricState(m);
-  };
   // 今天的零点：过了零点就换，网格往前走一格
   const today = useStartOf(DAY_MS);
   const from = gridStart(today);

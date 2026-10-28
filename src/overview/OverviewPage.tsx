@@ -21,6 +21,7 @@ import { Quota, hasQuota } from "./Quota";
 import { Year } from "./Year";
 import { Breakdown } from "./Breakdown";
 import type { Metric } from "./metric";
+import type { YearMetric } from "./yearGrid";
 import { overviewText } from "./overview.i18n";
 
 /**
@@ -68,6 +69,7 @@ export default function OverviewPage({
   const o = useOverview(range, tick);
   // 选中的指标放在这一层：换时间范围时下面整块重挂，选择不该跟着丢
   const [metric, setMetric] = useState<Metric>("tokens");
+  const [yearMetric, setYearMetric] = useState<YearMetric>("tokens");
   const pickDay = useCallback((day: Date) => setRange(dayRange(day)), [setRange]);
 
   const landed = useRef(onLanded);
@@ -95,6 +97,8 @@ export default function OverviewPage({
           tick={tick}
           metric={metric}
           onMetric={setMetric}
+          yearMetric={yearMetric}
+          onYearMetric={setYearMetric}
           onPickDay={pickDay}
         />
       )}
@@ -109,6 +113,8 @@ function Body({
   tick,
   metric,
   onMetric,
+  yearMetric,
+  onYearMetric,
   onPickDay,
 }: {
   shown: Shown;
@@ -118,6 +124,8 @@ function Body({
   tick: number;
   metric: Metric;
   onMetric: (m: Metric) => void;
+  yearMetric: YearMetric;
+  onYearMetric: (m: YearMetric) => void;
   onPickDay: (day: Date) => void;
 }) {
   const t = useText(overviewText);
@@ -160,11 +168,11 @@ function Body({
           <AttentionStrip d={d} ov={ov} range={range} />
           <Hero d={d} range={range} scope={id} step={bucketOf(range)} metric={metric} onMetric={onMetric} />
           <div className={cn("grid gap-3.5", hasQuota(d, ov) && "@min-[760px]/page:grid-cols-2")}>
-            <Spend d={d} range={range} metric={metric} />
+            <Spend d={d} range={range} metric={metric} ov={ov} />
             <Quota d={d} ov={ov} />
           </div>
-          <Year range={range} tick={tick} onPickDay={onPickDay} />
-          <Breakdown d={d} range={range} />
+          <Year range={range} tick={tick} metric={yearMetric} onMetric={onYearMetric} onPickDay={onPickDay} />
+          <Breakdown d={d} range={range} ov={ov} />
         </>
       )}
     </div>
