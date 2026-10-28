@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
-import { clientGlyph, upstreamGlyph } from "./ui/logos";
+import { clientGlyph, modelGlyph, upstreamGlyph } from "./ui/logos";
 import { GLYPHS } from "./ui/logo-data";
 
 describe("上游和客户端的标志", () => {
@@ -49,5 +49,41 @@ describe("上游和客户端的标志", () => {
     const src = readFileSync("src/ui/logo-data.ts", "utf8");
     expect(src).not.toMatch(/fill="#|#[0-9a-f]{6}\b|url\(/i);
     for (const g of Object.values(GLYPHS)) expect(g.paths.length).toBeGreaterThan(0);
+  });
+});
+
+describe("模型的标志", () => {
+  it("按模型名认出是哪一家", () => {
+    expect(modelGlyph("claude-sonnet-5")).toBe("claude");
+    expect(modelGlyph("gpt-5.5-codex")).toBe("openai");
+    expect(modelGlyph("o3")).toBe("openai");
+    expect(modelGlyph("o4-mini")).toBe("openai");
+    expect(modelGlyph("gemini-3-pro")).toBe("gemini");
+    expect(modelGlyph("glm-4.6")).toBe("zhipu");
+    expect(modelGlyph("deepseek-chat")).toBe("deepseek");
+    expect(modelGlyph("kimi-k2-turbo")).toBe("kimi");
+    expect(modelGlyph("moonshot-v1-8k")).toBe("moonshot");
+    expect(modelGlyph("qwen3-coder:30b")).toBe("qwen");
+    expect(modelGlyph("grok-4")).toBe("xai");
+    expect(modelGlyph("codestral-latest")).toBe("mistral");
+    expect(modelGlyph("devstral-small")).toBe("mistral");
+  });
+
+  it("带厂商前缀、Bedrock 的区域前缀也认得", () => {
+    expect(modelGlyph("anthropic/claude-sonnet-5")).toBe("claude");
+    expect(modelGlyph("us.anthropic.claude-haiku-4-5-20251001-v1:0")).toBe("claude");
+    expect(modelGlyph("moonshotai/kimi-k2")).toBe("kimi");
+    expect(modelGlyph("qwen/qwen3-coder")).toBe("qwen");
+    expect(modelGlyph("openai/gpt-oss-120b")).toBe("openai");
+    expect(modelGlyph("openai/o3")).toBe("openai");
+  });
+
+  it("认不出来是 null：画首字母方块，不硬套一家", () => {
+    expect(modelGlyph("llama-3.3-70b")).toBeNull();
+    expect(modelGlyph("my-finetune")).toBeNull();
+    // 名字里碰巧带个 o 加数字的不算 OpenAI
+    expect(modelGlyph("solo3")).toBeNull();
+    expect(modelGlyph("")).toBeNull();
+    expect(modelGlyph(null)).toBeNull();
   });
 });

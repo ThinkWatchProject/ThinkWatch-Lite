@@ -1,21 +1,45 @@
 import { useState } from "react";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, KeyRoundIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/ui/segmented";
 import { Tip } from "@/ui/tip";
+import { ClientLogo, ModelLogo, UpstreamLogo, clientGlyph } from "@/ui/logos";
 import { rangeText } from "@/ui/range.i18n";
 import type { Range } from "@/ui/range";
 import { useNav } from "@/nav";
 import type { Filter } from "@/requestTable";
 import { compact, msShort } from "@/format";
-import { usd, type CostBucketGroup, type Dashboard, type LatencyView, type TokenRateView } from "@/types";
+import { usd, type CostBucketGroup, type Dashboard, type LatencyView, type Overview, type TokenRateView } from "@/types";
 import { useText } from "@/i18n";
 import { breakdown, rankCost, ROWS, type BreakdownRow } from "./series";
 import { LinkText } from "./parts";
 import { overviewText } from "./overview.i18n";
 
-/** 明细表按什么分 */
-type Dim = "model" | "provider" | "client";
+/** 明细表（和「去向」）按什么分 */
+export type Dim = "model" | "provider" | "client";
+
+/**
+ * 一项前面的标志：模型按出它的那一家（`modelGlyph`），上游按地址（`UpstreamLogo`，地址从
+ * `ov` 里找；没有 `ov` 时只按名字认），密钥按它是为哪个客户端生成的（`ClientView.client`；
+ * 名字本身就是客户端 id 的也认），对不上客户端的画一把钥匙。认不出来的画首字母方块。
+ *
+ * 没有名字的那一项（未知模型、未到上游、未知密钥）不画标志，只留出位置，名字才对得齐。
+ */
+export function ItemLogo({ dim, name, ov }: { dim: Dim; name: string; ov?: Overview | null }) {
+  const cls = "text-muted-foreground";
+  if (!name) return <span aria-hidden className="size-4 shrink-0" />;
+  if (dim === "model") return <ModelLogo name={name} className={cls} />;
+  if (dim === "provider") {
+    const p = ov?.providers.find((x) => x.name === name);
+    return <UpstreamLogo name={name} baseUrl={p?.base_url} protocol={p?.protocol} className={cls} />;
+  }
+  const client = ov?.clients.find((k) => k.name === name)?.client ?? (clientGlyph(name) ? name : null);
+  return client ? (
+    <ClientLogo id={client} name={name} className={cls} />
+  ) : (
+    <KeyRoundIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
+  );
+}
 
 /** 一行里名字以外那几列。**表头和每一行用同一套**，列才对得齐 */
 const COLS =
@@ -29,8 +53,10 @@ const COLS =
  * 认不出的密钥）只说不点 —— 没有东西可筛。
  *
  * 实时档按 24 小时算：十分钟里撑不起一张有意义的表。
+ *
+ * 名称格前面是标志（`ItemLogo`）。`ov` 给了，上游按地址认、密钥认得出是哪个客户端的。
  */
-export function Breakdown({ d, range }: { d: Dashboard; range: Range }) {
+export function Breakdown({ d, range, ov }: { d: Dashboard; range: Range; ov?: Overview | null }) {
   const t = useText(overviewText);
   const rt = useText(rangeText);
   const nav = useNav();
@@ -107,6 +133,7 @@ export function Breakdown({ d, range }: { d: Dashboard; range: Range }) {
               key={`row:${r.name}`}
               r={r}
               label={r.name || unnamed}
+              logo={<ItemLogo dim={dim} name={r.name} ov={ov} />}
               mono={dim === "model" && r.name !== ""}
               latency={latency.get(r.name)}
               speed={speed.get(r.name)}
@@ -128,6 +155,7 @@ export function Breakdown({ d, range }: { d: Dashboard; range: Range }) {
 function Row({
   r,
   label,
+  logo,
   mono,
   latency,
   speed,
@@ -136,6 +164,7 @@ function Row({
 }: {
   r: BreakdownRow;
   label: string;
+  logo: React.ReactNode;
   mono: boolean;
   latency?: LatencyView;
   speed?: TokenRateView;
@@ -169,6 +198,7 @@ function Row({
       )}
     >
       <span className="flex min-w-0 items-center gap-1">
+        <span className="mr-1 flex shrink-0">{logo}</span>
         <span className={cn("min-w-0 truncate", mono && "font-mono", !onOpen && "text-muted-foreground")} title={label}>
           {label}
         </span>
@@ -213,8 +243,9 @@ function Row({
 /**
  * 费用那一格，写法见 `rankCost`。有说明的写在悬停里、金额带虚线下划线；「无法计价」是
  * 琥珀色，**可以点**：落到流量页这一行里没算出费用的那一批 —— 看到它之后要做的就是去补价。
+ * 「去向」那张卡片也用它（不给 `unpriced`：那一整行本来就能点）。
  */
-function CostCell({
+export function CostCell({
   c,
   amount,
   unpriced,

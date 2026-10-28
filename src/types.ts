@@ -17,6 +17,7 @@ import type {
   InFlightRequest,
   LatencyView,
   Msg,
+  ProviderQuota,
   SecretItem,
   Status,
   StorageStatus,
@@ -508,6 +509,11 @@ export interface Dashboard {
   ttft: Percentiles | null;
   /** 上一个等长区间的，首 token 卡片的环比用 */
   prev_ttft: Percentiles | null;
+  /**
+   * 订阅的额度窗口（`GET /quota`），每个上游一份：「额度与余额」那一块。**此刻的状态**，
+   * 不跟时间范围走。取不到是 `null`
+   */
+  quotas: ProviderQuota[] | null;
   /** 上面几样的时间窗起点，补空桶要用 */
   since_ms: number;
 }

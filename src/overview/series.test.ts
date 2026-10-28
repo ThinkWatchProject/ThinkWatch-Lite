@@ -147,6 +147,7 @@ function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashb
     prev: null,
     ttft: { p50_ms: null, p95_ms: null, samples: 0 },
     prev_ttft: null,
+    quotas: null,
     since_ms: since,
     ...over,
   };
