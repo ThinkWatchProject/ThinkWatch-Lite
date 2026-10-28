@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RetentionView } from "@/types";
-import { capText, checks, draftOf } from "./RetentionSection";
+import { bytes, capText, checks, draftOf } from "./RetentionSection";
 
 const MIB = 1024 * 1024;
 const GIB = 1024 * MIB;
@@ -43,5 +43,21 @@ describe("报文上限", () => {
     expect(checks({ ...saved, body_max_gb: "0" }, saved).body_max_gb).toBe(false);
     expect(checks({ ...saved, body_max_gb: "0.5" }, saved).body_max_gb).toBe(true);
     expect(checks({ ...saved, body_days: "0" }, saved).body_days).toBe(false);
+  });
+});
+
+/** 占用的写法：取整进了位的，按下一档写 —— 不写「1024 KB」「1024 MB」 */
+describe("报文占用", () => {
+  it("按 B、KB、MB、GB", () => {
+    expect(bytes(512)).toBe("512 B");
+    expect(bytes(300 * 1024)).toBe("300 KB");
+    expect(bytes(412 * MIB)).toBe("412 MB");
+    expect(bytes(Math.round(1.5 * GIB))).toBe("1.5 GB");
+  });
+
+  it("进了位就按下一档写", () => {
+    expect(bytes(MIB - 100)).toBe("1 MB");
+    expect(bytes(GIB - 100 * 1024)).toBe("1 GB");
+    expect(bytes(MIB - 600)).toBe("1023 KB");
   });
 });
