@@ -35,14 +35,16 @@ export const overviewText = messages(
     viewInTraffic: "在流量中查看",
     showLog: "在安全日志中查看",
 
-    // 指标卡的名目
+    // 用量：六个指标的名目
+    usageLabel: "用量",
+    metricsLabel: "指标",
     kpiTokens: "Token",
     kpiCost: "费用",
     kpiCache: "缓存命中",
     kpiRequests: "请求",
     kpiLatency: "首 token",
     kpiTraffic: "流量",
-    /** 读屏念的那张小图：「Token 走势」 */
+    /** 读屏念的那张大图：「Token 走势」 */
     chartOf: (name: string) => `${name}走势`,
 
     /**
@@ -53,15 +55,28 @@ export const overviewText = messages(
     /** 上一个区间没有数据时，幅度那一格（「—」）的悬停说明 */
     noPrior: (period: string) => `上一个${sp(period)}${period}无记录`,
 
-    // 小图下面首尾两头
-    ago: (period: string) => `${period}前`,
-    liveAgo: "10 分钟前",
+    // 大图
+    /** 悬停抬头里还没过完的那一格止于「现在」 */
     now: "现在",
+    /** 横轴上今天零点那一格 */
+    today: "今天",
     /** 那一样读取失败：**不是没有** */
     chartUnavailable: "暂时取不到",
+    /** 图例右边：一格多宽 */
+    perSlot: (width: string) => `每格 ${width}`,
+    hours: (n: number) => `${n} 小时`,
+    days: (n: number) => `${n} 天`,
+    seconds: (n: number) => `${n} 秒`,
+    /** 实时档 token、费用的线是速率，图例右边写单位 */
+    tokenUnit: "token/秒",
+    costUnit: "$/小时",
+    /** 提示里排在前几之外的模型合成一行 */
+    otherModels: (n: number) => `其他 ${n} 个模型`,
 
     // Token
     inOut: (input: string, output: string) => `输入 ${input} · 输出 ${output}`,
+    input: "输入",
+    output: "输出",
     /** 实时档的提示读的是速率 */
     tokenRate: (shown: string) => `${shown} token/秒`,
     /** token 数。`shown` 是写出来的样子（缩写或精确值），`n` 决定英文的单复数 */
@@ -81,6 +96,15 @@ export const overviewText = messages(
     rankNoUsage: (n: number) => `${n} 条请求没有用量数据，费用未计入`,
     /** 实时档：请求刚落地，价钱还没算出来 */
     rankPending: (n: number) => `${n} 条请求的费用尚在计算，暂未计入`,
+    /** 细项那一行：金额之外的请求，短句。整句在悬停里 */
+    shortUnpriced: (n: number) => `${n} 条请求无法计价`,
+    shortNoUsage: (n: number) => `${n} 条请求无用量`,
+    shortPending: (n: number) => `${n} 条请求尚在计算`,
+    /** 费用指标上一直看得见的那个限定词（只放得下一个） */
+    tagEstimated: "含估算",
+    tagUnpriced: "部分无法计价",
+    tagNoUsage: "部分无用量",
+    tagPending: "尚在计算",
 
     // 缓存
     saved: (amount: string) => `省下 ${amount}`,
@@ -89,23 +113,29 @@ export const overviewText = messages(
     cacheReads: "缓存读取",
     uncachedInput: "新输入",
     cacheWrites: "缓存写入",
+    /** 提示的大数：这一格的命中率 */
+    hitRate: (pct: string) => `${pct} 命中`,
 
     // 请求
     failedSub: (n: number) => `失败 ${n} 次`,
     rateSuffix: (pct: string) => ` · ${pct}%`,
     noFailures: "无失败",
     showFailed: "在流量中查看失败的请求",
-    reqTip: (n: number, failed: number) => `${n} 次${failed ? ` · 失败 ${failed}` : ""}`,
+    showUnpriced: "在流量中查看无法计价的请求",
+    /** 提示的大数：这一格几次请求 */
+    reqCount: (n: string, _n: number) => `${n} 次`,
+    succeeded: "成功",
+    failed: "失败",
 
     // 首 token
-    p95: (shown: string) => `P95 ${shown}`,
-    latTip: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
+    latDetail: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
     noSamples: "无样本",
 
     // 流量
     upload: (shown: string) => `上传 ${shown}`,
     download: (shown: string) => `下载 ${shown}`,
-    trafficTip: (up: string, down: string) => `↑ ${up} · ↓ ${down}`,
+    sent: "上传",
+    received: "下载",
 
     // 明细表
     tableLabel: "明细",
@@ -166,6 +196,8 @@ export const overviewText = messages(
     viewInTraffic: "View in Traffic",
     showLog: "View in the security log",
 
+    usageLabel: "Usage",
+    metricsLabel: "Metrics",
     kpiTokens: "Tokens",
     kpiCost: "Cost",
     kpiCache: "Cache hits",
@@ -177,12 +209,20 @@ export const overviewText = messages(
     deltaTip: (period: string, before: string, now: string) => `vs. prior ${period}: ${before} → ${now}`,
     noPrior: (period: string) => `No data for the prior ${period}`,
 
-    ago: (period: string) => `${period} ago`,
-    liveAgo: "10 min ago",
     now: "Now",
+    today: "Today",
     chartUnavailable: "Unavailable right now",
+    perSlot: (width: string) => `${width} per bar`,
+    hours: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
+    days: (n: number) => (n === 1 ? "1 day" : `${n} days`),
+    seconds: (n: number) => (n === 1 ? "1 second" : `${n} seconds`),
+    tokenUnit: "tokens/s",
+    costUnit: "$/hour",
+    otherModels: (n: number) => (n === 1 ? "1 other model" : `${n} other models`),
 
     inOut: (input: string, output: string) => `Input ${input} · Output ${output}`,
+    input: "Input",
+    output: "Output",
     tokenRate: (shown: string) => `${shown} tokens/s`,
     tokens: (shown: string, n: number) => `${shown} ${n === 1 ? "token" : "tokens"}`,
 
@@ -204,6 +244,13 @@ export const overviewText = messages(
       n === 1
         ? "1 request is still being priced, so its cost is not included yet"
         : `${n} requests are still being priced, so their cost is not included yet`,
+    shortUnpriced: (n: number) => (n === 1 ? "1 request unpriced" : `${n} requests unpriced`),
+    shortNoUsage: (n: number) => (n === 1 ? "1 request without usage" : `${n} requests without usage`),
+    shortPending: (n: number) => (n === 1 ? "1 request being priced" : `${n} requests being priced`),
+    tagEstimated: "Incl. estimates",
+    tagUnpriced: "Partly unpriced",
+    tagNoUsage: "Partly no usage",
+    tagPending: "Being priced",
 
     saved: (amount: string) => `${amount} saved`,
     netCost: (amount: string) => `${amount} net cost increase`,
@@ -211,20 +258,24 @@ export const overviewText = messages(
     cacheReads: "Cache reads",
     uncachedInput: "Uncached input",
     cacheWrites: "Cache writes",
+    hitRate: (pct: string) => `${pct} hit`,
 
     failedSub: (n: number) => `${n} failed`,
     rateSuffix: (pct: string) => ` · ${pct}%`,
     noFailures: "No failures",
     showFailed: "View failed requests in Traffic",
-    reqTip: (n: number, failed: number) => `${n === 1 ? "1 request" : `${n} requests`}${failed ? ` · ${failed} failed` : ""}`,
+    showUnpriced: "View unpriced requests in Traffic",
+    reqCount: (shown: string, n: number) => `${shown} ${n === 1 ? "request" : "requests"}`,
+    succeeded: "Succeeded",
+    failed: "Failed",
 
-    p95: (shown: string) => `P95 ${shown}`,
-    latTip: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
+    latDetail: (p50: string, p95: string) => `P50 ${p50} · P95 ${p95}`,
     noSamples: "No samples",
 
     upload: (shown: string) => `Up ${shown}`,
     download: (shown: string) => `Down ${shown}`,
-    trafficTip: (up: string, down: string) => `↑ ${up} · ↓ ${down}`,
+    sent: "Up",
+    received: "Down",
 
     tableLabel: "Breakdown",
     tabModels: "Models",
