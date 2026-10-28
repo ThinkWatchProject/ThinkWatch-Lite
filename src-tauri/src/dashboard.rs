@@ -42,8 +42,8 @@ pub async fn dashboard(
     // 这一段有多长：上一个等长区间从它往前量
     let end = until.unwrap_or(now);
     let bucket = bucket_ms.max(60_000);
-    // **十四样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
-    // 十四问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
+    // **十五样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
+    // 十五问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
     // 钥匙只读一次（`pin`）
     let c = state.control.pin().map_err(text)?;
     // 延迟、生成速度和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，
@@ -97,6 +97,7 @@ pub async fn dashboard(
         prev,
         ttft,
         prev_ttft,
+        quotas,
     ) = tokio::join!(
         c.call::<ep::Summary>(&[], &win),
         c.call::<ep::Latency>(&[], &win),
@@ -112,6 +113,7 @@ pub async fn dashboard(
         c.call::<ep::Summary>(&[], &before),
         c.call::<ep::CostBuckets>(&[], &whole_now),
         c.call::<ep::CostBuckets>(&[], &whole_before),
+        c.call::<ep::Quota>(&[], &()),
     );
     Ok(Dashboard {
         summary: summary.map_err(text)?,
@@ -132,6 +134,8 @@ pub async fn dashboard(
         prev: prev.ok(),
         ttft: ttft.ok().map(|b| Percentiles::of(&b)),
         prev_ttft: prev_ttft.ok().map(|b| Percentiles::of(&b)),
+        // 此刻的订阅额度，不跟时间窗走。拿不到同样是 `None`：那一块不画，不是「没有额度」
+        quotas: quotas.ok(),
         since_ms: since,
     })
 }
@@ -169,6 +173,9 @@ pub struct Dashboard {
     ttft: Option<Percentiles>,
     /// 上一个等长区间的，首 token 那张卡片的环比用
     prev_ttft: Option<Percentiles>,
+    /// 订阅的额度窗口（`GET /quota`），每个上游一份：概览「额度与余额」那一块。**此刻的
+    /// 状态**，不按时间窗取。拿不到是 `None`
+    quotas: Option<Vec<tw_api::ProviderQuota>>,
     /// 实际用上的时间窗起点。**原样回传** —— 界面补空桶要从它数起，而界面送来的
     /// 起点在未来时（时钟被往回拨过）这里截到了现在
     since_ms: i64,

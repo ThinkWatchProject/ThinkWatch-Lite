@@ -227,3 +227,42 @@ export function ClientLogo({
   const g = clientGlyph(id) ?? clientGlyph(name);
   return g ? <Logo id={g} size={size} className={className} /> : <LetterTile name={name ?? id} size={size} className={className} />;
 }
+
+/**
+ * 模型名里的特征 → 出它的那一家。**按模型认，不按上游认**：同一个 `claude-sonnet-5` 走
+ * 官方、走中转都是 Claude。带前缀的（`anthropic/claude-sonnet-5`、
+ * `us.anthropic.claude-…`、`qwen/qwen3-coder`）一样认得。
+ *
+ * Claude 用 Claude 的标志，不用 Anthropic 的：上游那一列才是 Anthropic。
+ */
+const MODELS: [RegExp, GlyphId][] = [
+  [/claude/, "claude"],
+  [/gemini|gemma/, "gemini"],
+  [/deepseek/, "deepseek"],
+  [/(^|[^a-z])(glm|chatglm|codegeex)/, "zhipu"],
+  [/kimi/, "kimi"],
+  [/moonshot/, "moonshot"],
+  [/qwen|qwq|qvq/, "qwen"],
+  [/grok/, "xai"],
+  [/mistral|mixtral|codestral|devstral|magistral|ministral|pixtral/, "mistral"],
+  // OpenAI 放在最后：`o3`、`o4-mini` 这种短名只在别的都认不出时才算
+  [/gpt|chatgpt|codex|dall-e|whisper|text-embedding|openai|(^|[/.])o\d(-|$)/, "openai"],
+];
+
+/** 模型是哪一家出的。认不出来（自建的、没见过的名字）返回 `null` */
+export function modelGlyph(name: string | null | undefined): GlyphId | null {
+  const n = (name ?? "").toLowerCase();
+  if (!n) return null;
+  for (const [re, id] of MODELS) if (re.test(n)) return id;
+  return null;
+}
+
+/** 模型的标志；认不出来画首字母方块（取最后一段：`meta-llama/llama-3` 画 L，不画 M） */
+export function ModelLogo({ name, size = 16, className }: { name: string; size?: number; className?: string }) {
+  const id = modelGlyph(name);
+  return id ? (
+    <Logo id={id} size={size} className={className} />
+  ) : (
+    <LetterTile name={name.split("/").pop() ?? name} size={size} className={className} />
+  );
+}

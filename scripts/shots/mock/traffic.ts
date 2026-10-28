@@ -754,7 +754,8 @@ function tokenRate(rows: HistoryRow[], key: (h: HistoryRow) => string): TokenRat
     });
 }
 
-export function dashboard(sinceMs: number, bucketMs: number): Dashboard {
+/** 订阅额度不在这里：`commands.ts` 和上游页那份一起给 */
+export function dashboard(sinceMs: number, bucketMs: number): Omit<Dashboard, "quotas"> {
   const rows = rowsBetween(sinceMs).filter((h) => !h.local);
   const buckets = new Map<number, CostBucket>();
   const byModel = new Map<string, CostBucketGroup>();
