@@ -7,7 +7,7 @@ migrate the page.
 The look is deliberately restrained: **black, white and grey**. Colour appears only to say
 something about state (ok / warning / error) and in data visualisation (`--chart-*`,
 `--cache-*`, `--data-*`). The one exception is the Overview, where the brand cyan → magenta
-(`--brand-*`) marks interaction (the hovered card, the synced crosshair) — never data, never
+(`--brand-*`) marks interaction (the hovered card) — never data, never
 a page outside the Overview. The premium feel comes from the material (translucent sidebar
 on macOS), consistent hierarchy, motion and complete states — not from decoration.
 
@@ -173,7 +173,7 @@ All colours are CSS tokens (`src/index.css`) exposed as Tailwind colours. **Neve
 | `chart-1…5`, `chart-other`, `cache-*` | Data visualisation only (`chart-other` is the grey "Other" series) |
 | `data-1`, `data-2`, `data-rest`, `data-fail` | Overview card charts: the main series (blue), the comparison series (orange), the undistinguished part of a composition (grey), failures (red). `--data-wash` is the area opacity |
 | `panel` | The face of an Overview card, one step lighter than the window ground |
-| `brand-from`, `brand-to` | The logo's cyan → magenta. **Accents only** (hovered card border, synced crosshair, tooltip top edge, the in-flight dot, requests moving along the routing map with `motion-flow`); never a data colour |
+| `brand-from`, `brand-to` | The logo's cyan → magenta. **Accents only** (hovered card border, tooltip top edge, the in-flight dot, requests moving along the routing map with `motion-flow`); never a data colour |
 | `--chrome-*` | Window chrome (sidebar, toolbar). Shell only. |
 
 Tinted status backgrounds are the status colour at low alpha: `bg-warning/10`,
@@ -229,12 +229,17 @@ import { Sparkline, sparklineWidth } from "@/ui/sparkline";
   slots keep a faint baseline. Without `tip` bars are 2px with 1px gaps (`sparklineWidth(n)`
   for its skeleton); with `tip` each slot is a 4px hover cell. Keep `bars` and `tip`
   referentially stable where the parent re-renders often (it is memoised).
-- **Overview card charts** (`src/overview/Spark.tsx`, page-specific): `LineChart` (one or two
-  lines, 1.75px, a faint `--data-wash` area under quantities, none under percentiles; `null`
-  = no samples, bridged by a faint dashed connector, never a made-up value) and `BarChart`
-  (requests per slot, failures stacked on top in `--data-fail`). No axes, no grid, no entry
-  animation; the crosshair is synced across cards by time (`slotOf`) and drawn with the brand
-  gradient (`gradientUnits="userSpaceOnUse"`: a vertical line has a zero-width box).
+- **Overview usage chart** (`src/overview/HeroChart.tsx`, page-specific): one large chart for
+  the metric picked in the usage card's tiles. Left axis with 1 / 2 / 2.5 / 5 x 10^n ticks
+  (`HeroAxis.ts`), hairline grid, date or time labels at slot boundaries. Quantities are bars
+  (at most 16px wide, 4px rounded top, two stacked parts with a 2px gap: failures in
+  `--data-fail`, download in `--data-2`); the hit rate and first-token P50 / P95 are 2px lines
+  (`null` = no samples, bridged by a faint dashed connector, never a made-up value). The slot
+  still in progress is drawn faded. Hovering or keyboard focus shows one tooltip per slot
+  (value first, line keys) and gives the card the brand border.
+- **Past-year heatmap** (`src/overview/Year.tsx`): one cell per day, `--chart-5` to `--chart-1`
+  by quartile of the days with usage, `--surface` for none, dashed `--input` border for days
+  before recording started; the selected range is outlined.
 - Hand-roll a bar or a chart only when none of these fits, and then follow the same rules.
 
 ---

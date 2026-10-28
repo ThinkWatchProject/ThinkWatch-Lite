@@ -131,6 +131,8 @@ webview_endpoints![
     AliasUsage,
     // 各条路由、各条规则命中了多少：路由图按它给线加权、标出从没命中过的规则
     RouteStats,
+    // 用量历史：概览上「最近一年」的热力图，一天一格
+    UsageHistory,
     // 上游体检：各家上游的事实和样本数，界面按它写成自己的话
     UpstreamHealth,
     // 价目表

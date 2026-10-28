@@ -9,8 +9,11 @@ import {
   delta,
   historySeries,
   liveSeries,
+  cellModels,
+  costTag,
+  costText,
+  liveModelsAt,
   rankCost,
-  slotOf,
   slotTitle,
   topFailure,
   type Grid,
@@ -147,40 +150,11 @@ function dashboard(since: number, groups: CostBucketGroup[], over: Partial<Dashb
     prev: null,
     ttft: { p50_ms: null, p95_ms: null, samples: 0 },
     prev_ttft: null,
+    quotas: null,
     since_ms: since,
     ...over,
   };
 }
-
-/**
- * 联动的竖线按时刻对：指着一张卡片，别的卡片停在同一个时刻所在的那一格。实时档里有的
- * 卡片是十分钟、有的是 24 小时，同一刻落在各自的格子上；不在图上的那一刻不画。
- */
-describe("联动的竖线落在哪一格", () => {
-  const since = new Date(2026, 8, 24, 17, 0).getTime();
-  const hourly: Grid = { at: Array.from({ length: 25 }, (_, i) => since + i * HOUR), step: HOUR, kind: "bucket" };
-
-  it("历史档：落在包着这一刻的那一格（格子管 [起点, 起点 + 格宽)）", () => {
-    expect(slotOf(hourly, since)).toBe(0);
-    expect(slotOf(hourly, since + HOUR - 1)).toBe(0);
-    expect(slotOf(hourly, since + 3 * HOUR + 20 * 60_000)).toBe(3);
-  });
-
-  it("实时档：落在离这一刻最近的那一格", () => {
-    const now = since + 24 * HOUR + 42 * 60_000;
-    const live: Grid = { at: Array.from({ length: 61 }, (_, i) => now - (60 - i) * LIVE_BUCKET_MS), step: LIVE_BUCKET_MS, kind: "instant" };
-    expect(slotOf(live, now)).toBe(60);
-    expect(slotOf(live, now - 3 * LIVE_BUCKET_MS - 4_000)).toBe(57);
-    // 实时档上指着的那一刻，落在 24 小时那几张图的最后一格
-    expect(slotOf(hourly, now - 30_000)).toBe(24);
-  });
-
-  it("不在图上的那一刻是 null", () => {
-    expect(slotOf(hourly, since - 1)).toBeNull();
-    expect(slotOf(hourly, since + 25 * HOUR)).toBeNull();
-    expect(slotOf({ at: [], step: HOUR, kind: "bucket" }, since)).toBeNull();
-  });
-});
 
 describe("一格的悬停抬头", () => {
   it("24 小时：写起止，不带日期；还没过完的那一格止于「现在」", () => {
@@ -219,7 +193,7 @@ describe("一格的悬停抬头", () => {
   });
 });
 
-describe("历史档的小图", () => {
+describe("历史档的大图", () => {
   const since = new Date(2026, 8, 24, 0, 0).getTime();
   const now = since + 3 * HOUR + 10 * 60_000;
 
@@ -270,9 +244,34 @@ describe("历史档的小图", () => {
     const d = dashboard(since, [group(since, "a", 1, { cost_micros_exact: 300, cost_micros_estimated: 20 })]);
     expect(historySeries(d, now, HOUR).cost?.[0]).toBe(320);
   });
+
+  it("每一格的命中率：没有上下文的格子无从谈起，是 null，不是 0%", () => {
+    const d = dashboard(since, [
+      group(since, "a", 30, { cache_read_tokens: 60, cache_write_tokens: 10, output_tokens: 5 }),
+      group(since + HOUR, "a", 0, { output_tokens: 4 }),
+    ]);
+    const s = historySeries(d, now, HOUR);
+    expect(s.hit?.[0]).toBeCloseTo(0.6);
+    expect(s.hit?.slice(1)).toEqual([null, null, null]);
+    expect(s.output).toEqual([5, 4, 0, 0]);
+    // 格子本身也交出来：提示要拆开说一格
+    expect(s.cells[0]?.cache_read_tokens).toBe(60);
+  });
+
+  /** 「某一天」：图画到那一天的终点（`range.to`），不是现在 */
+  it("右端给的是那一天的终点：画满 24 格，今天还没到的那几格是空的", () => {
+    const day = new Date(2026, 8, 24).getTime();
+    const to = new Date(2026, 8, 25).getTime();
+    const d = dashboard(day, [group(day + 2 * HOUR, "a", 10)]);
+    const s = historySeries(d, to, HOUR);
+    expect(s.grid.at).toHaveLength(24);
+    expect(s.grid.at.at(-1)).toBe(to - HOUR);
+    expect(s.tokens?.[2]).toBe(10);
+    expect(s.tokens?.[23]).toBe(0);
+  });
 });
 
-describe("实时档的小图", () => {
+describe("实时档的大图", () => {
   const now = 10_000_000;
   const RANGE = 10 * 60_000;
   const sample = (id: number, at: number, over: Partial<LiveSample> = {}): LiveSample => ({
@@ -510,3 +509,87 @@ describe("需要处理的事", () => {
   });
 });
 
+describe("一格里排前几的模型", () => {
+  const at = new Date(2026, 8, 24, 6).getTime();
+
+  it("按 token 排，前三个单列，其余合成一行；别的格子、用量是零的不算", () => {
+    const groups = [
+      group(at, "a", 100),
+      group(at, "b", 400),
+      group(at, "c", 50),
+      group(at, "d", 20),
+      group(at, "e", 5),
+      group(at, "z", 0),
+      group(at + HOUR, "a", 9_999),
+    ];
+    const m = cellModels(groups, at, "tokens");
+    expect(m?.top.map((r) => [r.name, r.tokens])).toEqual([
+      ["b", 400],
+      ["a", 100],
+      ["c", 50],
+    ]);
+    expect(m?.other).toMatchObject({ count: 2, tokens: 25 });
+  });
+
+  it("按费用排；金额是零却无法计价的照样列出，不算 $0 的那一种", () => {
+    const groups = [
+      group(at, "free", 100),
+      group(at, "paid", 10, { cost_micros_exact: 900, cost_micros_estimated: 100 }),
+      group(at, "nope", 10, { unpriced_requests: 2 }),
+    ];
+    const m = cellModels(groups, at, "cost");
+    expect(m?.top.map((r) => r.name)).toEqual(["paid", "nope"]);
+    expect(m?.top[0]).toMatchObject({ cost: 1_000, estimated: 100 });
+    expect(m?.other).toBeNull();
+    expect(costText(m!.top[0]!, t)).toBe("~$0.0010");
+    expect(costText(m!.top[1]!, t)).toBe(t.unpricedCell);
+  });
+
+  it("取不到按模型分的那一份：不列模型（null），不是「没有模型」", () => {
+    expect(cellModels(null, at, "tokens")).toBeNull();
+    expect(cellModels([], at, "tokens")).toEqual({ top: [], other: null });
+  });
+
+  it("实时档：和曲线同一个核，某一刻附近的模型各自叠起来；核够不着的不算", () => {
+    const now = 10_000_000;
+    const samples: LiveSample[] = [
+      { id: 1, at: now - 5_000, model: "a", tokens: 1_000, output: 0, cost: 400 },
+      { id: 2, at: now - 2_000, model: "b", tokens: 3_000, output: 0, cost: undefined },
+      { id: 3, at: now - 1_000, model: "c", tokens: 500, output: 0, cost: null },
+      { id: 4, at: now - 5 * 60_000, model: "far", tokens: 9_000_000, output: 0, cost: 1 },
+    ];
+    const byTokens = liveModelsAt(samples, now, "tokens");
+    expect(byTokens.top.map((r) => r.name)).toEqual(["b", "a", "c"]);
+    expect(byTokens.other).toBeNull();
+    // 价钱还没到的不进费用；到了却是空的算无法计价
+    const byCost = liveModelsAt(samples, now, "cost");
+    expect(byCost.top.map((r) => r.name)).toEqual(["a", "c"]);
+    expect(byCost.top[1]?.unpriced).toBe(1);
+  });
+});
+
+describe("费用指标上一直看得见的限定词", () => {
+  const r = (over: Partial<{ cost: number; estimated: number; unpriced: number; noUsage: number; pending: number }>) => ({
+    cost: 1_000,
+    estimated: 0,
+    unpriced: 0,
+    noUsage: 0,
+    ...over,
+  });
+
+  it("全都算出来了：没有", () => {
+    expect(costTag(r({}), t)).toBeNull();
+  });
+
+  it("一条都没算出来：「无法计价」「无用量」", () => {
+    expect(costTag(r({ cost: 0, unpriced: 2 }), t)).toBe(t.unpricedCell);
+    expect(costTag(r({ cost: 0, noUsage: 2 }), t)).toBe(t.noUsageCell);
+  });
+
+  it("金额是下限时说缺的是哪一种，尚在计算的最先说；只是含估算时说含估算", () => {
+    expect(costTag(r({ pending: 1, unpriced: 1, estimated: 5 }), t)).toBe(t.tagPending);
+    expect(costTag(r({ unpriced: 1, estimated: 5 }), t)).toBe(t.tagUnpriced);
+    expect(costTag(r({ noUsage: 1 }), t)).toBe(t.tagNoUsage);
+    expect(costTag(r({ estimated: 5 }), t)).toBe(t.tagEstimated);
+  });
+});

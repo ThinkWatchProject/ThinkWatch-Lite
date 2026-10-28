@@ -118,7 +118,8 @@ const COMMANDS: Table = {
 
   dashboard: (a) => {
     const { sinceMs, bucketMs } = need("dashboard", a, "sinceMs", "bucketMs");
-    return dashboard(sinceMs, bucketMs);
+    // 订阅额度是此刻的状态，和上游页同一份（dashboard.rs 同样问 `/quota`）
+    return { ...dashboard(sinceMs, bucketMs), quotas: [{ provider: "chatgpt", windows: CHATGPT_WINDOWS() }] };
   },
   upstream_stats: (a) => {
     const { sinceMs, bucketMs, egressSinceMs } = need("upstream_stats", a, "sinceMs", "bucketMs", "egressSinceMs");

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineGeometry, peakOf } from "./geometry";
+import { lineGeometry } from "./geometry";
 
 const xs = [0, 10, 20, 30, 40, 50];
 /** 值直接当纵坐标，基线在 64 */
@@ -10,7 +10,7 @@ function points(d: string): [number, number][] {
   return [...d.matchAll(/(-?[\d.]+),(-?[\d.]+)/g)].map((m) => [Number(m[1]), Number(m[2])]);
 }
 
-describe("小图的线", () => {
+describe("大图的线", () => {
   it("连续的数：一条实线、一片面积，没有虚线", () => {
     const g = lineGeometry([10, 20, 15, 30, 25, 40], xs, y, 64);
     expect(g.line.startsWith("M0,10")).toBe(true);
@@ -65,15 +65,5 @@ describe("小图的线", () => {
       expect(py).toBeGreaterThanOrEqual(10);
       expect(py).toBeLessThanOrEqual(50);
     }
-  });
-});
-
-describe("纵轴上界", () => {
-  it("最大值上面留一成；几条线一起算", () => {
-    expect(peakOf([1, 5, 3], [2, 10, null])).toBeCloseTo(11);
-  });
-
-  it("全是零或没有数：给 1，线贴着基线", () => {
-    expect(peakOf([0, 0], null, [null])).toBe(1);
   });
 });

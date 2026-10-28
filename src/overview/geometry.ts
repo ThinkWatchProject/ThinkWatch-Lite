@@ -1,11 +1,11 @@
 /**
- * 指标卡上那几张小图的几何：线、线下面那片淡色、没有样本的那几段的虚线连接。
+ * 用量大图上线的几何：线、线下面那片淡色、没有样本的那几段的虚线连接。
  *
- * 和 `Spark.tsx` 分开，是为了能测：曲线会不会越过数据冒出一个峰、空档两头接得对不对，
+ * 和 `Hero.tsx` 分开，是为了能测：曲线会不会越过数据冒出一个峰、空档两头接得对不对，
  * 写在 JSX 里没有东西会回答。
  */
 
-/** 路径里的数留一位小数：两百多像素宽的小图上，再多也看不出来，只让字符串变长 */
+/** 路径里的数留一位小数：大图画在 1000 × 100 的坐标里，再多也看不出来，只让字符串变长 */
 const num = (v: number) => Math.round(v * 10) / 10;
 
 type Pt = readonly [x: number, y: number];
@@ -118,15 +118,4 @@ function slope3([x0, y0]: Pt, [x1, y1]: Pt, [x2, y2]: Pt): number {
 function slope2([x0, y0]: Pt, [x1, y1]: Pt, t: number): number {
   const h = x1 - x0;
   return h ? ((3 * (y1 - y0)) / h - t) / 2 : t;
-}
-
-/**
- * 纵轴的上界：这张图里最大的那个数，上面留一成。全是零（或者没有数）时给 1，线贴着
- * 基线走。**每张卡片按自己的峰值画**：它回答的是「什么时候多、什么时候少」，量有多大
- * 写在上面那个大数里。
- */
-export function peakOf(...series: readonly (readonly (number | null)[] | null | undefined)[]): number {
-  let max = 0;
-  for (const s of series) for (const v of s ?? []) if (v != null && v > max) max = v;
-  return max > 0 ? max * 1.1 : 1;
 }
