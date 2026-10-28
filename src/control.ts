@@ -88,6 +88,7 @@ export const WEBVIEW_ENDPOINTS = [
   "PreviewAlias",
   "AliasUsage",
   "RouteStats",
+  "UsageHistory",
   "UpstreamHealth",
   "Pricing",
   "RefreshPricing",
