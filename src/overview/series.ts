@@ -5,9 +5,9 @@ import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, type LiveEnd, type LiveSample 
 import type { overviewText } from "./overview.i18n";
 
 /**
- * 概览上指标卡、提醒、明细表的数，从一份 `Dashboard`（和实时档的样本）算出来。
+ * 概览上用量那张卡片、提醒、明细表的数，从一份 `Dashboard`（和实时档的样本）算出来。
  *
- * **抽成纯函数是为了能测。**格子怎么对齐、联动的竖线落在哪一格、失败归给谁，写在
+ * **抽成纯函数是为了能测。**格子怎么对齐、一格的提示怎么写、失败归给谁，写在
  * JSX 里没有任何东西会回答「边界上对不对」。
  */
 
@@ -19,7 +19,7 @@ export const ROWS = 6;
 // ───────────────────────────────────────────── 格子
 
 /**
- * 一张小图的格子。
+ * 用量大图的格子。
  *
  * 历史档（`bucket`）：`at` 是每一格的起点，一格管 `[at, at + step)`，和 core 分格的
  * 算法一致（`since + k × step`）。实时档（`instant`）：`at` 是那一刻，最右边那一个就是
@@ -29,20 +29,6 @@ export interface Grid {
   at: number[];
   step: number;
   kind: "bucket" | "instant";
-}
-
-/**
- * 某一刻落在这张图的哪一格。不在图上（实时档的十分钟之外）是 `null`。
- *
- * **联动的竖线按时刻对，不按第几格对。**实时档里 token、费用、请求三张卡片是十分钟，
- * 首 token、流量两张是 24 小时：指着一张，别的卡片停在同一个时刻所在的那一格上，那一刻
- * 不在图上的就不画。
- */
-export function slotOf(g: Grid, t: number): number | null {
-  const first = g.at[0];
-  if (first === undefined || !(g.step > 0)) return null;
-  const k = g.kind === "bucket" ? Math.floor((t - first) / g.step) : Math.round((t - first) / g.step);
-  return k >= 0 && k < g.at.length ? k : null;
 }
 
 const HOUR = 3_600_000;
@@ -81,12 +67,12 @@ export function slotTitle(g: Grid, i: number, now: number, nowLabel: string): st
   return span > DAY + HOUR ? `${monthDay(at)} ${range}` : range;
 }
 
-/** 一张小图上的几样数：每一格一个 */
+/** 大图上的几样数：每一格一个 */
 export interface Series {
   grid: Grid;
   /**
    * 每一格四类 token 的合计。实时档是速率（token/秒）。取不到时是 `null`：**取不到不是
-   * 零**，画成一条贴底的线就是编了一段「没有用」
+   * 零**，画成一排贴底的柱子就是编了一段「没有用」
    */
   tokens: number[] | null;
   /** 每一格的费用，微分。实时档是每小时的速率。取不到是 `null` */
@@ -97,10 +83,19 @@ export interface Series {
 }
 
 /**
- * 历史档多出的几样：首 token、流量两张卡片的线。**只有历史档有** —— 实时档的十分钟里撑不起
- * 有意义的分位，这两张卡片在实时档也按 24 小时画。
+ * 历史档多出的几样：缓存、首 token、流量的图，和悬停提示要拆开说的那几样。**只有历史档有**
+ * —— 实时档的十分钟里撑不起有意义的命中率和分位，这几样在实时档也按 24 小时画。
  */
 export interface HistorySeries extends Series {
+  /** 补过空桶的格子本身：悬停提示要拆开说一格（输入与输出、费用的限定词、缓存的三段） */
+  cells: CostBucket[];
+  /** 每一格的输出 token。取不到是 `null` */
+  output: number[] | null;
+  /**
+   * 每一格的缓存命中率（0–1）。**没有上下文的格子是 `null`**：命中率无从谈起，不是 0%。
+   * 取不到是 `null`
+   */
+  hit: (number | null)[] | null;
   /**
    * 每一格第一个 token 到的时刻的 P50 / P95，毫秒。**没有样本的格子是 `null`**（那一小时
    * 没有流式请求）：不是 0 毫秒，图上那一段用虚线跨过去。取不到是 `null`
@@ -124,21 +119,26 @@ function tokensOf(b: {
 
 /**
  * 历史档：后端给的桶，补过空桶（`densify`）。**空桶是实打实的 0**：一天里没用的那几个
- * 小时，线贴着底走，柱子空着 —— 跳过的话，两边的数据会把空档挤没，看起来就是一直在用。
- * 首 token 例外：空桶**没有样本**，是 `null`，不是 0 毫秒。
+ * 小时，柱子空着 —— 跳过的话，两边的数据会把空档挤没，看起来就是一直在用。命中率和
+ * 首 token 例外：空桶**无从谈起**，是 `null`，不是 0% 或 0 毫秒。
  *
- * 每一样都是整格的（`buckets`）。取不到桶时每一样都是 `null`。
+ * `until` 是图的右端：**`range.to ?? 现在`**。「某一天」画到那一天的终点，别的区间画到现在。
+ *
+ * 每一样都是整格的（`buckets`）。取不到桶时每一样都是 `null`（`cells` 照样排出来）。
  */
-export function historySeries(d: Dashboard, now: number, bucketMs: number): HistorySeries {
-  const cells = densify(d.buckets ?? [], d.since_ms, now, bucketMs);
+export function historySeries(d: Dashboard, until: number, bucketMs: number): HistorySeries {
+  const cells = densify(d.buckets ?? [], d.since_ms, until, bucketMs);
   const grid: Grid = { at: cells.map((c) => c.at_ms), step: bucketMs, kind: "bucket" };
   const of = <T>(f: (c: (typeof cells)[number]) => T): T[] | null => (d.buckets !== null ? cells.map(f) : null);
   return {
     grid,
+    cells,
     tokens: of(tokensOf),
+    output: of((c) => c.output_tokens),
     cost: of((c) => c.cost_micros_exact + c.cost_micros_estimated),
     requests: of((c) => c.requests),
     failed: of((c) => c.failed),
+    hit: of((c) => cacheOf(c).hit),
     p50: of((c) => c.ttft_p50_ms ?? null),
     p95: of((c) => c.ttft_p95_ms ?? null),
     sent: of((c) => c.sent_bytes),
@@ -220,6 +220,104 @@ export function liveSeries(
     }
   }
   return { grid: { at, step: LIVE_BUCKET_MS, kind: "instant" }, tokens, cost, requests, failed, totals };
+}
+
+// ───────────────────────────────────────────── 一格里排前几的模型
+
+/** 悬停提示里列几个模型，其余合成「其他」一行 */
+export const TIP_MODELS = 3;
+
+/** 一格里一个模型的量（或者合起来的「其他」） */
+export interface ModelShare {
+  /** 空串：没有模型名 */
+  name: string;
+  /** token 数（实时档是速率） */
+  tokens: number;
+  /** 微分（实时档是每小时的速率）：实测加估算 */
+  cost: number;
+  estimated: number;
+  unpriced: number;
+  noUsage: number;
+}
+
+/** 排在前面的几个，和其余的合计（`count` 个模型）。一个都没有时两样都是空的 */
+export interface TopModels {
+  top: ModelShare[];
+  other: (ModelShare & { count: number }) | null;
+}
+
+/**
+ * 按 token 或费用排，前 `TIP_MODELS` 个单列，其余合成一行。**是零的不列**：一格里没用上
+ * 的模型不该占一行；费用排的时候，金额是零却有说不出价钱的请求（无法计价、无用量）的
+ * 照样列出 —— 那一行写的是「无法计价」，不是 $0。一样多的按名字排，次序不跳。
+ */
+function rankModels(rows: ModelShare[], by: "tokens" | "cost"): TopModels {
+  const kept = rows.filter((r) => (by === "tokens" ? r.tokens > 0 : r.cost > 0 || r.unpriced > 0 || r.noUsage > 0));
+  kept.sort((a, b) => b[by] - a[by] || b.tokens - a.tokens || a.name.localeCompare(b.name));
+  const top = kept.slice(0, TIP_MODELS);
+  const rest = kept.slice(TIP_MODELS);
+  if (rest.length === 0) return { top, other: null };
+  const other = { name: "", tokens: 0, cost: 0, estimated: 0, unpriced: 0, noUsage: 0, count: rest.length };
+  for (const r of rest) {
+    other.tokens += r.tokens;
+    other.cost += r.cost;
+    other.estimated += r.estimated;
+    other.unpriced += r.unpriced;
+    other.noUsage += r.noUsage;
+  }
+  return { top, other };
+}
+
+/**
+ * 历史档一格里排前几的模型（`buckets_by_model` 里起点是 `at` 的那几行）。取不到按模型分的
+ * 那一份时是 `null`：提示里就不列模型，不写「没有模型」。
+ */
+export function cellModels(
+  groups: readonly CostBucketGroup[] | null | undefined,
+  at: number,
+  by: "tokens" | "cost",
+): TopModels | null {
+  if (!groups) return null;
+  const by_ = new Map<string, ModelShare>();
+  for (const g of groups) {
+    if (g.at_ms !== at) continue;
+    const r = by_.get(g.name) ?? { name: g.name, tokens: 0, cost: 0, estimated: 0, unpriced: 0, noUsage: 0 };
+    r.tokens += tokensOf(g);
+    r.cost += g.cost_micros_exact + g.cost_micros_estimated;
+    r.estimated += g.cost_micros_estimated;
+    r.unpriced += g.unpriced_requests;
+    r.noUsage += g.no_usage_requests;
+    by_.set(g.name, r);
+  }
+  return rankModels([...by_.values()], by);
+}
+
+/**
+ * 实时档某一刻排前几的模型：和曲线同一个核（`liveRate`），每个模型各自叠一遍。token 是
+ * 每秒的速率，费用是每小时的。价钱没到的（`cost` 是 `undefined`）不进费用；到了却是空的
+ * 算「无法计价」。贡献不到这一刻合计千分之五的不列：核的尾巴上谁都沾一点。
+ */
+export function liveModelsAt(samples: readonly LiveSample[], t: number, by: "tokens" | "cost"): TopModels {
+  const by_ = new Map<string, ModelShare>();
+  for (const x of samples) {
+    const d = t - x.at;
+    if (d < -LIVE_REACH_MS || d > LIVE_REACH_MS) continue;
+    const r = by_.get(x.model) ?? { name: x.model, tokens: 0, cost: 0, estimated: 0, unpriced: 0, noUsage: 0 };
+    r.tokens += liveRate(x.tokens, d);
+    if (typeof x.cost === "number") {
+      const c = liveRate(x.cost, d) * 3600;
+      r.cost += c;
+      if (x.estimated) r.estimated += c;
+    } else if (x.cost === null) r.unpriced += 1;
+    by_.set(x.model, r);
+  }
+  const rows = [...by_.values()];
+  const sum = (k: "tokens" | "cost") => rows.reduce((a, r) => a + r[k], 0);
+  const tokenFloor = sum("tokens") * 0.005;
+  const floor = by === "tokens" ? tokenFloor : sum("cost") * 0.005;
+  // 未定价的模型费用是零，按它这一刻的 token 量判断够不够格
+  const counts = (r: ModelShare) => r[by] > floor || (by === "cost" && r.unpriced > 0 && r.tokens > tokenFloor);
+  return rankModels(rows.filter(counts), by);
 }
 
 // ───────────────────────────────────────────── 环比
@@ -313,6 +411,36 @@ export function rankCost(
     prefix: costPrefix(outside.length > 0, estimated),
     notes: [...(estimated ? [t.estimated(usd(r.estimated))] : []), ...outside],
   };
+}
+
+/** 一个费用写成一格字：金额（带「≥」「~」），或者「无法计价」「无用量」。提示里每一行按它 */
+export function costText(
+  r: { cost: number; estimated: number; unpriced: number; noUsage: number; pending?: number },
+  t: Text,
+): string {
+  const c = rankCost(r, t);
+  if (c.kind === "unpriced") return t.unpricedCell;
+  if (c.kind === "noUsage") return t.noUsageCell;
+  return c.prefix + usd(Math.round(r.cost));
+}
+
+/**
+ * 费用那个指标上**一直看得见**的那个限定词：只放得下一个，挑最要紧的。一条都没算出来时
+ * 是「无法计价」「无用量」（大数写「—」）；金额是下限时说缺的是哪一种；只是含估算时说含
+ * 估算。全都算出来了是 `null`。完整的几句在细项那一行和悬停里。
+ */
+export function costTag(
+  r: { cost: number; estimated: number; unpriced: number; noUsage: number; pending?: number },
+  t: Text,
+): string | null {
+  const c = rankCost(r, t);
+  if (c.kind === "unpriced") return t.unpricedCell;
+  if (c.kind === "noUsage") return t.noUsageCell;
+  if ((r.pending ?? 0) > 0) return t.tagPending;
+  if (r.unpriced > 0) return t.tagUnpriced;
+  if (r.noUsage > 0) return t.tagNoUsage;
+  if (r.estimated > 0) return t.tagEstimated;
+  return null;
 }
 
 // ───────────────────────────────────────────── 明细表
