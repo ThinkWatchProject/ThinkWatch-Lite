@@ -28,6 +28,9 @@ pub async fn dashboard(
     // **没有兜底。**这一层替界面挑一个时间窗（原来是「最近 24 小时」），就又有一处
     // 不按本地时钟定的窗口；缺参数是界面的错，该在那边报出来。
     since_ms: i64,
+    // 时间窗的终点（不含）。**只有「某一天」那种区间给**（界面的 `dayRange`）：别的区间
+    // 都到现在为止。终点还在将来（点的是今天）时按到现在算
+    until_ms: Option<i64>,
     bucket_ms: i64,
 ) -> Out<Dashboard> {
     let now = std::time::SystemTime::now()
@@ -35,6 +38,9 @@ pub async fn dashboard(
         .map(|d| d.as_millis() as i64)
         .unwrap_or(0);
     let since = since_ms.min(now);
+    let until = until_ms.filter(|&u| u > since && u < now);
+    // 这一段有多长：上一个等长区间从它往前量
+    let end = until.unwrap_or(now);
     let bucket = bucket_ms.max(60_000);
     // **十四样同时问，不排队。**每一问都是一条新连接、一次握手：排着队问，连着远程时
     // 十四问的来回一个接一个叠起来，而这一页是默认打开的那一页、每个请求结束都要重取。
@@ -42,17 +48,17 @@ pub async fn dashboard(
     let c = state.control.pin().map_err(text)?;
     // 延迟、生成速度和汇总**同一个时间窗**。不给窗口的话 core 按「今天零点至今」算，
     // 而界面上它们和上面的数字摆在一起，读的人会当成同一段时间
-    let win = window(Some(since), None);
+    let win = window(Some(since), until);
     let buckets = tw_api::BucketQuery {
         from_ms: Some(since),
-        to_ms: None,
+        to_ms: until,
         bucket_ms: Some(bucket),
     };
     // 同样的格子按三个维度分：模型（趋势图的 token 合计、明细表的「模型」）、上游和
     // 密钥（明细表的另两页）。**格宽和模型那份一样**，三份的格子对得上
     let by = |dim| tw_api::BucketGroupQuery {
         from_ms: Some(since),
-        to_ms: None,
+        to_ms: until,
         bucket_ms: Some(bucket),
         dim,
     };
@@ -63,18 +69,18 @@ pub async fn dashboard(
     );
     // **上一个等长区间。**一个没有参照系的金额只能读，不能判断
     // ——「$4.05」是多还是少，只有和上一个七天比过才知道
-    let before = window(Some(since - (now - since)), Some(since));
+    let before = window(Some(since - (end - since)), Some(since));
     // **整段时间的首 token 分位**：问一个宽过整个时间窗的格子，整段落在第 0 格。分位数不能
     // 从每一格（或每个模型）的分位合出来 —— 中位数不能这么合 —— 只能让 core 拿整段的样本
-    // 求。终点和汇总一样不给（到 core 的「现在」），两边数的是同一批请求
+    // 求。终点和汇总一样（某一天到那天末尾，别的到 core 的「现在」），两边数的是同一批请求
     let whole = |from_ms, to_ms| tw_api::BucketQuery {
         from_ms: Some(from_ms),
         to_ms,
         bucket_ms: Some(WHOLE_MS),
     };
     let (whole_now, whole_before) = (
-        whole(since, None),
-        whole(since - (now - since), Some(since)),
+        whole(since, until),
+        whole(since - (end - since), Some(since)),
     );
     let (
         summary,

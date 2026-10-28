@@ -54,6 +54,11 @@ export type Range = {
    * 往后挪，标签还写着「9/8 至今」，最早那一段却悄悄掉出了合计
    */
   from?: number;
+  /**
+   * 区间到哪一刻为止（不含）。**只有「某一天」有**（`dayRange`）：别的区间都到现在为止。
+   * 今天那一格的终点还在将来，窗口照样只取到现在
+   */
+  to?: number;
 };
 
 /*
@@ -137,6 +142,30 @@ export function customRange(d: Date): Range {
 }
 
 /**
+ * 某一天：那一天的本地零点到第二天零点。概览上「最近一年」点一个格子时切到这里。
+ *
+ * **和自定义区间不同，它有终点**（`to`）：自定义区间是「从那一天到现在」，而点一个格子
+ * 看的是那一天本身。跨度按两个零点量，夏令时切换的那一天是 23 或 25 小时。
+ * 「较上一个」比的是它前面等长的那一段，也就是前一天。
+ */
+export function dayRange(d: Date): Range {
+  const from = new Date(d.getFullYear(), d.getMonth(), d.getDate()).getTime();
+  const to = new Date(d.getFullYear(), d.getMonth(), d.getDate() + 1).getTime();
+  return {
+    ms: to - from,
+    from,
+    to,
+    get label() {
+      return new Date(from).toLocaleDateString();
+    },
+    get compare() {
+      return textOf(rangeText).preset["1d"];
+    },
+    custom: true,
+  };
+}
+
+/**
  * 实时档的窗口：十分钟，五秒一格（见 `LIVE_BUCKET_MS`）。
  *
  * **不能短到只剩「刚才那一下」。**一次 Claude Code 的任务往往连着跑上
@@ -194,6 +223,10 @@ export function useRange(
       if (raw === "live") return LIVE_RANGE;
       const p = PRESETS.find((x) => x.id === raw);
       if (p) return fromPreset(p);
+      if (raw.startsWith("day:")) {
+        const d = new Date(raw.slice(4));
+        if (!Number.isNaN(d.getTime()) && d.getTime() < Date.now()) return dayRange(d);
+      }
       if (raw.startsWith("from:")) {
         const d = new Date(raw.slice(5));
         // 存坏了、或者那一天在将来（改过系统时间）：当没存过
@@ -211,7 +244,9 @@ export function useRange(
     try {
       const id = r.live
         ? "live"
-        : r.custom
+        : r.to !== undefined && r.from !== undefined
+          ? `day:${new Date(r.from).toISOString()}`
+          : r.custom
           ? `from:${new Date(r.from ?? Date.now() - r.ms).toISOString()}`
           : (PRESETS.find((x) => x.ms === r.ms)?.id ?? "");
       if (id) window.localStorage.setItem(key, id);

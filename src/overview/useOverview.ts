@@ -12,6 +12,7 @@ const HOUR = 3_600_000;
  */
 export function rangeId(r: Range): string {
   if (r.live) return "live";
+  if (r.to !== undefined) return `day:${r.from ?? r.to}`;
   if (r.custom) return `from:${new Date(r.from ?? Date.now() - r.ms).toDateString()}`;
   return `last:${r.ms}`;
 }
@@ -46,7 +47,12 @@ export function useOverview(range: Range, tick: number) {
   const id = rangeId(range);
   const r = useResource(
     `overview:${id}`,
-    () => invoke<Dashboard>("dashboard", { sinceMs: windowStart(range), bucketMs: bucketOf(range) }),
+    () =>
+      invoke<Dashboard>("dashboard", {
+        sinceMs: windowStart(range),
+        untilMs: range.to ?? null,
+        bucketMs: bucketOf(range),
+      }),
     { deps: [tick] },
   );
   const last = useRef<Shown | null>(null);
