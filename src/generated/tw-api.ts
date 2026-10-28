@@ -6347,6 +6347,20 @@ account?: string | null,
  */
 error?: Msg | null, };
 
+// TEMP（手写，等 core 发版后由生成的文件替换）：`GET /summary/history`。
+/**
+ * 很长一段时间里的用量，按格合计。概览上「最近一年」那张热力图用。
+ */
+export type UsageHistory = { 
+/**
+ * 从什么时候起有记录：这一刻之前的格子是「没有记录」，不是「没有用量」。从没记过是 None
+ */
+since_ms: number | null, 
+/**
+ * 按给的格宽分的格子，**稀疏**（没有用量的格子不在里面），分格同 `/summary/buckets`
+ */
+buckets: Array<CostBucket>, };
+
 // The body of every non-2xx control-plane response.
 export type ErrorBody = Msg;
 
@@ -6384,6 +6398,8 @@ export const ENDPOINTS = {
   Summary: { method: "GET", path: "/summary", params: [], format: "json" },
   CostBuckets: { method: "GET", path: "/summary/buckets", params: [], format: "json" },
   CostBucketsBy: { method: "GET", path: "/summary/buckets/by", params: [], format: "json" },
+  // TEMP（手写，等 core 发版）
+  UsageHistory: { method: "GET", path: "/summary/history", params: [], format: "json" },
   CostBy: { method: "GET", path: "/summary/by", params: [], format: "json" },
   RouteStats: { method: "GET", path: "/summary/routes", params: [], format: "json" },
   History: { method: "GET", path: "/history", params: [], format: "json" },
@@ -6536,6 +6552,8 @@ export type Endpoints = {
   Summary: { req: Window; res: Summary };
   CostBuckets: { req: BucketQuery; res: Array<CostBucket> };
   CostBucketsBy: { req: BucketGroupQuery; res: Array<CostBucketGroup> };
+  // TEMP（手写，等 core 发版）
+  UsageHistory: { req: BucketQuery; res: UsageHistory };
   CostBy: { req: GroupQuery; res: Array<CostGroup> };
   RouteStats: { req: Window; res: RouteStats };
   History: { req: ListQuery; res: Array<HistoryRow> };

@@ -35,6 +35,7 @@ import {
   unpricedModels,
   upstreamHealth,
 } from "./traffic";
+import { usageHistory } from "./history";
 import { DAY, HOUR, NOW, clone, msg } from "./util";
 
 type Handler<N extends WebviewEndpoint> = (req: Endpoints[N]["req"], params: string[]) => Endpoints[N]["res"];
@@ -185,6 +186,8 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   // 没给时间窗就是最近 7 天（`UpstreamHealth` 的默认）
   UpstreamHealth: (req) => upstreamHealth(req.from_ms ?? NOW - 7 * DAY, req.to_ms ?? Date.now()),
   RouteStats: (req) => routeStats(req.from_ms ?? new Date(NOW).setHours(0, 0, 0, 0), req.to_ms ?? Date.now()),
+  // 概览「最近一年」：一年左右的逐日用量，记录从十个月前开始
+  UsageHistory: (req) => usageHistory(req),
 
   Pricing: () => pricing(unpricedModels()),
   RefreshPricing: refuse,
