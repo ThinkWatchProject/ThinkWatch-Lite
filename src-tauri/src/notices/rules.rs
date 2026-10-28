@@ -1138,16 +1138,20 @@ fn window_label(w: &str) -> String {
 }
 
 /// 「，约 3 小时后重置」（英文是 ` and resets in about 3 hours`，接在句子中间）。
-/// 满一天按天说：每周的窗口离重置常常还有好几天，「约 150 小时」没法读
+/// 满一天按天说：每周的窗口离重置常常还有好几天，「约 150 小时」没法读。
+///
+/// **四舍五入、取整之后再定单位**，和菜单栏的 `resets_in` 一样：1 小时 59 分是「约 2 小时」，
+/// 不是「约 1 小时」；59.5 分钟是「约 1 小时」，不是「约 60 分钟」
 fn after(secs: u64) -> String {
-    let (n, unit, unit_en) = if secs >= 86_400 {
-        (secs / 86_400, "天", "day")
-    } else if secs >= 3600 {
-        (secs / 3600, "小时", "hour")
-    } else if secs >= 60 {
-        (secs / 60, "分钟", "minute")
-    } else {
+    let [m, h, d] = [60.0, 3600.0, 86_400.0].map(|unit| (secs as f64 / unit).round() as u64);
+    let (n, unit, unit_en) = if secs < 60 {
         return tr!("，即将重置", " and resets shortly").into();
+    } else if m < 60 {
+        (m, "分钟", "minute")
+    } else if h < 24 {
+        (h, "小时", "hour")
+    } else {
+        (d, "天", "day")
     };
     let plural = if n == 1 { "" } else { "s" };
     tr!(

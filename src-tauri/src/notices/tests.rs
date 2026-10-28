@@ -1473,11 +1473,20 @@ fn an_english_notice_reads_as_whole_sentences() {
             body("weekly", Some(3_600))
         );
         assert!(
-            body("7d", Some(90)).starts_with(
+            body("7d", Some(70)).starts_with(
                 "The 7-day usage limit has been reached and resets in about 1 minute."
             )
         );
         assert!(body("weekly", Some(30)).contains("and resets shortly."));
+        // 四舍五入、取整之后再定单位：1 小时 59 分说 2 小时，59.5 分钟说 1 小时，23.5 小时说 1 天
+        for (secs, said) in [
+            (7_140, "resets in about 2 hours."),
+            (3_570, "resets in about 1 hour."),
+            (84_600, "resets in about 1 day."),
+        ] {
+            let b = body("weekly", Some(secs));
+            assert!(b.contains(said), "{secs}: {b}");
+        }
         assert!(body("weekly", None).starts_with("The weekly usage limit has been reached. "));
 
         let s = &rules::from_event(&tw_api::Event::ConfigRejected {

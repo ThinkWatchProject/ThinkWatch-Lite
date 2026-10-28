@@ -244,9 +244,15 @@ export function capText(n: number): string {
   return String(Number(g.toPrecision(3)));
 }
 
-function bytes(n: number): string {
-  if (n >= GIB) return `${gib(n)} GB`;
-  if (n >= 1024 * 1024) return `${Math.round(n / (1024 * 1024))} MB`;
-  if (n >= 1024) return `${Math.round(n / 1024)} KB`;
-  return `${n} B`;
+/**
+ * 占用写成 B / KB / MB / GB。**先取整再定单位**：差一点满 1 MB 的取整是 1024 KB，该写成
+ * 「1 MB」，不是「1024 KB」；MB 到 GB 同理。导出给测试用。
+ */
+export function bytes(n: number): string {
+  if (n < 1024) return `${n} B`;
+  const kb = Math.round(n / 1024);
+  if (kb < 1024) return `${kb} KB`;
+  const mb = Math.round(n / (1024 * 1024));
+  if (mb < 1024) return `${mb} MB`;
+  return `${gib(n)} GB`;
 }
