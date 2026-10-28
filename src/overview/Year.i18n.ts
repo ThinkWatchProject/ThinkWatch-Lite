@@ -42,6 +42,8 @@ export const yearText = messages(
     requestsRow: "请求",
     noRequests: "没有请求",
     unrecorded: "未记录",
+    /** 用量合计还在、逐条的请求记录已过保留期的日子：悬停里说明为什么点不开 */
+    aged: "请求记录已过保留期，没有当天的明细",
     unavailable: "暂时取不到",
     legendRange: "所选时间范围",
     less: "少",
@@ -86,6 +88,7 @@ export const yearText = messages(
     requestsRow: "Requests",
     noRequests: "No requests",
     unrecorded: "Not recorded",
+    aged: "Request records past the retention period; no details for this day",
     unavailable: "Unavailable right now",
     legendRange: "Selected range",
     less: "Less",

@@ -7,6 +7,8 @@ import { DAY, NOW, rng } from "./util";
 
 /** 记录从哪一刻起：十个月前 */
 const SINCE = NOW - 304 * DAY;
+/** 逐条记录（请求库）只有最近 30 天：更早的日子在热力图上点不开 */
+const DETAIL_SINCE = () => NOW - 30 * DAY;
 
 export function usageHistory(req: BucketQuery, sinceMs: number = SINCE): UsageHistory {
   const now = Date.now();
@@ -59,5 +61,5 @@ export function usageHistory(req: BucketQuery, sinceMs: number = SINCE): UsageHi
       ttft_samples: 0,
     });
   }
-  return { since_ms: sinceMs, buckets };
+  return { since_ms: sinceMs, detail_since_ms: DETAIL_SINCE(), buckets };
 }

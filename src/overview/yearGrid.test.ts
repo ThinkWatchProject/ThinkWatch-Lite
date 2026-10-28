@@ -47,7 +47,7 @@ describe("网格", () => {
   it("从 52 周前的周一起，最右一列是本周", () => {
     expect(gridStart(NOW)).toBe(day(2025, 9, 27));
     expect(new Date(gridStart(NOW)).getDay()).toBe(1);
-    const days = layout(NOW, { since_ms: 0, buckets: [] });
+    const days = layout(NOW, { since_ms: 0, detail_since_ms: null, buckets: [] });
     expect(days).toHaveLength(WEEKS * 7);
     const today = find(days, day(2026, 9, 28));
     expect(today).toMatchObject({ col: WEEKS - 1, row: 2, state: "none" });
@@ -68,12 +68,12 @@ describe("网格", () => {
 
   it("开始记录之前是「未记录」；记录从当天中途起，那一天算记着", () => {
     const since = day(2026, 8, 18, 14);
-    const days = layout(NOW, { since_ms: since, buckets: [] });
+    const days = layout(NOW, { since_ms: since, detail_since_ms: null, buckets: [] });
     expect(find(days, day(2026, 8, 17)).state).toBe("unrecorded");
     expect(find(days, day(2026, 8, 18)).state).toBe("none");
     expect(find(days, day(2026, 8, 19)).state).toBe("none");
     // 从没记过：都是未记录
-    expect(layout(NOW, { since_ms: null, buckets: [] }).filter((d) => d.state === "none")).toHaveLength(0);
+    expect(layout(NOW, { since_ms: null, detail_since_ms: null, buckets: [] }).filter((d) => d.state === "none")).toHaveLength(0);
   });
 
   it("月份写在那个月第一个周一的那一列；第一列太靠月底的不写", () => {
@@ -119,6 +119,7 @@ describe("统计", () => {
   const used = (y: number, m: number, d: number, p: Partial<CostBucket>) => bucket(day(y, m, d), p);
   const history = {
     since_ms: day(2026, 9, 1),
+    detail_since_ms: null,
     buckets: [
       used(2026, 8, 30, { input_tokens: 999 }), // 记录之前：不算
       used(2026, 9, 1, { input_tokens: 100 }),
@@ -153,13 +154,13 @@ describe("统计", () => {
   });
 
   it("一天都没有", () => {
-    const s = statsOf(layout(NOW, { since_ms: 0, buckets: [] }), "cost");
+    const s = statsOf(layout(NOW, { since_ms: 0, detail_since_ms: null, buckets: [] }), "cost");
     expect(s).toMatchObject({ total: 0, usedDays: 0, average: null, peak: null, streak: 0, longest: 0 });
   });
 });
 
 describe("所选时间范围与键盘", () => {
-  const days = layout(NOW, { since_ms: 0, buckets: [] });
+  const days = layout(NOW, { since_ms: 0, detail_since_ms: null, buckets: [] });
   const idx = (at: number) => days.findIndex((d) => d.at === at);
 
   it("和区间有交集的日子", () => {

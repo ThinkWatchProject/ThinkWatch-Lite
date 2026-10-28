@@ -333,7 +333,7 @@ function Tile({
       tabIndex={on ? 0 : -1}
       onClick={onPick}
       className={cn(
-        "relative flex min-w-0 cursor-pointer flex-col items-start gap-px border-border px-4 pt-3 pb-[11px] text-left outline-none",
+        "relative flex min-w-0 cursor-pointer flex-col items-start gap-px border-border px-3.5 pt-3 pb-[11px] text-left outline-none",
         "transition-colors duration-(--motion-fast) ease-(--motion-ease) focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset",
         on ? "bg-foreground/[0.04]" : "hover:bg-foreground/[0.02]",
         // 分隔线：一排六个时左边一道；3 × 2 时第二排上面一道、每排第一个左边没有
@@ -416,7 +416,22 @@ function Change({
  */
 function CostValue({ c, amount, scope }: { c: ReturnType<typeof rankCost>; amount: number; scope: string }) {
   if (c.kind !== "amount") return <>—</>;
-  return <AnimatedNumber value={amount} format={(v) => c.prefix + usd(Math.round(v))} scope={scope} />;
+  /*
+    指标只有一百多像素宽：「≥~」两个限定符按大数的字号写，「≥~$52.57」就放不下了。限定符
+    缩小写在前面，意思不变；一千美元以上不写分，写满几位的整数
+  */
+  return (
+    <>
+      {c.prefix && <span className="mr-0.5 tw-head text-muted-foreground">{c.prefix}</span>}
+      <AnimatedNumber value={amount} format={tileUsd} scope={scope} />
+    </>
+  );
+}
+
+/** 指标上的费用：一千美元以上不写分 */
+function tileUsd(micros: number): string {
+  const v = Math.round(micros);
+  return v >= 1e9 ? `$${Math.round(v / 1e6).toLocaleString("en-US")}` : usd(v);
 }
 
 /**

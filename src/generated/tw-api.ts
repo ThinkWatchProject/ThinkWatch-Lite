@@ -6357,6 +6357,11 @@ export type UsageHistory = {
  */
 since_ms: number | null, 
 /**
+ * 逐条的请求记录从什么时候起有（请求库里最老一行）。比它早的日子只剩用量合计，概览按逐条记录算的
+ * 那些数在那几天是空的。请求库是空的是 None
+ */
+detail_since_ms: number | null, 
+/**
  * 按给的格宽分的格子，**稀疏**（没有用量的格子不在里面），分格同 `/summary/buckets`
  */
 buckets: Array<CostBucket>, };

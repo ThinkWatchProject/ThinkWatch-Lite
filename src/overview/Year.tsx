@@ -113,7 +113,16 @@ export function Year({
       </div>
 
       {h ? (
-        <Body days={days} metric={metric} partial={partial} range={range} onPickDay={onPickDay} t={t} ot={ot} />
+        <Body
+          days={days}
+          metric={metric}
+          partial={partial}
+          detailSince={h.detail_since_ms}
+          range={range}
+          onPickDay={onPickDay}
+          t={t}
+          ot={ot}
+        />
       ) : (
         <Placeholder days={days} failed={failed} t={t} />
       )}
@@ -169,6 +178,7 @@ function Body({
   days,
   metric,
   partial,
+  detailSince,
   range,
   onPickDay,
   t,
@@ -177,6 +187,8 @@ function Body({
   days: Day[];
   metric: YearMetric;
   partial: boolean;
+  /** 逐条记录从哪一刻起有。比它早的日子点不开：概览在那几天按逐条记录算出来全是零 */
+  detailSince: number | null;
   range: Range;
   onPickDay: (day: Date) => void;
   t: Text;
@@ -241,6 +253,7 @@ function Body({
         months={months}
         level={(d) => (recorded(d) ? levelOf(valueOf(d, metric), th) : 0)}
         inRange={inRange}
+        openable={(d) => recorded(d) && detailSince !== null && d.at + DAY_MS > detailSince}
         metric={metric}
         onPickDay={onPickDay}
         t={t}
@@ -277,6 +290,7 @@ function Grid({
   months,
   level,
   inRange,
+  openable,
   metric,
   onPickDay,
   t,
@@ -286,6 +300,8 @@ function Grid({
   months: (number | null)[];
   level: (d: Day) => number;
   inRange: (d: Day) => boolean;
+  /** 点得开的日子：有记录，而且逐条记录还在 */
+  openable: (d: Day) => boolean;
   metric: YearMetric;
   onPickDay: (day: Date) => void;
   t: Text;
@@ -307,7 +323,7 @@ function Grid({
   const wrap = useRef<HTMLDivElement>(null);
 
   const pick = (d: Day) => {
-    if (recorded(d)) onPickDay(new Date(d.at));
+    if (openable(d)) onPickDay(new Date(d.at));
   };
 
   const onKey = (e: KeyboardEvent, i: number) => {
@@ -380,7 +396,7 @@ function Grid({
                     data-i={i}
                     tabIndex={i === cur ? 0 : -1}
                     aria-label={t.cell(t.dateFull(new Date(d.at)), mainText(d, metric, t, ot))}
-                    aria-disabled={unrec || undefined}
+                    aria-disabled={!openable(d) || undefined}
                     onClick={() => {
                       setActive(i);
                       pick(d);
@@ -393,7 +409,7 @@ function Grid({
                     onBlur={() => setFocused((f) => (f === i ? null : f))}
                     className={cn(
                       "relative aspect-square rounded-[2.5px] outline-none",
-                      unrec ? "border border-dashed border-input" : [LEVEL[lv], "cursor-pointer"],
+                      unrec ? "border border-dashed border-input" : [LEVEL[lv], openable(d) && "cursor-pointer"],
                       shown === i ? "ring-2 ring-foreground" : inRange(d) && "ring-[1.5px] ring-foreground/70",
                     )}
                   >
@@ -405,7 +421,15 @@ function Grid({
         ))}
       </div>
       {shown !== null && drawn(days[shown]!) && (
-        <DayTip day={days[shown]!} cell={cells.current.get(shown) ?? null} wrap={wrap.current} metric={metric} t={t} ot={ot} />
+        <DayTip
+          day={days[shown]!}
+          cell={cells.current.get(shown) ?? null}
+          wrap={wrap.current}
+          metric={metric}
+          aged={recorded(days[shown]!) && !openable(days[shown]!)}
+          t={t}
+          ot={ot}
+        />
       )}
     </div>
   );
@@ -422,6 +446,7 @@ function DayTip({
   cell,
   wrap,
   metric,
+  aged,
   t,
   ot,
 }: {
@@ -429,6 +454,8 @@ function DayTip({
   cell: HTMLElement | null;
   wrap: HTMLElement | null;
   metric: YearMetric;
+  /** 逐条记录已经过了保留期：只剩合计，点不开 */
+  aged: boolean;
   t: Text;
   ot: OverviewText;
 }) {
@@ -477,6 +504,7 @@ function DayTip({
           <Notes lines={notes} />
         </div>
       )}
+      {aged && <div className="mt-1 border-t border-border pt-1 text-muted-foreground">{t.aged}</div>}
     </div>
   );
 }

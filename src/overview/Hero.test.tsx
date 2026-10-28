@@ -118,7 +118,8 @@ describe("用量", () => {
     const cost = render(range, "cost", unpriced);
     expect(cost).toContain(t.estimated("$0.0020"));
     expect(cost).toContain(t.shortUnpriced(3));
-    expect(cost).toContain("≥~$0.032");
+    // 限定符缩小写在金额前面（单独一段），金额照常
+    expect(cost).toMatch(/>≥~<\/span><span class="tw-num">\$0\.032</);
   });
 
   it("一条都没算出费用：大数写「—」，旁边写「无法计价」，不写 $0", () => {
