@@ -1,9 +1,10 @@
 import { useRef } from "react";
 import { useResource, type Resource } from "@/lib/resource";
 import { usePending } from "@/ui/notify";
-import { windowStart, type Range } from "@/ui/range";
+import { presetRange, windowStart, type Range } from "@/ui/range";
 import type { Guard, SecurityEventsPage } from "@/types";
 import { api } from "./api";
+import { countHits, type RuleHits } from "./rules";
 
 /** 一次读多少条。**一屏半** —— 再多就是替用户翻他不会看的那几页 */
 const PAGE = 100;
@@ -82,4 +83,20 @@ export function narrowed(only: SecurityLog, all: SecurityLog, guard: Guard): Sec
   if (only.r.data !== undefined || !only.r.loading || !page) return only;
   const events = page.events.filter((e) => e.guard === guard);
   return { ...only, r: { ...only.r, data: { ...page, events }, loading: false } };
+}
+
+/**
+ * 规则表组头上「最近 7 天命中 N 次」的来源：这一项最近 7 天的安全日志，读一页（最多
+ * `MAX_PAGE` 条）按规则数。**core 没有按规则的条数**，只能这样数；7 天里超过一页时数是
+ * 下限（`RuleHits.complete`）。缓存里只留数出来的条数，不留整页日志。
+ *
+ * 时间窗和日志选「7 天」时同一个起点（`windowStart`）：日志按类型筛、选 7 天，条数对得上。
+ *
+ * **只在打开这一项的页签时读，不跟着新请求重读**：组的先后按命中排，看着的时候一条新命中
+ * 把组换了位置，比数字晚一会儿更糟。切走再回来就是新的。
+ */
+export function useRuleHits(guard: Guard): RuleHits | undefined {
+  return useResource<RuleHits>(`security-hits:${guard}`, async () =>
+    countHits(await api.events({ guard, from_ms: windowStart(presetRange("7d")), limit: MAX_PAGE })),
+  ).data;
 }

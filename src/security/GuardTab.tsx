@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from "react";
-import { FlaskConicalIcon, PlusIcon, SearchIcon } from "lucide-react";
+import { ChevronRightIcon, FlaskConicalIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
@@ -26,12 +26,20 @@ import {
   actionAllowed,
   actionOf,
   DEFAULT_REPLACEMENT,
+  groupOpen,
   groupRules,
+  hitsFirst,
+  hitsOf,
+  readOpenGroups,
+  ruleKey,
   ruleMatches,
   scopeChoice,
   scopeOf,
+  writeOpenGroups,
+  type RuleHits,
 } from "./rules";
-import { ROW_FOCUS, rowNav, stop } from "./rows";
+import { disclosureNav, ROW_FOCUS, rowNav, stop } from "./rows";
+import { useRuleHits } from "./useSecurityLog";
 
 /** 状态的先后，和规格的示意一致：开启、监控、关闭 */
 const MODES: readonly GuardMode[] = ["enforce", "observe", "off"];
@@ -52,9 +60,6 @@ export interface RuleActions {
   create: () => void;
   test: () => void;
 }
-
-/** 规则在表里的键：内置和自定义可以同名 */
-const keyOf = (r: SecurityRuleView) => `${r.custom ? "c" : "b"}:${r.id}`;
 
 /**
  * 一项防护的状态：开启、监控、关闭，右边一句当前状态下命中之后怎样，以及启用了几条规则。
@@ -126,8 +131,9 @@ export function GuardSkeleton() {
  * 规则的实际处理按这个顺序定（规格 §4.3）：防护关闭不检查；规则停用不检查；防护处于
  * 「监控」时一律仅记录（动作列照写用户设的动作，后面标「监控中」）；其余按规则的动作。
  *
- * 内置规则按类别分组，组标题只写名字和启用条数、没有开关；自定义
- * 规则在最后一组。检索框按名字和写法筛。每一行的开关、动作就地改；点一行打开它的对话框。
+ * 内置规则按类别分组，**各组默认收起**，组标题写名字、条数、启用条数和最近 7 天的命中次数，
+ * 没有开关；有命中的组排在内置规则的最前面，自定义规则在最后一组。检索框按名字和写法筛，
+ * 匹配的组自动展开。每一行的开关、动作就地改；点一行打开它的对话框。
  */
 export function GuardTab({
   guard,
@@ -143,6 +149,7 @@ export function GuardTab({
   const t = useText(guardTabText);
   const [query, setQuery] = useState("");
   const on = detail.rules.filter((r) => r.enabled).length;
+  const hits = useRuleHits(guard);
 
   return (
     <div className="flex flex-col">
@@ -186,6 +193,7 @@ export function GuardTab({
         rules={detail.rules}
         kinds={detail.kinds}
         query={query}
+        hits={hits}
         actions={actions}
       />
     </div>
@@ -226,13 +234,18 @@ function useMenu(actions: RuleActions) {
  *
  * **动作一列三种颜色**：拒绝、切断是红的（请求或回答的结局变了），删除、替换、替换为占位符
  * 是正文色（改了内容照常发出），仅记录是次要色。
+ *
+ * **各组默认收起。**点组头、在组头上按 Enter / 空格展开或收起（→ 展开、← 收起），记在这台
+ * 机器上（`readOpenGroups`）；收起的组里的行不画，`↑` `↓` 在组头和展开的行之间走。检索时
+ * 匹配的组一律展开，这一次检索里收起的不记。
  */
-function RuleTable({
+export function RuleTable({
   guard,
   mode,
   rules,
   kinds,
   query,
+  hits,
   actions,
 }: {
   guard: Guard;
@@ -241,20 +254,47 @@ function RuleTable({
   /** 分组和分组名，core 给的（旧的 core 不给） */
   kinds: SecurityKindView[] | undefined;
   query: string;
+  /** 最近 7 天每条规则的命中次数。还没读到、读不到是 `undefined`：组头不写次数，组照 core 的顺序 */
+  hits: RuleHits | undefined;
   actions: RuleActions;
 }) {
   const t = useText(guardTabText);
   const menu = useMenu(actions);
   const content = guard === "content";
   const span = content ? 6 : 5;
+  const searching = query.trim().length > 0;
+  const [open, setOpen] = useState(() => readOpenGroups(guard));
+  // 这一次检索里收起的组。换了检索词就不算了
+  const [closed, setClosed] = useState<{ query: string; keys: ReadonlySet<string> }>({ query, keys: new Set() });
+  const closedInSearch = closed.query === query ? closed.keys : new Set<string>();
+  const toggle = (key: string) => {
+    if (searching) {
+      const keys = new Set(closedInSearch);
+      if (!keys.delete(key)) keys.add(key);
+      setClosed({ query, keys });
+      return;
+    }
+    const next = new Set(open);
+    if (!next.delete(key)) next.add(key);
+    setOpen(next);
+    writeOpenGroups(guard, next);
+  };
   // 淡入淡出按全部规则算：检索筛掉的行直接不画，不播淡出
-  const present = usePresentList(rules, keyOf);
+  const present = usePresentList(rules, ruleKey);
+  /*
+    **组的先后按全部规则的命中定，不按筛出来的**：一边打字一边换位置，眼睛跟不上。
+  */
+  const hitKinds = useMemo(() => {
+    const ks = new Set<string>();
+    for (const g of groupRules(rules, (r) => r)) if ((hitsOf(hits, g.rows) ?? 0) > 0) ks.add(g.key);
+    return ks;
+  }, [rules, hits]);
   const groups = useMemo(() => {
     const shown = present.filter(
       ({ item: r, presence }) => presence === "exit" || ruleMatches(r, viewName(r), query),
     );
-    return groupRules(shown, (p) => p.item);
-  }, [present, guard, query]);
+    return hitsFirst(groupRules(shown, (p) => p.item), (g) => hitKinds.has(g.key));
+  }, [present, guard, query, hitKinds]);
 
   return (
     <Table className={cn("table-fixed", content ? "min-w-[760px]" : "min-w-[660px]")}>
@@ -288,15 +328,19 @@ function RuleTable({
           const live = g.rows.filter((p) => p.presence !== "exit").map((p) => p.item);
           // 分组名由 core 给（`kinds`），按界面语言取
           const title = kindName(kinds, g.key);
+          const expanded = groupOpen(g.key, searching, open, closedInSearch);
           return (
             <Fragment key={g.key}>
               <GroupHead
                 span={span}
                 title={title}
-                builtin={!g.custom && g.key !== "command"}
                 rules={live}
+                hits={hitsOf(hits, live)}
+                complete={hits?.complete ?? true}
+                open={expanded}
+                onToggle={() => toggle(g.key)}
               />
-              {g.rows.map(({ item: r, key, presence }) => (
+              {expanded && g.rows.map(({ item: r, key, presence }) => (
                 <RuleRow
                   key={key}
                   guard={guard}
@@ -315,31 +359,58 @@ function RuleTable({
   );
 }
 
-/** 一组的标题行：「隐藏字符 · 内置 · 已启用 2 条，共 3 条」。组本身没有开关，逐条启停 */
+/**
+ * 一组的标题行：「隐藏字符 · 3 条 · 已开 2 条 · 最近 7 天命中 5 次」，前面一个展开记号。组本身
+ * 没有开关，逐条启停。**整行是展开、收起的按钮**：点它，或者聚焦时按 Enter / 空格（→ 展开、
+ * ← 收起），`↑` `↓` 和规则行一起走。没有命中（或者还没数出来）的不写次数
+ */
 function GroupHead({
   span,
   title,
-  builtin,
   rules,
+  hits,
+  complete,
+  open,
+  onToggle,
 }: {
   span: number;
   title: string;
-  /** 标题后面写「内置」（工具调用的内置组本来就叫「内置」，不重复） */
-  builtin: boolean;
   rules: SecurityRuleView[];
+  hits: number | undefined;
+  /** 次数是全部的；不是的话写成「N+」 */
+  complete: boolean;
+  open: boolean;
+  onToggle: () => void;
 }) {
   const t = useText(guardTabText);
   const on = rules.filter((r) => r.enabled).length;
   return (
-    <TableRow className="hover:bg-transparent" data-slot="rule-group">
-      <TableCell colSpan={span} className="h-8 bg-surface/70 py-0 tw-label text-muted-foreground">
-        <span className="font-medium text-foreground/80">{title}</span>
-        {builtin && ` · ${t.builtin}`}
-        {` · ${t.groupCount(on, rules.length)}`}
+    <TableRow
+      className={cn("cursor-default bg-surface/70 hover:bg-surface", HEAD_FOCUS)}
+      data-slot="rule-group"
+      onClick={onToggle}
+      {...disclosureNav(open, onToggle)}
+    >
+      <TableCell colSpan={span} className="h-8 py-0 tw-label text-muted-foreground">
+        <span className="flex min-w-0 items-center gap-1.5">
+          <ChevronRightIcon
+            aria-hidden
+            className={cn("size-3.5 shrink-0 motion-bar", open && "rotate-90")}
+          />
+          <span className="min-w-0 truncate">
+            <span className="font-medium text-foreground/80">{title}</span>
+            {` · ${t.groupCount(rules.length, on)}`}
+            {hits != null && hits > 0 && ` · ${t.groupHits(complete ? String(hits) : `${hits}+`)}`}
+          </span>
+        </span>
       </TableCell>
     </TableRow>
   );
 }
+
+/** 组头的键盘焦点：和规则行一样左边一道竖线（底色本来就深一档，不再加深） */
+const HEAD_FOCUS =
+  "outline-none focus-visible:bg-surface focus-visible:shadow-[inset_2px_0_0_0_color-mix(in_oklab,var(--foreground)_60%,transparent)]";
 
 /** 一行规则：点它、按 Enter 打开，右键和行尾是同一份菜单 */
 function RuleRow({
