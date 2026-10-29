@@ -25,7 +25,7 @@ import {
   type Delta,
   type TopModels,
 } from "./series";
-import { byteUnit, niceTop } from "./HeroAxis";
+import { byteUnit, niceTicks } from "./HeroAxis";
 import { Chart, type ChartSpec, type TipRow } from "./HeroChart";
 import { METRICS, type Metric } from "./metric";
 import { LinkText } from "./parts";
@@ -55,9 +55,10 @@ const CFAIL = "var(--data-fail)";
  * · 实时档 token、费用、请求三个是最近十分钟，图跟着事件流走；十分钟里的样本撑不起有意义
  *   的命中率和分位，缓存命中、首 token、流量三个按 24 小时算，名目旁边标着。
  *
- * 大图：可加的画柱（token、费用、请求、流量；两段的叠起来），比率和延迟画线（缓存命中、
- * 首 token）。实时档 token、费用读的是速率，画线。图上方一行是选中指标的细项，费用的
- * 限定词在那里一直写着。指着（或键盘聚焦）大图时逐格出提示，卡片换品牌渐变边。
+ * 大图一律画线：可加的（token、费用、请求、流量）是线下铺一片淡色的面积曲线，两段的是
+ * 主量的面积加对照量的一条细线（请求数和失败数、上传和下载）；比率和延迟只画线（缓存命中、
+ * 首 token）。实时档 token、费用读的是速率。图上方一行是选中指标的细项，费用的限定词在
+ * 那里一直写着。指着（或键盘聚焦）大图时逐格出提示。
  *
  * 实时档的事件流订阅在这一层：每半秒往左挪一步时只重画这一块，页面上别的部分不跟着
  * 每一帧重画。
@@ -69,6 +70,7 @@ export function Hero({
   step,
   metric,
   onMetric,
+  detailSince = null,
 }: {
   d: Dashboard;
   range: Range;
@@ -78,6 +80,8 @@ export function Hero({
   step: number;
   metric: Metric;
   onMetric: (m: Metric) => void;
+  /** 逐条记录从哪一刻起有（`UsageHistory.detail_since_ms`）。图上早于它的格子是「未记录」 */
+  detailSince?: number | null;
 }) {
   const t = useText(overviewText);
   const rt = useText(rangeText);
@@ -239,11 +243,7 @@ export function Hero({
     <section
       aria-label={t.usageLabel}
       data-slot="overview-hero"
-      className={cn(
-        "min-w-0 rounded-[10px] border transition-shadow duration-(--motion-fast) ease-(--motion-ease)",
-        // 渐变边自己铺卡片的面：和 `border-border`、`bg-panel` 一起写的话，谁压过谁要看样式表里的先后
-        cursor !== null ? "brand-border" : "border-border bg-panel",
-      )}
+      className="min-w-0 rounded-[10px] border border-border bg-panel"
     >
       <div
         role="tablist"
@@ -281,9 +281,10 @@ export function Hero({
           </div>
         </div>
         <Chart
-          // 换了指标从头画：柱子不从上一个指标的高度长过去
+          // 换了指标从头画：线不从上一个指标的形状变过去
           key={metric}
           spec={spec}
+          unrecorded={live ? 0 : unrecordedSlots(hist.grid, detailSince)}
           cursor={cursor}
           onPoint={point}
           now={now}
@@ -333,7 +334,7 @@ function Tile({
       tabIndex={on ? 0 : -1}
       onClick={onPick}
       className={cn(
-        "relative flex min-w-0 cursor-pointer flex-col items-start gap-px border-border px-3.5 pt-3 pb-[11px] text-left outline-none",
+        "relative flex min-w-0 cursor-pointer flex-col items-start gap-px border-border px-4 pt-3 pb-[11px] text-left outline-none",
         "transition-colors duration-(--motion-fast) ease-(--motion-ease) focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset",
         on ? "bg-foreground/[0.04]" : "hover:bg-foreground/[0.02]",
         // 分隔线：一排六个时左边一道；3 × 2 时第二排上面一道、每排第一个左边没有
@@ -371,7 +372,7 @@ function Tile({
  *
  * **没有参照系的数字只能读，不能判断。**只有好坏分明的那几样上色：费用少了、命中率高了、
  * 首 token 快了。用量和请求数两个方向都不上色 —— 多用掉一些 token 不是问题，少用也不是
- * 成绩。不到百分之一算持平，箭头放平。上一个区间是零时写「—」，取不到时整格不画。
+ * 成绩。不到百分之一算持平，箭头放平。上一个区间是零、取不到时都不画。
  */
 function Change({
   d,
@@ -388,13 +389,9 @@ function Change({
   now: string;
 }) {
   const t = useText(overviewText);
-  if (!d) return null;
-  if (d.kind === "noPrior")
-    return (
-      <Tip text={t.noPrior(period)}>
-        <span className="shrink-0 tw-num">—</span>
-      </Tip>
-    );
+  // 上一个区间没有记录（库是那之后才有的，或者那时还没用）：没有可比的，这一行空着。
+  // 六个指标下面各挂一道「—」只是六处噪点
+  if (!d || d.kind === "noPrior") return null;
   const shown = Math.round(Math.abs(d.ratio * 100));
   const flat = shown === 0;
   const better = !flat && ((good === "down" && d.ratio < 0) || (good === "up" && d.ratio > 0));
@@ -577,6 +574,8 @@ function widthOf(step: number, t: Text): string {
   return step >= DAY ? t.days(Math.round(step / DAY)) : t.hours(Math.round(step / HOUR));
 }
 
+/** 纵轴上的 token：整齐的刻度不写「.0」（「8M」，不是「8.0M」） */
+const axisTokens = (v: number) => compact(v).replace(/\.0(?=[kMB]$)/, "");
 /** 纵轴上的钱：整齐的刻度写几位就几位，不补零 */
 const axisMoney = (v: number) => `$${(v / 1e6).toLocaleString("en-US", { maximumFractionDigits: 6 })}`;
 /** 纵轴上的毫秒：一秒以内写 ms，以上写 s */
@@ -629,10 +628,9 @@ function chartSpec(
         const v = lv.tokens!;
         return {
           grid: lv.grid,
-          bars: null,
-          lines: [{ values: v, color: C1, wash: true }],
-          top: niceTop(peak(v)),
-          axis: (x) => compact(x),
+            lines: [{ values: v, color: C1, wash: true }],
+          ticks: niceTicks(peak(v)),
+          axis: axisTokens,
           tip: (i) => ({
             main: t.tokenRate(fmtTokens(v[i] ?? 0)),
             rows: [],
@@ -647,10 +645,9 @@ function chartSpec(
       if (!v || !out) return null;
       return {
         grid: hist.grid,
-        bars: { a: v, colorA: C1 },
-        lines: null,
-        top: niceTop(peak(v), { integer: true }),
-        axis: (x) => compact(x),
+        lines: [{ values: v, color: C1, wash: true }],
+        ticks: niceTicks(peak(v), { integer: true }),
+        axis: axisTokens,
         tip: (i) => {
           const n = v[i] ?? 0;
           if (n === 0) return { main: t.tokens("0", 0), rows: [], rows2: [] };
@@ -673,9 +670,8 @@ function chartSpec(
         const v = lv.cost!;
         return {
           grid: lv.grid,
-          bars: null,
-          lines: [{ values: v, color: C1, wash: true }],
-          top: niceTop(peak(v) || 10_000),
+            lines: [{ values: v, color: C1, wash: true }],
+          ticks: niceTicks(peak(v) || 10_000),
           axis: axisMoney,
           tip: (i) => ({
             main: t.costRate(usd(Math.round(v[i] ?? 0))),
@@ -690,10 +686,9 @@ function chartSpec(
       if (!v) return null;
       return {
         grid: hist.grid,
-        bars: { a: v, colorA: C1 },
-        lines: null,
+        lines: [{ values: v, color: C1, wash: true }],
         // 一分钱都没有的图，纵轴写到 $0.04，不写到百万分之四
-        top: niceTop(peak(v) || 10_000),
+        ticks: niceTicks(peak(v) || 10_000),
         axis: axisMoney,
         tip: (i) => {
           const c = cellAt(i);
@@ -724,9 +719,11 @@ function chartSpec(
       const ok = total.map((n, i) => Math.max(0, n - (bad[i] ?? 0)));
       return {
         grid: src.grid,
-        bars: { a: ok, b: bad, colorA: C1, colorB: CFAIL },
-        lines: null,
-        top: niceTop(peak(total), { integer: true }),
+        lines: [
+          { values: total, color: C1, wash: true },
+          { values: bad, color: CFAIL },
+        ],
+        ticks: niceTicks(peak(total), { integer: true }),
         axis: fmtCount,
         tip: (i) => {
           const n = total[i] ?? 0;
@@ -741,8 +738,8 @@ function chartSpec(
           };
         },
         legend: [
-          { label: t.succeeded, color: C1, shape: "rect" },
-          { label: t.failed, color: CFAIL, shape: "rect" },
+          { label: t.kpiRequests, color: C1, shape: "stroke" },
+          { label: t.failed, color: CFAIL, shape: "stroke" },
         ],
         note: lv ? t.perSlot(t.seconds(Math.round(lv.grid.step / 1000))) : slot,
       };
@@ -752,9 +749,8 @@ function chartSpec(
       if (!v) return null;
       return {
         grid: hist.grid,
-        bars: null,
         lines: [{ values: v, color: C1, wash: true }],
-        top: 1,
+        ticks: niceTicks(0.9),
         axis: (x) => pct(x * 100),
         tip: (i) => {
           const c = cellAt(i);
@@ -780,13 +776,12 @@ function chartSpec(
       if (!a || !b) return null;
       return {
         grid: hist.grid,
-        bars: null,
         // 分位不铺面：延迟没有「多少」
         lines: [
           { values: a, color: C1 },
           { values: b, color: C2 },
         ],
-        top: niceTop(peak(a, b) || 1000),
+        ticks: niceTicks(peak(a, b) || 1000),
         axis: axisMs,
         tip: (i) => {
           const x = a[i];
@@ -812,13 +807,15 @@ function chartSpec(
       const up = hist.sent;
       const down = hist.received;
       if (!up || !down) return null;
-      const max = peak(up.map((x, i) => x + (down[i] ?? 0)));
+      const max = peak(up, down);
       const { unit, level } = byteUnit(max);
       return {
         grid: hist.grid,
-        bars: { a: up, b: down, colorA: C1, colorB: C2 },
-        lines: null,
-        top: niceTop(max, { integer: level === 0, unit }),
+        lines: [
+          { values: up, color: C1, wash: true },
+          { values: down, color: C2 },
+        ],
+        ticks: niceTicks(max, { integer: level === 0, unit }),
         axis: (x) => `${Number((x / unit).toPrecision(4))} ${BYTE_UNITS[level]}`,
         tip: (i) => {
           const u = up[i] ?? 0;
@@ -834,13 +831,24 @@ function chartSpec(
           };
         },
         legend: [
-          { label: t.sent, color: C1, shape: "rect" },
-          { label: t.received, color: C2, shape: "rect" },
+          { label: t.sent, color: C1, shape: "stroke" },
+          { label: t.received, color: C2, shape: "stroke" },
         ],
         note: lv ? hourly : slot,
       };
     }
   }
+}
+
+/**
+ * 前几格整格早于逐条记录的起点：那时库里还没有这几格的请求（库是那之后才建的，或者已经
+ * 过了保留期），画成零就是说「那几天没用」。跨着起点的那一格照常画。
+ */
+export function unrecordedSlots(grid: { at: readonly number[]; step: number }, detailSince: number | null): number {
+  if (detailSince === null) return 0;
+  let k = 0;
+  while (k < grid.at.length && (grid.at[k] ?? 0) + grid.step <= detailSince) k += 1;
+  return k;
 }
 
 /**

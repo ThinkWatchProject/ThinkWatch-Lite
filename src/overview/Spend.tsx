@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { Segmented } from "@/ui/segmented";
 import { rangeText } from "@/ui/range.i18n";
@@ -18,19 +18,33 @@ import { overviewText } from "./overview.i18n";
 /**
  * 去向：按模型、上游、密钥排出所选指标（「用量」那张卡片上选中的那一个）。
  *
- * 每一行是标志、名字、值、能加起来的指标再带占比；后面一条淡色的条，长度按最大的那一项
- * 归一。token、费用、请求、流量是各项的合计，缓存命中是各项自己的命中率，首 token 是各项
+ * 每一行是标志、名字、值、一根细进度条（长度按最大的那一项归一，和右边额度卡的进度条
+ * 同一形制，颜色是大图的蓝：它跟着上面选中的指标），能加起来的指标再带占比。token、费用、请求、流量是各项的合计，缓存命中是各项自己的命中率，首 token 是各项
  * 的 P50。先列五行，其余的写出有几项。底下一行是合计（或整体命中率、整体 P50）。
  *
  * 点一行落到流量页，筛好那一项（和明细表一样）。没有名字的那一项只说不点。
  *
  * 实时档和明细表一样按 24 小时算，右上角的口径写着。
  */
-export function Spend({ d, range, metric, ov }: { d: Dashboard; range: Range; metric: Metric; ov?: Overview | null }) {
+export function Spend({
+  d,
+  range,
+  metric,
+  ov,
+  dim,
+  onDim,
+}: {
+  d: Dashboard;
+  range: Range;
+  metric: Metric;
+  ov?: Overview | null;
+  /** 按什么分。**和明细表是同一个选择**（放在页面那一层），切一处两处一起换 */
+  dim: Dim;
+  onDim: (d: Dim) => void;
+}) {
   const t = useText(spendText);
   const rt = useText(rangeText);
   const nav = useNav();
-  const [dim, setDim] = useState<Dim>("model");
   const groups: CostBucketGroup[] | null =
     dim === "model" ? d.buckets_by_model : dim === "provider" ? d.buckets_by_provider : d.buckets_by_client;
   const latency = new Map<string, LatencyView>(
@@ -49,9 +63,10 @@ export function Spend({ d, range, metric, ov }: { d: Dashboard; range: Range; me
     <section
       aria-label={t.label}
       data-slot="overview-spend"
-      className="flex min-w-0 flex-col rounded-[10px] border border-border bg-panel px-3 pt-3 pb-2.5"
+      className="flex min-w-0 flex-col rounded-[10px] border border-border bg-panel px-4 pt-3 pb-2.5"
     >
-      <div className="flex h-7 items-center gap-2.5 px-1">
+      <div className="flex h-7 items-center gap-3">
+        <h3 className="shrink-0 tw-head text-muted-foreground">{t.label}</h3>
         <Segmented<Dim>
           label={t.label}
           value={dim}
@@ -60,17 +75,17 @@ export function Spend({ d, range, metric, ov }: { d: Dashboard; range: Range; me
             { id: "provider", label: t.dims.provider },
             { id: "client", label: t.dims.client },
           ]}
-          onChange={setDim}
+          onChange={onDim}
         />
         <span className="ml-auto truncate tw-label text-muted-foreground">{caption}</span>
       </div>
 
       {groups === null ? (
-        <p className="mt-2.5 flex h-8 items-center px-2.5 tw-body text-muted-foreground">{t.unavailable}</p>
+        <p className="mt-2.5 flex h-8 items-center tw-body text-muted-foreground">{t.unavailable}</p>
       ) : rows.length === 0 ? (
-        <p className="mt-2.5 flex h-8 items-center px-2.5 tw-body text-muted-foreground">{t.empty}</p>
+        <p className="mt-2.5 flex h-8 items-center tw-body text-muted-foreground">{t.empty}</p>
       ) : (
-        <ol className="mt-2.5 flex flex-col gap-1" aria-label={t.dims[dim]}>
+        <ol className="-mx-2.5 mt-2 flex flex-col gap-0.5" aria-label={t.dims[dim]}>
           {shown.map((r) => (
             <li key={`row:${r.item.name}`}>
               <SpendLine
@@ -91,7 +106,8 @@ export function Spend({ d, range, metric, ov }: { d: Dashboard; range: Range; me
       )}
 
       {groups !== null && rows.length > 0 && (
-        <div className="mt-auto flex items-baseline gap-3 px-2.5 pt-2 tw-label text-muted-foreground">
+        // 合计紧跟着列表。卡片和右边的额度卡等高，多出来的空在最底下，不夹在行和合计之间
+        <div className="flex items-baseline gap-3 pt-2 tw-label text-muted-foreground">
           <Foot metric={metric} total={total} ttft={d.ttft?.p50_ms ?? null} />
           {rows.length > SPEND_ROWS && <span className="ml-auto">{t.more[dim](rows.length - SPEND_ROWS)}</span>}
         </div>
@@ -101,8 +117,10 @@ export function Spend({ d, range, metric, ov }: { d: Dashboard; range: Range; me
 }
 
 /**
- * 一行。整行能点（读屏读作链接，Enter 和空格都能打开）；悬停压暗一档。条铺在整行底下，
- * 从左往右，`--data-1` 按 `--data-wash` 的浓度。
+ * 一行。整行能点（读屏读作链接，Enter 和空格都能打开）；悬停压暗一档。悬停的底色往两边各
+ * 伸出 10px（列表 `-mx-2.5`），行里的标志和卡片标题对齐。
+ *
+ * **条不铺在整行底下**：那样最大的一项永远是满满一整行，看上去像被选中的那一行。
  */
 function SpendLine({
   r,
@@ -142,13 +160,6 @@ function SpendLine({
           "cursor-pointer outline-none transition-colors duration-(--motion-fast) ease-(--motion-ease) hover:bg-foreground/[0.045] focus-visible:bg-foreground/[0.045] focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
-      {r.bar > 0 && (
-        <span
-          aria-hidden
-          className="motion-bar pointer-events-none absolute inset-y-0 left-0 rounded-md bg-data-1"
-          style={{ width: `${r.bar * 100}%`, opacity: "var(--data-wash)" }}
-        />
-      )}
       <span className="relative flex shrink-0">{logo}</span>
       <span
         className={cn("relative min-w-0 flex-1 truncate", mono && "font-mono", !onOpen && "text-muted-foreground")}
@@ -158,6 +169,13 @@ function SpendLine({
       </span>
       <span className="relative tw-num whitespace-nowrap">
         <Value metric={metric} r={r} />
+      </span>
+      <span aria-hidden className="relative h-1.5 w-14 shrink-0 overflow-hidden rounded-full bg-foreground/[0.07]">
+        {/* 有量的至少看得见一小截 */}
+        <span
+          className="motion-bar absolute inset-y-0 left-0 rounded-full bg-data-1"
+          style={{ width: `${r.bar > 0 ? Math.max(4, r.bar * 100) : 0}%` }}
+        />
       </span>
       {additive(metric) && (
         <span className="relative w-[34px] shrink-0 text-right tw-label tw-num text-muted-foreground">

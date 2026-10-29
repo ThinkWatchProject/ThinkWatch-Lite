@@ -46,8 +46,9 @@ const COLS =
   "grid grid-cols-[minmax(0,1fr)_3.5rem_4rem_4.5rem_4rem_4rem_4rem] gap-x-3 @min-[760px]:grid-cols-[minmax(0,1fr)_4.5rem_repeat(5,5.25rem)] @min-[760px]:gap-x-4";
 
 /**
- * 指标卡下面的明细表：按模型、上游、密钥分，每一行是这段时间的请求、token、费用、
- * 缓存命中、首 token 和生成速度。请求多的在前，先列几行，其余的写出有几项、点开再看。
+ * 页面最下面的明细表（一张卡片，标题「明细」，和上面几块同一副外框）：按模型、上游、密钥
+ * 分，每一行是这段时间的请求、token、费用、缓存命中、首 token 和生成速度。请求多的在前，
+ * 先列几行，其余的写出有几项、点开再看。
  *
  * 点一行落到流量页，筛好那一个模型、上游或密钥。没有名字的那一行（没到上游的请求、
  * 认不出的密钥）只说不点 —— 没有东西可筛。
@@ -56,12 +57,26 @@ const COLS =
  *
  * 名称格前面是标志（`ItemLogo`）。`ov` 给了，上游按地址认、密钥认得出是哪个客户端的。
  */
-export function Breakdown({ d, range, ov }: { d: Dashboard; range: Range; ov?: Overview | null }) {
+export function Breakdown({
+  d,
+  range,
+  ov,
+  dim,
+  onDim,
+}: {
+  d: Dashboard;
+  range: Range;
+  ov?: Overview | null;
+  /** 按什么分。**和「去向」是同一个选择**（放在页面那一层） */
+  dim: Dim;
+  onDim: (d: Dim) => void;
+}) {
   const t = useText(overviewText);
   const rt = useText(rangeText);
   const nav = useNav();
-  const [dim, setDim] = useState<Dim>("model");
-  const [all, setAll] = useState(false);
+  // 展开记在是哪一页上：换了按什么分（这里或「去向」那边切的），回到只列几行
+  const [open, setOpen] = useState<Dim | null>(null);
+  const all = open === dim;
   const groups: CostBucketGroup[] | null =
     dim === "model" ? d.buckets_by_model : dim === "provider" ? d.buckets_by_provider : d.buckets_by_client;
   const rows = groups ? breakdown(groups) : [];
@@ -82,8 +97,13 @@ export function Breakdown({ d, range, ov }: { d: Dashboard; range: Range; ov?: O
   const unnamed = { model: t.unknownModel, provider: t.noUpstream, client: t.unknownKey }[dim];
 
   return (
-    <section className="@container" data-slot="overview-breakdown" aria-label={t.tableLabel}>
-      <div className="flex h-7 items-center gap-2.5">
+    <section
+      className="@container rounded-[10px] border border-border bg-panel px-4 pt-3 pb-1"
+      data-slot="overview-breakdown"
+      aria-label={t.tableLabel}
+    >
+      <div className="flex h-7 items-center gap-3">
+        <h3 className="shrink-0 tw-head text-muted-foreground">{t.tableLabel}</h3>
         <Segmented<Dim>
           label={t.tableLabel}
           value={dim}
@@ -92,16 +112,13 @@ export function Breakdown({ d, range, ov }: { d: Dashboard; range: Range; ov?: O
             { id: "provider", label: t.tabUpstreams },
             { id: "client", label: t.tabKeys },
           ]}
-          onChange={(v) => {
-            setDim(v);
-            setAll(false);
-          }}
+          onChange={onDim}
         />
         {range.live && <span className="tw-label text-muted-foreground">{rt.preset["1d"]}</span>}
         {rows.length > ROWS && (
           <button
             type="button"
-            onClick={() => setAll((x) => !x)}
+            onClick={() => setOpen(all ? null : dim)}
             aria-expanded={all}
             className="ml-auto inline-flex items-center gap-1 rounded-sm tw-label text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
           >

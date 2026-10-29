@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { byteUnit, niceTop, slotPhase, xTicks, yTicks } from "./HeroAxis";
+import { byteUnit, niceTicks, slotPhase, xTicks } from "./HeroAxis";
 import { liveSeries, type Grid } from "./series";
 
 const MINUTE = 60_000;
@@ -7,44 +7,57 @@ const HOUR = 60 * MINUTE;
 const DAY = 24 * HOUR;
 const opts = (now: number) => ({ today: "今天", now });
 
+const top = (t: number[]) => t[t.length - 1];
+
 describe("纵轴的刻度", () => {
-  it("四格，每格是 1 / 2 / 2.5 / 5 乘 10 的幂，顶上留一点空", () => {
-    expect(niceTop(100)).toBe(200); // 一格 26 → 50
-    expect(niceTop(96)).toBe(100); // 一格 24.96 → 25
-    expect(niceTop(7_600)).toBe(8_000); // 一格 1976 → 2000
-    expect(niceTop(9_000)).toBe(10_000); // 一格 2340 → 2500
-    expect(niceTop(0.9)).toBe(1); // 一格 0.234 → 0.25
-    expect(yTicks(niceTop(0.9))).toEqual([0, 0.25, 0.5, 0.75, 1]);
+  it("每格是 1 / 2 / 2.5 / 5 乘 10 的幂，顶上留一点空", () => {
+    expect(niceTicks(96)).toEqual([0, 25, 50, 75, 100]); // 一格 24.96 → 25
+    expect(top(niceTicks(7_600))).toBe(8_000); // 一格 1976 → 2000
+    expect(top(niceTicks(9_000))).toBe(10_000); // 一格 2340 → 2500
+    expect(niceTicks(0.9)).toEqual([0, 0.25, 0.5, 0.75, 1]); // 一格 0.234 → 0.25
   });
 
-  it("刚好顶到一档时也留出空：最高的柱子不贴着最上面那条线", () => {
-    expect(niceTop(400)).toBe(800);
+  /** 只有四格时，峰值略超一档顶就翻倍：3.9M 的图画到 8M，上半截空着 */
+  it("四格、五格里取顶低的那种；一样高时取四格", () => {
+    expect(niceTicks(3_900_000)).toEqual([0, 1e6, 2e6, 3e6, 4e6, 5e6]);
+    expect(niceTicks(100)).toEqual([0, 25, 50, 75, 100, 125]); // 四格是 0–200
+    expect(top(niceTicks(400))).toBe(500); // 四格是 0–800
+    expect(niceTicks(9)).toEqual([0, 2.5, 5, 7.5, 10]); // 五格也是 10：四格
+  });
+
+  it("刚好顶到一档时也留出空：最高的点不贴着最上面那条线", () => {
+    expect(top(niceTicks(400))).toBeGreaterThan(400);
+    expect(top(niceTicks(1_000))).toBeGreaterThan(1_000);
   });
 
   it("个数：每格是整数，没有 2.5 次；只有一两次时纵轴是 0–4", () => {
-    expect(niceTop(1, { integer: true })).toBe(4);
-    expect(niceTop(9, { integer: true })).toBe(20); // 2.5 跳过，取 5
-    expect(niceTop(9)).toBe(10);
-    expect(niceTop(0, { integer: true })).toBe(4);
-    expect(yTicks(niceTop(3, { integer: true }))).toEqual([0, 1, 2, 3, 4]);
+    expect(niceTicks(1, { integer: true })).toEqual([0, 1, 2, 3, 4]);
+    expect(niceTicks(9, { integer: true })).toEqual([0, 2, 4, 6, 8, 10]); // 四格要跳过 2.5，取 5 就到 20
+    expect(niceTicks(0, { integer: true })).toEqual([0, 1, 2, 3, 4]);
+    expect(niceTicks(3, { integer: true })).toEqual([0, 1, 2, 3, 4]);
+    for (const n of [1, 3, 7, 9, 13, 26, 99, 140]) {
+      expect(niceTicks(n, { integer: true }).every(Number.isInteger)).toBe(true);
+    }
   });
 
   it("全是零：最小的一档，不是 NaN", () => {
-    expect(niceTop(0)).toBe(1);
-    expect(niceTop(Number.NaN)).toBe(1);
+    expect(niceTicks(0)).toEqual([0, 0.25, 0.5, 0.75, 1]);
+    expect(top(niceTicks(Number.NaN))).toBe(1);
   });
 
   it("字节按 1024 进位取整：刻度是整齐的 KB、MB", () => {
     const max = 300 * 1024 * 1024;
     const { unit, level } = byteUnit(max);
     expect(level).toBe(2);
-    expect(niceTop(max, { unit })).toBe(400 * 1024 * 1024);
+    expect(niceTicks(max, { unit })).toEqual([0, 100, 200, 300, 400].map((v) => v * 1024 * 1024));
+    // 3.9 MB：五格，每格 1 MB
+    expect(top(niceTicks(3.9 * 1024 * 1024, { unit: 1024 * 1024 }))).toBe(5 * 1024 * 1024);
     expect(byteUnit(800)).toEqual({ unit: 1, level: 0 });
     expect(byteUnit(1024)).toEqual({ unit: 1024, level: 1 });
   });
 
   it("浮点误差抹掉", () => {
-    expect(yTicks(0.4)).toEqual([0, 0.1, 0.2, 0.3, 0.4]);
+    expect(niceTicks(0.37)).toEqual([0, 0.1, 0.2, 0.3, 0.4]);
   });
 });
 

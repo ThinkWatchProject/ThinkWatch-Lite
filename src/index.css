@@ -201,8 +201,8 @@
   --data-wash: 0.16;
   /* 指标卡的面：比窗口底亮一档，卡片才从底上浮出来 */
   --panel: #ffffff;
-  /* 品牌的青→品红（官网 logo 的两色，浅色底上换深一档）。**只做点缀**：悬停卡片的
-   * 边、联动的竖线、提示框顶上那一道、「进行中」的点。不碰数据颜色 */
+  /* 品牌的青→品红（官网 logo 的两色，浅色底上换深一档）。**只做点缀**：概览页头
+   * 「进行中」的点。不碰数据颜色，也不随悬停把整张卡片的边点亮 */
   --brand-from: #14c3d3;
   --brand-to: #d94fc9;
   /* 路由图上在途请求的光点：**每个请求一种颜色**，按先后轮着取。同一档明度和饱和度的五个
@@ -581,31 +581,6 @@
   transition: height var(--motion-fast) var(--motion-ease);
 }
 
-/* 品牌渐变的点缀（概览指标卡）。**只用在交互上**：指着的那张卡片的边、提示框顶上那一道。
- * 渐变边是两层背景：里层铺卡片的面（padding-box），外层铺渐变（border-box），边框本身
- * 透明 —— `border-image` 画不出圆角 */
-@utility brand-border {
-  border-color: transparent;
-  background:
-    linear-gradient(var(--panel), var(--panel)) padding-box,
-    linear-gradient(135deg, var(--brand-from), var(--brand-to)) border-box;
-  box-shadow: 0 6px 20px color-mix(in srgb, var(--brand-from) 8%, transparent);
-  @media (prefers-color-scheme: dark) {
-    box-shadow:
-      0 0 0 1px color-mix(in srgb, var(--brand-from) 5%, transparent),
-      0 8px 28px color-mix(in srgb, var(--brand-to) 10%, transparent);
-  }
-}
-@utility brand-edge {
-  &::before {
-    content: "";
-    position: absolute;
-    inset: 0 0 auto 0;
-    height: 2px;
-    background: linear-gradient(90deg, var(--brand-from), var(--brand-to));
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .motion-page,
   .motion-fade,
@@ -729,6 +704,15 @@ body {
   letter-spacing: -0.02em;
   font-variant-numeric: normal;
   font-feature-settings: normal;
+}
+/* 概览「最近一年」的统计数字：比指标卡的大数低一级（20px），同一种字。展示级只留给指标卡，
+ * 别的大数用这一级，页面才分得出主次 */
+@utility tw-figure {
+  font-family: "Geist", var(--font-ui);
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 26px;
+  letter-spacing: -0.01em;
 }
 @utility tw-title {
   font-size: var(--fs-title);

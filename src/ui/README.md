@@ -102,6 +102,12 @@ export default function KeysPage() {
   is 4px below it.
 - Toolbar-level page actions (Config file / Backups) are the shell's; pages do
   not repeat them.
+- **Cards** (Overview's blocks): `rounded-[10px] border border-border bg-panel`, 16px sides
+  (`px-4`), 12px top. The first row is 28px (`h-7`): title (`tw-head`, muted) first, then the
+  block's controls, then its scope or link at the right end. Every block on a page uses the
+  same inset, so the content of all blocks starts on one vertical line. Rows with a hover
+  background extend it 10px past that line on each side (the list gets `-mx-2.5`, each row
+  `px-2.5`), so their icons stay on the line. A card's border never changes on hover.
 
 ### Spacing scale
 
@@ -120,12 +126,13 @@ Table rows are 36px (`h-9`), toolbar controls 28px, form fields 32px.
 
 ### Type scale
 
-Five levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outside
+Six levels, named by purpose. Never use `text-xs`/`text-sm`/`text-[12px]` outside
 `src/ui` (`copy.test.ts` enforces it).
 
 | Class | Size | Use |
 | --- | --- | --- |
 | `tw-display` | 26px/600 Geist | The big figures on the Overview metric cards. Nowhere else. Geist is bundled (`@fontsource/geist`, latin 600), never fetched at runtime. |
+| `tw-figure` | 20px/600 Geist | Secondary big figures under the metric cards (Overview's past-year totals). |
 | `tw-title` | 15px/600 | Dialog title, standalone-window title. One per screen. |
 | `tw-head` | 13px/500 | Page name in the toolbar, section titles, table headers, emphasised labels. |
 | `tw-body` | 13px | Body text, table cells. |
@@ -230,16 +237,21 @@ import { Sparkline, sparklineWidth } from "@/ui/sparkline";
   for its skeleton); with `tip` each slot is a 4px hover cell. Keep `bars` and `tip`
   referentially stable where the parent re-renders often (it is memoised).
 - **Overview usage chart** (`src/overview/HeroChart.tsx`, page-specific): one large chart for
-  the metric picked in the usage card's tiles. Left axis with 1 / 2 / 2.5 / 5 x 10^n ticks
-  (`HeroAxis.ts`), hairline grid, date or time labels at slot boundaries. Quantities are bars
-  (at most 16px wide, 4px rounded top, two stacked parts with a 2px gap: failures in
-  `--data-fail`, download in `--data-2`); the hit rate and first-token P50 / P95 are 2px lines
-  (`null` = no samples, bridged by a faint dashed connector, never a made-up value). The slot
-  still in progress is drawn faded. Hovering or keyboard focus shows one tooltip per slot
-  (value first, line keys) and gives the card the brand border.
-- **Past-year heatmap** (`src/overview/Year.tsx`): one cell per day, `--chart-5` to `--chart-1`
-  by quartile of the days with usage, `--surface` for none, dashed `--input` border for days
-  before recording started; the selected range is outlined.
+  the metric picked in the usage card's tiles. Left axis with 1 / 2 / 2.5 / 5 x 10^n steps,
+  four or five of them, whichever tops out lower (`niceTicks` in `HeroAxis.ts`), hairline
+  grid, date or time labels at slot boundaries. **No bars.** Every series is a 2px monotone
+  line; quantities get a wash under the line (`--data-1`), and a second part is a thin line
+  without a wash (failures in `--data-fail`, download in `--data-2`); the hit rate and
+  first-token P50 / P95 are plain lines (`null` = no samples, bridged by a faint dashed
+  connector, never a made-up value). The slot still in progress joins with a dashed segment.
+  Slots older than the first request record (`UsageHistory.detail_since_ms`) get a faint
+  band labelled "not recorded" and no line: they are unknown, not zero. Hovering or keyboard
+  focus shows a guide line, a dot per line and one tooltip per slot (value first; only rows
+  that match a line carry a key).
+- **Past-year heatmap** (`src/overview/Year.tsx`): one cell per day, `--data-1` mixed into
+  `--surface` at 16 / 32 / 52 / 78% by quartile of the days with usage (never brighter than
+  `--data-1` itself), `--surface` for none, `--surface` at 55% for days before recording
+  started; the selected range is outlined.
 - Hand-roll a bar or a chart only when none of these fits, and then follow the same rules.
 
 ---

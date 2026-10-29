@@ -11,17 +11,18 @@ import type { Dashboard, Overview } from "@/types";
 import { useText } from "@/i18n";
 import { FirstRequestHint } from "@/guide/FirstRequestHint";
 import { SetupGuide } from "@/guide/SetupGuide";
-import { bucketOf, useOverview, type Shown } from "./useOverview";
+import { bucketOf, rangeId, useOverview, type Shown } from "./useOverview";
 import { OverviewStatus } from "./OverviewStatus";
 import { OverviewSkeleton } from "./OverviewSkeleton";
 import { AttentionStrip } from "./Attention";
 import { Hero } from "./Hero";
 import { Spend } from "./Spend";
 import { Quota, hasQuota } from "./Quota";
-import { Year } from "./Year";
-import { Breakdown } from "./Breakdown";
+import { Year, useUsageHistory } from "./Year";
+import { Breakdown, type Dim } from "./Breakdown";
 import type { Metric } from "./metric";
 import type { YearMetric } from "./yearGrid";
+import { useHold } from "./useHold";
 import { overviewText } from "./overview.i18n";
 
 /**
@@ -45,7 +46,7 @@ function neverUsed(d: Dashboard): boolean {
  *
  * 版面：页头（状态一行、时间范围）；需要处理的事（没有就不出现）；用量（六个指标并排，
  * 选中的那个画成下面的大图）；去向和额度与余额并排；最近一年的热力图；按模型、上游、
- * 密钥分的明细表。
+ * 密钥分的明细表。去向和明细按什么分是同一个选择，切一处两处一起换。
  *
  * **跟着时间范围走的放在一起**：用量、去向、明细。额度与余额是此刻的状态，最近一年固定
  * 一年，各自标着自己的口径。
@@ -67,10 +68,20 @@ export default function OverviewPage({
   const t = useText(overviewText);
   const [range, setRange] = useRange();
   const o = useOverview(range, tick);
-  // 选中的指标放在这一层：换时间范围时下面整块重挂，选择不该跟着丢
+  // 选中的指标、按什么分放在这一层：几块卡片共用一个选择
   const [metric, setMetric] = useState<Metric>("tokens");
   const [yearMetric, setYearMetric] = useState<YearMetric>("tokens");
-  const pickDay = useCallback((day: Date) => setRange(dayRange(day)), [setRange]);
+  const [dim, setDim] = useState<Dim>("model");
+  const history = useUsageHistory(tick);
+  const hold = useHold(o.shown?.id);
+  const pickDay = useCallback(
+    (day: Date, from: HTMLElement) => {
+      const r = dayRange(day);
+      hold.start(rangeId(r), from);
+      setRange(r);
+    },
+    [setRange, hold.start],
+  );
 
   const landed = useRef(onLanded);
   landed.current = onLanded;
@@ -94,12 +105,15 @@ export default function OverviewPage({
           shown={o.shown}
           ov={ov}
           switching={o.switching}
-          tick={tick}
           metric={metric}
           onMetric={setMetric}
           yearMetric={yearMetric}
           onYearMetric={setYearMetric}
           onPickDay={pickDay}
+          dim={dim}
+          onDim={setDim}
+          history={history}
+          pad={hold.pad}
         />
       )}
     </Page>
@@ -110,23 +124,30 @@ function Body({
   shown,
   ov,
   switching,
-  tick,
   metric,
   onMetric,
   yearMetric,
   onYearMetric,
   onPickDay,
+  dim,
+  onDim,
+  history,
+  pad,
 }: {
   shown: Shown;
   ov: Overview | null;
   /** 选中的区间还在取，画的是上一个区间的 */
   switching: boolean;
-  tick: number;
   metric: Metric;
   onMetric: (m: Metric) => void;
   yearMetric: YearMetric;
   onYearMetric: (m: YearMetric) => void;
-  onPickDay: (day: Date) => void;
+  onPickDay: (day: Date, from: HTMLElement) => void;
+  dim: Dim;
+  onDim: (d: Dim) => void;
+  history: ReturnType<typeof useUsageHistory>;
+  /** 页尾临时补的空白（`useHold`） */
+  pad: number;
 }) {
   const t = useText(overviewText);
   const { data: d, range, id } = shown;
@@ -137,10 +158,10 @@ function Body({
   return (
     <div
       /*
-        **换了区间整块重挂**：数字直接落到新值（不从上一个区间的值滚过去），行不逐条滑入。
-        切到还没取过的区间时，新数据到之前这一块压暗。
+        **换了区间不重挂这一块。**整块按区间重挂的话，WebKit 在卸下、挂上之间把滚动层拨回
+        顶上：在热力图上点一天、或者滚到下面再换区间，页面都跳回页首。换区间时数字直接落到
+        新值，由各个大数的 `scope` 管。切到还没取过的区间时，新数据到之前这一块压暗。
       */
-      key={id}
       aria-busy={switching || undefined}
       className={cn(
         "flex flex-col gap-3.5 motion-fade transition-opacity duration-(--motion-base) ease-(--motion-ease)",
@@ -166,15 +187,25 @@ function Body({
       ) : (
         <>
           <AttentionStrip d={d} ov={ov} range={range} />
-          <Hero d={d} range={range} scope={id} step={bucketOf(range)} metric={metric} onMetric={onMetric} />
+          <Hero
+            d={d}
+            range={range}
+            scope={id}
+            step={bucketOf(range)}
+            metric={metric}
+            onMetric={onMetric}
+            detailSince={history.r.data?.detail_since_ms ?? null}
+          />
           <div className={cn("grid gap-3.5", hasQuota(d, ov) && "@min-[760px]/page:grid-cols-2")}>
-            <Spend d={d} range={range} metric={metric} ov={ov} />
+            <Spend d={d} range={range} metric={metric} ov={ov} dim={dim} onDim={onDim} />
             <Quota d={d} ov={ov} />
           </div>
-          <Year range={range} tick={tick} metric={yearMetric} onMetric={onYearMetric} onPickDay={onPickDay} />
-          <Breakdown d={d} range={range} ov={ov} />
+          <Year history={history} range={range} metric={yearMetric} onMetric={onYearMetric} onPickDay={onPickDay} />
+          <Breakdown d={d} range={range} ov={ov} dim={dim} onDim={onDim} />
+          {pad > 0 && <div aria-hidden style={{ height: pad }} />}
         </>
       )}
     </div>
   );
 }
+

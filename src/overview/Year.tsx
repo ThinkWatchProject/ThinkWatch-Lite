@@ -3,8 +3,8 @@ import { cn } from "@/lib/utils";
 import { call } from "@/control";
 import { compact } from "@/format";
 import { useText } from "@/i18n";
-import { useResource } from "@/lib/resource";
-import { usd } from "@/types";
+import { useResource, type Resource } from "@/lib/resource";
+import { usd, type UsageHistory } from "@/types";
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
 import { Tip } from "@/ui/tip";
@@ -37,50 +37,68 @@ import { yearText } from "./Year.i18n";
 type Text = (typeof yearText)["zh"];
 type OverviewText = (typeof overviewText)["zh"];
 
-/** 五级的颜色：0 是空格子的灰，1–4 是 `--chart-*` 那一条蓝由浅到深（暗色下由暗到亮） */
-const LEVEL = ["bg-surface", "bg-chart-5", "bg-chart-3", "bg-chart-2", "bg-chart-1"] as const;
+/**
+ * 五级的颜色：0 是空格子的灰，1–4 是大图那个蓝（`--data-1`）按 16 / 32 / 52 / 78% 混进格子的底色。
+ * **最深一档也不比 `--data-1` 本身亮**：一年三百多格，最高一档要是接近正文的白，热力图就成了
+ * 整页最亮的一块，把视线从上面的用量拉走
+ */
+const LEVEL = [
+  "bg-surface",
+  "bg-[color-mix(in_oklab,var(--data-1)_16%,var(--surface))]",
+  "bg-[color-mix(in_oklab,var(--data-1)_32%,var(--surface))]",
+  "bg-[color-mix(in_oklab,var(--data-1)_52%,var(--surface))]",
+  "bg-[color-mix(in_oklab,var(--data-1)_78%,var(--surface))]",
+] as const;
 
 const METRICS: YearMetric[] = ["tokens", "cost", "requests"];
 
 /**
- * 最近一年：一天一格的热力图，固定一年，不跟时间范围走；所选时间范围在格子上描边。
- *
- * 53 列（周）× 7 行（周一在上），最右一列是本周，今天之后的不画；格子随卡片宽度伸缩。
- * 开始记录之前的日子画成虚线框「未记录」—— **不是「没有用量」**，那时还没在记。
- *
- * 颜色按「有用量的日子」的四分位分五级。四个统计只算记录里的日子。费用的限定词（含估算、
- * 无法计价）一直写在统计下面，全文在悬停里。
- *
- * 数据：`UsageHistory`，从网格第一天的本地零点起、一天一格；`tick` 变了重取，重取时上一份
- * 照样画着。
+ * 最近一年的用量历史（`UsageHistory`），从网格第一天的本地零点起、一天一格。**放在页面那一层
+ * 取**：热力图画它，大图用它的 `detail_since_ms` 标出还没有逐条记录的那几格。`tick` 变了重取，
+ * 过了零点网格往前走一格。
  */
-export function Year({
-  range,
-  tick,
-  metric,
-  onMetric: setMetric,
-  onPickDay,
-}: {
-  range: Range;
-  /** 库里多了请求、手动刷新：重取 */
-  tick: number;
-  /**
-   * 选中的指标。**放在页面那一层**：换时间范围时概览整块重挂（点一个格子就是换范围），
-   * 放在这里的话选了「费用」再点一天就弹回了 Token
-   */
-  metric: YearMetric;
-  onMetric: (m: YearMetric) => void;
-  /** 点了某一天：时间范围切到那一天 */
-  onPickDay: (day: Date) => void;
-}) {
-  const t = useText(yearText);
-  const ot = useText(overviewText);
-  // 今天的零点：过了零点就换，网格往前走一格
+export function useUsageHistory(tick: number): { r: Resource<UsageHistory>; today: number } {
   const today = useStartOf(DAY_MS);
   const from = gridStart(today);
   const r = useResource("usage-history", () => call("UsageHistory", { from_ms: from, to_ms: null, bucket_ms: DAY_MS }), {
     deps: [tick, from],
   });
+  return { r, today };
+}
+
+/**
+ * 最近一年：一天一格的热力图，固定一年，不跟时间范围走；所选时间范围在格子上描边。
+ *
+ * 53 列（周）× 7 行（周一在上），最右一列是本周，今天之后的不画；格子随卡片宽度伸缩。
+ * 开始记录之前的日子画成更淡的实心格「未记录」—— **不是「没有用量」**，那时还没在记。不画
+ * 虚线框：两个月的空框连成一片，比有数的格子还扎眼。
+ *
+ * 颜色按「有用量的日子」的四分位分五级。四个统计只算记录里的日子。费用的限定词（含估算、
+ * 无法计价）一直写在统计下面，全文在悬停里。
+ *
+ * 数据：页面那一层的 `useUsageHistory`，重取时上一份照样画着。
+ */
+export function Year({
+  history,
+  range,
+  metric,
+  onMetric: setMetric,
+  onPickDay,
+}: {
+  /** `useUsageHistory` 取到的 */
+  history: { r: Resource<UsageHistory>; today: number };
+  range: Range;
+  /**
+   * 选中的指标。放在页面那一层，和用量那六个指标的选择一样
+   */
+  metric: YearMetric;
+  onMetric: (m: YearMetric) => void;
+  /** 点了某一天：时间范围切到那一天 */
+  onPickDay: (day: Date, cell: HTMLElement) => void;
+}) {
+  const t = useText(yearText);
+  const ot = useText(overviewText);
+  const { r, today } = history;
   const h = r.data ?? null;
   const days = useMemo(() => layout(today, h), [today, h]);
   const failed = h === null && !r.loading && r.error !== undefined;
@@ -93,7 +111,7 @@ export function Year({
   return (
     <section
       aria-labelledby="overview-year-title"
-      className="@container/year rounded-[10px] border border-border bg-panel px-[18px] pt-3 pb-3.5"
+      className="@container/year rounded-[10px] border border-border bg-panel px-4 pt-3 pb-3.5"
     >
       <div className="flex h-7 items-center gap-3">
         <h3 id="overview-year-title" className="shrink-0 tw-head text-muted-foreground">
@@ -190,7 +208,7 @@ function Body({
   /** 逐条记录从哪一刻起有。比它早的日子点不开：概览在那几天按逐条记录算出来全是零 */
   detailSince: number | null;
   range: Range;
-  onPickDay: (day: Date) => void;
+  onPickDay: (day: Date, cell: HTMLElement) => void;
   t: Text;
   ot: OverviewText;
 }) {
@@ -234,7 +252,7 @@ function Body({
         {stats.map((x) => (
           <div key={x.label} className="min-w-0">
             <div className="h-4 truncate tw-label text-muted-foreground">{x.label}</div>
-            <div className="truncate tw-display tw-num">{x.value}</div>
+            <div className="truncate tw-figure tw-num">{x.value}</div>
             {x.tip && x.tip.length > 0 ? (
               <Tip text={<Notes lines={x.tip} />}>
                 <div className="h-4 truncate tw-label text-muted-foreground underline decoration-dotted underline-offset-2">
@@ -263,13 +281,13 @@ function Body({
       <div className="mt-2.5 flex items-center gap-4 pl-[30px] tw-label text-muted-foreground">
         {anyInRange && (
           <span className="flex items-center gap-1.5">
-            <span aria-hidden className="size-2.5 rounded-[2px] bg-chart-3 ring-[1.5px] ring-foreground/70" />
+            <span aria-hidden className={cn("size-2.5 rounded-[2px] ring-[1.5px] ring-foreground/70", LEVEL[2])} />
             {t.legendRange}
           </span>
         )}
         {anyUnrecorded && (
           <span className="flex items-center gap-1.5">
-            <span aria-hidden className="size-2.5 rounded-[2px] border border-dashed border-input" />
+            <span aria-hidden className="size-2.5 rounded-[2px] bg-surface/55" />
             {t.unrecorded}
           </span>
         )}
@@ -303,7 +321,7 @@ function Grid({
   /** 点得开的日子：有记录，而且逐条记录还在 */
   openable: (d: Day) => boolean;
   metric: YearMetric;
-  onPickDay: (day: Date) => void;
+  onPickDay: (day: Date, cell: HTMLElement) => void;
   t: Text;
   ot: OverviewText;
 }) {
@@ -322,14 +340,15 @@ function Grid({
   const cells = useRef(new Map<number, HTMLElement>());
   const wrap = useRef<HTMLDivElement>(null);
 
-  const pick = (d: Day) => {
-    if (openable(d)) onPickDay(new Date(d.at));
+  // 点的那一格交出去：换了区间之后页面按它把滚动位置补回来，格子留在指针底下
+  const pick = (d: Day, cell: HTMLElement) => {
+    if (openable(d)) onPickDay(new Date(d.at), cell);
   };
 
   const onKey = (e: KeyboardEvent, i: number) => {
     if (e.key === "Enter" || e.key === " ") {
       e.preventDefault();
-      pick(days[i]!);
+      pick(days[i]!, e.currentTarget as HTMLElement);
       return;
     }
     const j = step(days, i, e.key);
@@ -397,9 +416,9 @@ function Grid({
                     tabIndex={i === cur ? 0 : -1}
                     aria-label={t.cell(t.dateFull(new Date(d.at)), mainText(d, metric, t, ot))}
                     aria-disabled={!openable(d) || undefined}
-                    onClick={() => {
+                    onClick={(e) => {
                       setActive(i);
-                      pick(d);
+                      pick(d, e.currentTarget);
                     }}
                     onKeyDown={(e) => onKey(e, i)}
                     onFocus={(e) => {
@@ -409,7 +428,7 @@ function Grid({
                     onBlur={() => setFocused((f) => (f === i ? null : f))}
                     className={cn(
                       "relative aspect-square rounded-[2.5px] outline-none",
-                      unrec ? "border border-dashed border-input" : [LEVEL[lv], openable(d) && "cursor-pointer"],
+                      unrec ? "bg-surface/55" : [LEVEL[lv], openable(d) && "cursor-pointer"],
                       shown === i ? "ring-2 ring-foreground" : inRange(d) && "ring-[1.5px] ring-foreground/70",
                     )}
                   >

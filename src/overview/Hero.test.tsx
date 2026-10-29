@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { CostBucket, Dashboard, Summary } from "@/types";
 import { LIVE_RANGE, dayRange, presetRange, type Range } from "@/ui/range";
 import { bucketOf } from "./useOverview";
-import { Hero } from "./Hero";
+import { Hero, unrecordedSlots } from "./Hero";
 import { METRICS, type Metric } from "./metric";
 import { overviewText } from "./overview.i18n";
 
@@ -149,5 +149,33 @@ describe("用量", () => {
     expect(cache).toContain(t.cacheWrites);
     expect(cache).toContain(t.saved("$0.0012"));
     expect(render(presetRange("7d"), "requests")).toContain(t.failedSub(2));
+  });
+
+  it("大图不画柱：可加的指标是线下铺淡色的面积曲线", () => {
+    for (const m of ["tokens", "cost", "requests", "traffic"] as const) {
+      const html = render(presetRange("7d"), m);
+      expect(html).toContain("<path");
+      expect(html).not.toContain("rounded-t-[4px]");
+    }
+  });
+
+  it("上一个区间没有记录：环比空着，不画一排「—」", () => {
+    const html = render(presetRange("7d"), "tokens", { prev: summary({ requests: 0, input_tokens: 0, output_tokens: 0, cache_read_tokens: 0, cache_write_tokens: 0, cost_micros_exact: 0, cost_micros_estimated: 0, sent_bytes: 0, received_bytes: 0 }), prev_ttft: { p50_ms: null, p95_ms: null, samples: 0 } });
+    expect(html).not.toMatch(/>—</);
+  });
+
+  it("卡片的边不随悬停换成品牌渐变", () => {
+    expect(render(presetRange("7d"), "tokens")).not.toContain("brand-border");
+  });
+});
+
+describe("逐条记录开始之前的格子", () => {
+  const grid = { at: [0, 10, 20, 30, 40], step: 10 };
+  it("整格早于起点的算未记录，跨着起点的照常画", () => {
+    expect(unrecordedSlots(grid, null)).toBe(0);
+    expect(unrecordedSlots(grid, 0)).toBe(0);
+    expect(unrecordedSlots(grid, 20)).toBe(2);
+    expect(unrecordedSlots(grid, 25)).toBe(2);
+    expect(unrecordedSlots(grid, 1_000)).toBe(5);
   });
 });

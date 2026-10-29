@@ -53,7 +53,6 @@ export const overviewText = messages(
      */
     deltaTip: (period: string, before: string, now: string) => `较上一个${sp(period)}${period}：${before} → ${now}`,
     /** 上一个区间没有数据时，幅度那一格（「—」）的悬停说明 */
-    noPrior: (period: string) => `上一个${sp(period)}${period}无记录`,
 
     // 大图
     /** 悬停抬头里还没过完的那一格止于「现在」 */
@@ -62,6 +61,7 @@ export const overviewText = messages(
     today: "今天",
     /** 那一样读取失败：**不是没有** */
     chartUnavailable: "暂时取不到",
+    unrecorded: "未记录",
     /** 图例右边：一格多宽 */
     perSlot: (width: string) => `每格 ${width}`,
     hours: (n: number) => `${n} 小时`,
@@ -207,11 +207,11 @@ export const overviewText = messages(
     chartOf: (name: string) => `${name} over time`,
 
     deltaTip: (period: string, before: string, now: string) => `vs. prior ${period}: ${before} → ${now}`,
-    noPrior: (period: string) => `No data for the prior ${period}`,
 
     now: "Now",
     today: "Today",
     chartUnavailable: "Unavailable right now",
+    unrecorded: "Not recorded",
     perSlot: (width: string) => `${width} per bar`,
     hours: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
     days: (n: number) => (n === 1 ? "1 day" : `${n} days`),
