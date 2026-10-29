@@ -8,6 +8,7 @@ import { clip } from "@/traffic/transcript";
 import type { HitLocation, OutcomeDetail, SecurityEventView } from "@/types";
 import { replacedOf } from "./rules";
 import { Highlight, toneOf, type Mark } from "./Highlight";
+import { useRuleCatalog } from "./catalog";
 import { Code, matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { hitDetailText } from "./HitDetail.i18n";
@@ -53,6 +54,8 @@ export function HitDetail({
 }) {
   const t = useText(hitDetailText);
   const lt = useText(securityLabelsText);
+  // 规则的中文名按 id 到规则目录里查（快照里只有英文名）
+  useRuleCatalog();
   const where = lt.directions[e.direction];
   const n = e.locations.length + e.more_locations;
   const sentModel = e.sent_model && e.sent_model !== e.model ? e.sent_model : null;

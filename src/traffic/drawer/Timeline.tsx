@@ -11,6 +11,7 @@ import { appLabel, failureKind, formatLabel, notSentText } from "@/labels";
 import { useNav } from "@/nav";
 import { notSent } from "@/requestRouting";
 import { HitDetail } from "@/security/HitDetail";
+import { useRuleCatalog } from "@/security/catalog";
 import { ActionBadge, byCodepoints, EventDetail, ruleName, whereOf } from "@/security/labels";
 import { pluginName } from "@/plugins/defaults";
 import { pluginLabelsText } from "@/plugins/labels.i18n";
@@ -217,6 +218,8 @@ export function Timeline({ d, state }: { d: RequestDetail; state: DrawerState })
  * 详情里不再给「请求」的链接；会话的链接跳到流量页的那次会话。
  */
 function SecurityHits({ events }: { events: SecurityEventView[] }) {
+  // 规则名按 id 到规则目录里查（名字由 core 给），取到了重画
+  useRuleCatalog();
   const nav = useNav();
   const [open, setOpen] = useState<ReadonlySet<number>>(() => new Set());
   const toggle = (id: number) =>

@@ -292,12 +292,6 @@
       "zh-system-prompt": "系统提示词（中文）",
       "zh-jailbreak": "越狱（中文）"
     },
-    "content_why": {
-      "unicode-tags": "在编辑器中完全不可见，但会原样进入模型上下文，可用于隐藏整段指令。",
-      "bidi-controls": "可使屏幕上的显示顺序与实际字符顺序不一致。",
-      "zero-width": "在编辑器中不可见，但会被模型读到。表情符号、波斯文等正常文字也会用到。",
-      "private-use": "没有标准含义。部分图标字体会用到。"
-    },
     "zai_step": {
       "authorize_url": "获取授权地址",
       "wait_authorization": "等待授权",

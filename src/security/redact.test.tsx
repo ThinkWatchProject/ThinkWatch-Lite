@@ -1,357 +1,190 @@
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
-import CORE_ZH from "@/i18n/core.zh.json";
-import { labelsText } from "@/labels.i18n";
-import type { Matcher, SavedSource, SecretKind, SecurityEventView, SecurityRuleView } from "@/types";
+import { fetchInto, resetResources } from "@/lib/resource";
+import type { GuardDetail, SavedSource, SecurityDetail, SecurityEventView, SecurityKindView, SecurityRuleView } from "@/types";
+import { CATALOG_KEY } from "./catalog";
 import { toCsv } from "./export";
-import { EventDetail, MatcherText, prefixRuns, ruleName, savedSourceText } from "./labels";
-import { securityLabelsText } from "./labels.i18n";
+import { CoreText, EventDetail, kindName, RuleMatchText, ruleName, ruleWhy, savedSourceText, snapshotName, viewName } from "./labels";
 import { marksFromEvents } from "./marks";
-import { groupRules, patternText } from "./rules";
+import { groupRules } from "./rules";
 
 /**
- * 密钥与隐私的规则目录：core 的接口约定定死了规则 id 和类别，界面按 id 查名字、按类别
- * 分组、按检查名给说明。**少一条就退回英文名或 id**，没有东西会报错，所以这里逐条点名。
+ * 规则的名字、说明、分组名由 core 给（规则表里的 `name_zh` / `why_zh` / `about` /
+ * `about_zh`，分组是 `kinds`）。界面只管按语言取、反引号画成代码，以及缺了的时候退回得
+ * 体面：中文缺了用英文，规则目录没取到用日志里存的英文名，再没有就是 id。
  */
 
-/** 接口约定里的全部内置规则 id（原有的 30 条加扩充的） */
-const IDS = [
-  "thinkwatch-saved-secret",
-  // AI 服务
-  "anthropic-api-key",
-  "openai-project-key",
-  "openai-api-key",
-  "openai-service-key",
-  "openrouter-key",
-  "xai-key",
-  "groq-key",
-  "huggingface-token",
-  "replicate-token",
-  "perplexity-key",
-  "bedrock-api-key",
-  "fireworks-key",
-  "cerebras-key",
-  "langsmith-key",
-  "langfuse-secret-key",
-  "pinecone-key",
-  "tavily-key",
-  "minimax-key",
-  "zhipu-api-key",
-  "qianfan-api-key",
-  "sk-compat-key",
-  // 代码托管与软件发布
-  "github-personal-token",
-  "github-oauth-token",
-  "github-server-token",
-  "github-user-token",
-  "github-fine-grained-token",
-  "github-refresh-token",
-  "gitlab-token",
-  "gitlab-other-token",
-  "npm-token",
-  "pypi-token",
-  "rubygems-token",
-  "clojars-token",
-  "docker-hub-token",
-  "artifactory-key",
-  "databricks-token",
-  "sentry-token",
-  "grafana-token",
-  "postman-key",
-  // 云服务与基础设施
-  "aws-access-key-id",
-  "aws-temporary-key-id",
-  "aws-other-key-id",
-  "google-api-key",
-  "google-oauth-token",
-  "digitalocean-token",
-  "digitalocean-other-token",
-  "alibaba-access-key-id",
-  "tencent-secret-id",
-  "volcengine-access-key-id",
-  "azure-ad-client-secret",
-  "cloudflare-origin-ca-key",
-  "vault-token",
-  "terraform-token",
-  "doppler-token",
-  "pulumi-token",
-  "heroku-key",
-  "flyio-token",
-  "supabase-key",
-  "age-secret-key",
-  "onepassword-token",
-  // 支付、通信与协作
-  "slack-bot-token",
-  "slack-user-token",
-  "slack-app-token",
-  "slack-other-token",
-  "stripe-live-key",
-  "stripe-restricted-key",
-  "stripe-webhook-secret",
-  "sendgrid-key",
-  "shopify-token",
-  "twilio-api-key",
-  "brevo-key",
-  "linear-key",
-  "notion-token",
-  "atlassian-token",
-  // 私钥、JWT、连接串
-  "private-key",
-  "jwt",
-  "conn-string-password",
-  // 固定位置的凭据
-  "auth-header-credential",
-  "command-line-password",
-  "url-token",
-  "bot-webhook",
-  "telegram-bot-token",
-  "config-assignment",
-  // 加密货币
-  "crypto-mnemonic",
-  "crypto-wif-key",
-  "crypto-extended-key",
-  // 个人信息
-  "cn-resident-id",
-  "cn-resident-id-15",
-  "passport-mrz",
-  "cn-passport",
-  "hk-macau-taiwan-id",
-  "mainland-travel-permit",
-  "us-ssn",
-  "uk-nino",
-  "sg-nric",
-  "kr-rrn",
-  "jp-my-number",
-  "in-aadhaar",
-  "br-cpf",
-  "bank-card",
-  "iban",
-  "email",
-  "cn-mobile-phone",
-  "cn-landline",
-  "intl-phone",
-  "cn-address",
-  "geo-coordinates",
-  "cn-license-plate",
-  "vin",
-  "imei",
-  "mac-address",
-  "public-ip",
-  "labeled-name",
-  "labeled-address",
-  "labeled-birth-date",
-  "labeled-account",
-  "labeled-health",
-  // 内网
-  "internal-ip",
-  "internal-domain",
-];
-
-/**
- * 代码里实现的规则：视图里是 `builtin { check: <规则 id> }`，说明按 id 查。哪几条走代码、哪几条
- * 走多前缀表由 core 定，这里把可能走代码的都列上（多前缀、赋值、字段名那几种有自己的说明）
- */
-const CODE_IDS = [
-  "zhipu-api-key",
-  "qianfan-api-key",
-  "sk-compat-key",
-  "azure-ad-client-secret",
-  "terraform-token",
-  "auth-header-credential",
-  "command-line-password",
-  "url-token",
-  "bot-webhook",
-  "telegram-bot-token",
-  "crypto-mnemonic",
-  "crypto-wif-key",
-  "crypto-extended-key",
-  "cn-resident-id-15",
-  "passport-mrz",
-  "cn-passport",
-  "hk-macau-taiwan-id",
-  "mainland-travel-permit",
-  "us-ssn",
-  "uk-nino",
-  "sg-nric",
-  "kr-rrn",
-  "jp-my-number",
-  "in-aadhaar",
-  "br-cpf",
-  "iban",
-  "cn-landline",
-  "intl-phone",
-  "cn-address",
-  "geo-coordinates",
-  "cn-license-plate",
-  "vin",
-  "imei",
-  "mac-address",
-  "public-ip",
-];
-
-/** 按位置认、只换一段的规则：说明里要写明只换哪一段 */
-const POSITION_IDS = ["auth-header-credential", "command-line-password", "url-token", "bot-webhook"];
-
-/** 类别，按 core 的顺序（规则表分组的顺序） */
-const KINDS: SecretKind[] = [
-  "saved",
-  "ai-services",
-  "dev-platforms",
-  "cloud",
-  "business",
-  "private-keys",
-  "jwt",
-  "conn-strings",
-  "in-context",
-  "crypto",
-  "id-documents",
-  "foreign-ids",
-  "financial",
-  "contact",
-  "location",
-  "vehicle",
-  "device",
-  "labeled-personal",
-  "internal",
-  "custom",
-];
-
-const text = (m: Matcher) => renderToStaticMarkup(<MatcherText m={m} />).replace(/<[^>]+>/g, "");
-
-describe("规则名", () => {
-  it("每条规则都有中文名和英文名", () => {
-    const zh = CORE_ZH.tables.secret_rule as Record<string, string>;
-    const en = labelsText.en.secrets;
-    expect(IDS.filter((id) => !zh[id])).toEqual([]);
-    expect(IDS.filter((id) => !en[id])).toEqual([]);
-    // 查得到，而且不是退回 id
-    for (const id of IDS) expect(ruleName("redact", id), id).not.toBe(id);
-    setLang("en");
-    for (const id of IDS) expect(ruleName("redact", id), id).not.toBe(id);
-  });
-
-  it("两张表的条目一样，没有多出来的", () => {
-    const zh = Object.keys(CORE_ZH.tables.secret_rule).sort();
-    expect(zh).toEqual([...IDS].sort());
-    expect(Object.keys(labelsText.en.secrets).sort()).toEqual(zh);
-  });
-
-  it("按接口约定的写法", () => {
-    expect(ruleName("redact", "thinkwatch-saved-secret")).toBe("ThinkWatch 中保存的密钥");
-    expect(ruleName("redact", "sk-compat-key")).toBe("OpenAI 兼容格式 API 密钥");
-    setLang("en");
-    expect(ruleName("redact", "sk-compat-key")).toBe("OpenAI-compatible API key");
-  });
+const rule = (x: Partial<SecurityRuleView>): SecurityRuleView => ({
+  id: "anthropic-api-key",
+  custom: false,
+  name: "Anthropic API key",
+  name_zh: "Anthropic API 密钥",
+  about: "Starts with `sk-ant-`, followed by at least 20 characters",
+  about_zh: "`sk-ant-` 开头，其后至少 20 个字符",
+  kind: "ai-services",
+  matcher: { kind: "prefix", prefix: "sk-ant-", min_tail: 20 },
+  enabled: true,
+  on_by_default: true,
+  ...x,
 });
 
-describe("分组", () => {
-  it("每个类别都有中文名和英文名，旧的两类已经没有了", () => {
-    for (const lang of ["zh", "en"] as const) {
-      const kinds = securityLabelsText[lang].kinds as Record<string, string>;
-      expect(KINDS.filter((k) => !kinds[k]), lang).toEqual([]);
-      expect(kinds["api-keys"]).toBeUndefined();
-      expect(kinds.personal).toBeUndefined();
-    }
+const KINDS: SecurityKindView[] = [
+  { slug: "saved", name: "Saved credentials", name_zh: "保存的密钥" },
+  { slug: "ai-services", name: "AI services", name_zh: "AI 服务" },
+  { slug: "custom", name: "Custom", name_zh: "自定义" },
+];
+
+const guard = (rules: SecurityRuleView[], kinds?: SecurityKindView[]): GuardDetail => ({ mode: "enforce", rules, kinds });
+
+/** 把一份规则目录放进缓存，和安全页取到的一样 */
+async function seed(d: Partial<SecurityDetail>) {
+  await fetchInto(CATALOG_KEY, async () => ({
+    redact: guard([]),
+    inspect_tools: guard([]),
+    content: guard([]),
+    ...d,
+  }));
+}
+
+const html = (node: React.ReactNode) => renderToStaticMarkup(<>{node}</>);
+const plain = (node: React.ReactNode) => html(node).replace(/<[^>]+>/g, "");
+
+beforeEach(() => resetResources());
+
+describe("规则名", () => {
+  it("内置规则按界面语言取 core 给的名字", () => {
+    expect(viewName(rule({}))).toBe("Anthropic API 密钥");
+    setLang("en");
+    expect(viewName(rule({}))).toBe("Anthropic API key");
   });
 
-  it("按 core 给的顺序分组，保存的密钥在最前，自定义在最后", () => {
-    const rule = (id: string, kind: string, custom = false): SecurityRuleView => ({
-      id,
-      custom,
-      name: id,
-      why: "",
-      kind,
-      matcher: { kind: "saved" },
-      enabled: true,
-      on_by_default: true,
+  it("没有中文名的退回英文名；自定义规则就是它的名字", () => {
+    expect(viewName(rule({ name_zh: undefined }))).toBe("Anthropic API key");
+    expect(viewName(rule({ id: "客户编号", name: "客户编号", custom: true, name_zh: undefined }))).toBe("客户编号");
+  });
+
+  it("只带 id 的地方按 id 到规则目录里查", async () => {
+    // 目录还没取到：日志里存的英文名，再没有就是 id
+    expect(ruleName("redact", "anthropic-api-key", false, "Anthropic API key")).toBe("Anthropic API key");
+    expect(ruleName("redact", "anthropic-api-key")).toBe("anthropic-api-key");
+    await seed({
+      redact: guard([rule({})]),
+      inspect_tools: guard([
+        rule({ id: "curl-pipe-sh", name: "Download and run", name_zh: "下载即执行", kind: "command" }),
+      ]),
     });
-    // core 按类别排好再给；自定义规则跟在后面
-    const rows = [...KINDS.filter((k) => k !== "custom").map((k) => rule(`${k}-1`, k)), rule("客户编号", "custom", true)];
-    expect(groupRules(rows, (r) => r).map((g) => g.key)).toEqual(KINDS);
+    expect(ruleName("redact", "anthropic-api-key")).toBe("Anthropic API 密钥");
+    expect(ruleName("inspect_tools", "curl-pipe-sh")).toBe("下载即执行");
+    // 同一个 id 在别的防护里不算
+    expect(ruleName("content", "curl-pipe-sh", false, "Download and run")).toBe("Download and run");
+    // 规则已经没有了
+    expect(ruleName("redact", "gone-rule", false, "Gone rule")).toBe("Gone rule");
+    // 自定义规则原样
+    expect(ruleName("redact", "客户编号", true)).toBe("客户编号");
+    setLang("en");
+    expect(ruleName("redact", "anthropic-api-key")).toBe("Anthropic API key");
+  });
+
+  it("日志一条按快照的 id 查，快照里的英文名是退路", async () => {
+    const e = hit({
+      rule: "anthropic-api-key",
+      rule_snapshot: { builtin: true, id: "anthropic-api-key", name: "Anthropic API key", core_version: "0.85.0" },
+    });
+    expect(snapshotName(e)).toBe("Anthropic API key");
+    await seed({ redact: guard([rule({})]) });
+    expect(snapshotName(e)).toBe("Anthropic API 密钥");
   });
 });
 
 describe("规则说明", () => {
-  it("多前缀：尾部要求一样的连成一段", () => {
-    const m: Matcher = {
-      kind: "prefixes",
-      prefixes: [
-        { prefix: "hvs.", min_tail: 90, tail: "any" },
-        { prefix: "hvb.", min_tail: 138, tail: "any" },
-        { prefix: "shpat_", min_tail: 32, tail: "hex" },
-        { prefix: "shpca_", min_tail: 32, tail: "hex" },
-      ],
-    };
-    expect(prefixRuns(m.prefixes).map((r) => r.prefixes)).toEqual([["hvs."], ["hvb."], ["shpat_", "shpca_"]]);
-    expect(text(m)).toBe(
-      "hvs. 开头，其后至少 90 个字符；hvb. 开头，其后至少 138 个字符；shpat_、shpca_ 开头，其后至少 32 个十六进制字符",
+  it("why：中文界面取 why_zh，缺了退回英文", () => {
+    const r = rule({ id: "curl-pipe-sh", why: "Runs whatever the remote serves", why_zh: "下载后直接执行" });
+    expect(ruleWhy("inspect_tools", r)).toBe("下载后直接执行");
+    expect(ruleWhy("inspect_tools", { ...r, why_zh: undefined })).toBe("Runs whatever the remote serves");
+    expect(ruleWhy("inspect_tools", { ...r, why: "" })).toBe("");
+    setLang("en");
+    expect(ruleWhy("inspect_tools", r)).toBe("Runs whatever the remote serves");
+  });
+
+  it("about：按语言取，反引号里的画成代码", () => {
+    expect(html(<RuleMatchText r={rule({})} />)).toBe(
+      html(
+        <>
+          <code className="rounded bg-surface px-1 font-mono text-[0.92em] whitespace-pre text-foreground">sk-ant-</code>
+          {" 开头，其后至少 20 个字符"}
+        </>,
+      ),
     );
     setLang("en");
-    expect(text({ kind: "prefixes", prefixes: [{ prefix: "gsk_", min_tail: 52, tail: "alnum" }] })).toBe(
-      "Starts with gsk_, followed by at least 52 letters or digits",
-    );
+    expect(plain(<RuleMatchText r={rule({})} />)).toBe("Starts with sk-ant-, followed by at least 20 characters");
   });
 
-  it("保存的密钥：按值认，与格式无关", () => {
-    expect(text({ kind: "saved" })).toContain("按值识别 ThinkWatch 中保存的密钥，与格式无关");
-    setLang("en");
-    expect(text({ kind: "saved" })).toContain("Recognized by value, whatever the format");
+  it("反引号落单时照普通文字画", () => {
+    expect(plain(<CoreText text="a `b` c `d" />)).toBe("a b c `d");
+    expect(html(<CoreText text="a `b` c `d" />).match(/<code/g)?.length).toBe(1);
   });
 
-  it("配置赋值、带字段名的值：列出变量名和字段名，只换值", () => {
-    const a = text({ kind: "assignment", suffixes: ["SECRET", "API_KEY"] });
-    expect(a).toContain("SECRET、API_KEY 结尾");
-    expect(a).toContain("只换值");
-    const l = text({ kind: "labeled", names: ["姓名", "real_name"] });
-    expect(l).toContain("姓名、real_name");
-    expect(l).toContain("只换值");
-    setLang("en");
-    expect(text({ kind: "assignment", suffixes: ["SECRET", "API_KEY"] })).toContain("only the value is replaced");
-    expect(text({ kind: "labeled", names: ["dob"] })).toContain("only the value is replaced");
-  });
-
-  it("代码里认的规则各有一句说明，按位置认的写明只换哪一段", () => {
-    for (const lang of ["zh", "en"] as const) {
-      setLang(lang);
-      const other = text({ kind: "builtin", check: "no-such-check" });
-      for (const id of CODE_IDS) {
-        const s = text({ kind: "builtin", check: id });
-        expect(s, `${lang} ${id}`).not.toBe(other);
-        expect(s.length, `${lang} ${id}`).toBeGreaterThan(10);
-      }
-      for (const id of POSITION_IDS) {
-        expect(text({ kind: "builtin", check: id }), `${lang} ${id}`).toMatch(lang === "zh" ? /只换/ : /only the .* is replaced/);
-      }
-    }
-  });
-
-  it("中文说明是陈述句，不称呼用户", () => {
-    const all = [
-      ...CODE_IDS.map((id) => text({ kind: "builtin", check: id })),
-      text({ kind: "saved" }),
-      text({ kind: "assignment", suffixes: ["TOKEN"] }),
-      text({ kind: "labeled", names: ["dob"] }),
-    ];
-    // 第一、第二人称的两个字按码位写：这个文件本身也在文案检查的范围里
-    const pronouns = String.fromCharCode(0x4f60, 0x6211);
-    expect(all.filter((s) => [...pronouns].some((c) => s.includes(c)))).toEqual([]);
-  });
-
-  it("检索时多前缀、变量名、字段名也算写法", () => {
-    const r = (matcher: Matcher): SecurityRuleView => ({
-      id: "x",
-      custom: false,
-      name: "x",
-      why: "",
-      kind: "cloud",
-      matcher,
-      enabled: true,
-      on_by_default: true,
+  it("没有 about：列出写法；没有写法的说是内置检查", () => {
+    expect(plain(<RuleMatchText r={rule({ about: undefined, about_zh: undefined })} />)).toBe("sk-ant-");
+    const vault = rule({
+      about: undefined,
+      about_zh: undefined,
+      matcher: {
+        kind: "prefixes",
+        prefixes: [
+          { prefix: "hvs.", min_tail: 90, tail: "any" },
+          { prefix: "hvb.", min_tail: 138, tail: "any" },
+        ],
+      },
     });
-    expect(patternText(r({ kind: "prefixes", prefixes: [{ prefix: "hvs.", min_tail: 90, tail: "any" }] }))).toBe("hvs.");
-    expect(patternText(r({ kind: "assignment", suffixes: ["TOKEN", "SECRET"] }))).toBe("TOKEN SECRET");
-    expect(patternText(r({ kind: "labeled", names: ["dob"] }))).toBe("dob");
+    expect(plain(<RuleMatchText r={vault} />)).toBe("hvs.、hvb.");
+    expect(plain(<RuleMatchText r={rule({ about: undefined, about_zh: undefined, matcher: { kind: "jwt" } })} />)).toBe(
+      "由内置检查判断",
+    );
+  });
+
+  it("中文缺了用英文的 about", () => {
+    expect(plain(<RuleMatchText r={rule({ about_zh: undefined })} />)).toBe(
+      "Starts with sk-ant-, followed by at least 20 characters",
+    );
+  });
+
+  it("危险命令里代码实现的检查、自定义规则照判据写", () => {
+    const check = rule({ id: "secret-to-unknown-host", about: undefined, about_zh: undefined, matcher: { kind: "builtin", check: "credential-to-network" } });
+    expect(plain(<RuleMatchText r={check} />)).toBe("凭据发往本机和该凭据的服务商以外的主机");
+    const custom = rule({
+      id: "客户编号",
+      name: "客户编号",
+      custom: true,
+      about: "ignored",
+      matcher: { kind: "regex", pattern: "CUST-\\d+", case_sensitive: true },
+    });
+    expect(plain(<RuleMatchText r={custom} />)).toBe("正则 CUST-\\d+");
+  });
+});
+
+describe("分组", () => {
+  it("分组名取 core 给的 kinds", () => {
+    expect(kindName(KINDS, "ai-services")).toBe("AI 服务");
+    setLang("en");
+    expect(kindName(KINDS, "ai-services")).toBe("AI services");
+  });
+
+  it("旧的 core 不给 kinds：自定义照样叫自定义，其余写 slug", () => {
+    expect(kindName(undefined, "custom")).toBe("自定义");
+    expect(kindName(undefined, "ai-services")).toBe("ai-services");
+    expect(kindName(KINDS, "vehicle")).toBe("vehicle");
+  });
+
+  it("按 core 给的顺序分组，保存的密钥在最前，自定义在最后", () => {
+    const rows = [
+      rule({ id: "thinkwatch-saved-secret", kind: "saved" }),
+      rule({ id: "anthropic-api-key", kind: "ai-services" }),
+      rule({ id: "openai-api-key", kind: "ai-services" }),
+      rule({ id: "客户编号", custom: true, kind: "custom" }),
+    ];
+    expect(groupRules(rows, (r) => r).map((g) => g.key)).toEqual(KINDS.map((k) => k.slug));
   });
 });
 

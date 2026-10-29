@@ -44,7 +44,8 @@ import type {
   SecurityTestHit,
 } from "@/types";
 import { Highlight, lineOf, type Mark } from "./Highlight";
-import { MatcherText, modeName, ruleName, ruleWhy, viewName } from "./labels";
+import { catalogKinds } from "./catalog";
+import { kindName, modeName, RuleMatchText, ruleName, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
 import {
@@ -711,10 +712,10 @@ export function BuiltinRuleDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {viewName(guard, rule)}
+            {viewName(rule)}
             <Badge variant="secondary">{t.builtin}</Badge>
           </DialogTitle>
-          <DialogDescription>{why || t.category(lt.kinds[rule.kind] ?? rule.kind)}</DialogDescription>
+          <DialogDescription>{why || t.category(kindName(catalogKinds(guard), rule.kind))}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
@@ -723,7 +724,7 @@ export function BuiltinRuleDialog({
               {written?.match === "regex" ? (
                 <span className="font-mono tw-label break-all">{written.pattern}</span>
               ) : (
-                <MatcherText m={rule.matcher} />
+                <RuleMatchText r={rule} />
               )}
             </div>
           </Field>

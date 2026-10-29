@@ -286,11 +286,6 @@ export function stageLabel(stage: ConfigStage): string {
 
 // ---------------------------------------------------------------- 安全
 
-/** 出站检测和脱敏识别出的凭据种类 */
-export function secretLabel(secret: string): string {
-  const secrets: Record<string, string> = textOf(labelsText).secrets;
-  return secrets[secret] ?? secret;
-}
 
 // ---------------------------------------------------------------- 客户端接管
 

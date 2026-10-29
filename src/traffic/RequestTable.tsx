@@ -17,6 +17,7 @@ import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
 import { compact, latency, money, ms, statusTone, tokens, traffic, when } from "@/format";
 import { failureKind, notSentText, translatedText } from "@/labels";
+import { useRuleCatalog } from "@/security/catalog";
 import { ruleName, savedSourceText } from "@/security/labels";
 import { notSent } from "@/requestRouting";
 import { promptTokens, upstreamText, waitingFor, type Filter, type SortDir, type SortKey } from "@/requestTable";
@@ -1198,6 +1199,8 @@ function StatusCell({ r }: { r: RequestRow }) {
  */
 function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
   const t = useText(trafficText);
+  // 徽标提示里的规则名按 id 到规则目录里查（名字由 core 给），取到了重画
+  useRuleCatalog();
   const sent = notSent(r);
   const waiting = waitingFor(r);
   const mark = rowMark(r, via);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { setLang } from "./index";
-import { coreText, errorText, plain, ruleWhy } from "./core.i18n";
+import { coreText, errorText, plain } from "./core.i18n";
 import CORE_ZH from "./core.zh.json";
 import CASE_FILE from "./core.zh.cases.json";
 import { compile } from "./template";
@@ -199,24 +199,6 @@ describe("扫描发现：句子由词拼出来", () => {
       text: "Something I wrote myself. A hook runs a shell command before or after a tool call, which is execution without the model taking part.",
     };
     expect(inLang("zh", () => coreText(m))).toBe(m.text);
-  });
-});
-
-describe("工具调用防火墙命中的规则", () => {
-  it("内置规则说中文", () => {
-    expect(
-      inLang("zh", () => ruleWhy("curl-pipe-sh", "Downloads and runs it straight away")),
-    ).toBe("下载后直接执行，执行的内容由远端决定且无法预先查看");
-  });
-
-  it("用户自己写的规则原样显示", () => {
-    expect(inLang("zh", () => ruleWhy("我的规则", "我自己写的理由"))).toBe("我自己写的理由");
-  });
-
-  it("英文界面用 core 给的那句", () => {
-    expect(inLang("en", () => ruleWhy("curl-pipe-sh", "Downloads and runs it"))).toBe(
-      "Downloads and runs it",
-    );
   });
 });
 

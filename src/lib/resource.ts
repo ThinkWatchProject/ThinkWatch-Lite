@@ -323,6 +323,14 @@ export function invalidate(prefix: string) {
 }
 
 /**
+ * 缓存里现有的那一份，不取、不订阅。给渲染时顺带查一下的地方用（规则名按 id 查规则表）；
+ * 要随数据重画的，同时挂上 `useResource`。
+ */
+export function peek<T>(key: string): T | undefined {
+  return cache.get(key)?.data as T | undefined;
+}
+
+/**
  * 不再要的一份数据：没人挂着、也没在取的时候，从缓存里拿掉。
  *
  * 缓存不会自己清：平常的数据都不大，留着换来的是切回来立刻有。**大的那几样用完要丢**
