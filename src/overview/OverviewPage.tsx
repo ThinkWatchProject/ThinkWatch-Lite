@@ -14,7 +14,6 @@ import { SetupGuide } from "@/guide/SetupGuide";
 import { bucketOf, rangeId, useOverview, type Shown } from "./useOverview";
 import { OverviewStatus } from "./OverviewStatus";
 import { OverviewSkeleton } from "./OverviewSkeleton";
-import { AttentionStrip } from "./Attention";
 import { Hero } from "./Hero";
 import { Spend } from "./Spend";
 import { Quota, hasQuota } from "./Quota";
@@ -44,7 +43,7 @@ function neverUsed(d: Dashboard): boolean {
  * 这一页的每一个数字都受那条约束：**绝不让估算值混进精确数字里假装准确。**所以
  * 金额旁边永远跟着它的限定词。
  *
- * 版面：页头（状态一行、时间范围）；需要处理的事（没有就不出现）；用量（六个指标并排，
+ * 版面：页头（状态一行、时间范围）；用量（六个指标并排，
  * 选中的那个画成下面的大图）；去向和额度与余额并排；最近一年的热力图；按模型、上游、
  * 密钥分的明细表。去向和明细按什么分是同一个选择，切一处两处一起换。
  *
@@ -186,7 +185,6 @@ function Body({
         <SetupGuide upstreams={ov?.providers.length ?? 0} probes={d.summary.locally_answered} />
       ) : (
         <>
-          <AttentionStrip d={d} ov={ov} range={range} />
           <Hero
             d={d}
             range={range}

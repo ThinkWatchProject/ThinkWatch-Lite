@@ -49,6 +49,8 @@ const SECURITY: &str = "security";
 const MCP: &str = "mcp";
 const PLUGINS: &str = "plugins";
 const KEYS: &str = "keys";
+/// 流量页，只看失败的那一批
+const FAILED_REQUESTS: &str = "requests:failed";
 const SETTINGS: &str = "settings";
 /// 设置页的「网关监听」一节（`settings:<节>`，界面滚到那一节）
 const LISTEN_SETTINGS: &str = "settings:listen";
@@ -62,6 +64,9 @@ pub fn default_view(key: &str) -> &'static str {
         "scan" => MCP,
         "plugin" => PLUGINS,
         "keylimit" => KEYS,
+        "failed" => FAILED_REQUESTS,
+        // 价格设在上游页（每家上游的价目表）
+        "unpriced" => UPSTREAMS,
         // 同步要处理的事在设置的「同步与备份」；密钥改写不成的在客户端页
         "sync" => crate::sync::SYNC_VIEW,
         "keysync" => "clients",
@@ -412,6 +417,27 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             .filter_map(|i| watched("redact", provider, &i.rule, i.custom, &i.detail))
             .collect(),
         Event::KeyLimitAlert { .. } => key_limit(ev),
+        // **请求失败只进应用内**（概览上原来那条「需要处理的事」挪到这里）：多数失败是上游
+        // 一时出错，客户端会重试，为它弹系统通知不值得；一阵子接连失败攒成一条，次数照实记。
+        // 界面上中止的不算 —— 那是用户自己叫停的
+        Event::RequestFailed {
+            model,
+            source,
+            message,
+            ..
+        } if *source != "aborted" => {
+            let why = core_text::clause(message);
+            vec![
+                Signal::raised("failed", Level::Info, tr!("请求失败", "Request Failed"))
+                    .body(tr!(
+                        format!("「{model}」：{why}。"),
+                        format!("“{model}”: {why}.")
+                    ))
+                    .view(FAILED_REQUESTS)
+                    .event()
+                    .gathered(),
+            ]
+        }
         Event::PluginFailed {
             plugin_id,
             plugin_name,
@@ -673,6 +699,8 @@ pub struct Snapshot<'a> {
     pub status: &'a tw_api::Status,
     pub overview: &'a tw_api::Overview,
     pub quotas: &'a [tw_api::ProviderQuota],
+    /// 默认价目表的现状：最近 7 天里哪些上游的哪些模型有请求无法计价
+    pub pricing: &'a tw_api::PricingStatus,
 }
 
 /// 对账时认得的那几类键：**现状查得到的**。快照里没有、而列表里还开着的这几类，
@@ -688,6 +716,7 @@ pub const RECONCILED: &[&str] = &[
     "quota:",
     "config",
     "listen",
+    "unpriced:",
 ];
 
 /// 这个键是不是对账管的那几类
@@ -798,7 +827,33 @@ pub fn from_snapshot(s: &Snapshot<'_>, now_ms: u64) -> Vec<Signal> {
         .iter()
         .flat_map(from_event)
         .filter(|sig| sig.change == Change::Raised)
+        .chain(s.pricing.unpriced_models.iter().map(unpriced))
         .collect()
+}
+
+/// 一个模型最近 7 天里有请求无法计价（概览上原来那条「需要处理的事」挪到这里）。
+///
+/// **按现状说，没有对应的事件**：`request_priced` 不带模型，而无法计价是一个持续的状态 ——
+/// 价目表里没有它，就一直算不出来。每家上游的每个模型一条，点开落到上游页去设价格；
+/// 7 天里不再有算不出来的请求，对账时自己收起。只进应用内：请求照常转发，只是费用没计入
+fn unpriced(m: &tw_api::UnpricedModel) -> Signal {
+    let (provider, model, n) = (&m.provider, &m.model, m.requests);
+    Signal::raised(
+        format!("unpriced:{provider}:{model}"),
+        Level::Info,
+        tr!(
+            format!("模型「{model}」未定价"),
+            format!("No Price for “{model}”")
+        ),
+    )
+    .body(tr!(
+        format!("最近 7 天经「{provider}」的 {n} 次请求无法计价，费用未计入。在上游页为它设定价格。"),
+        format!(
+            "{n} {} through “{provider}” in the last 7 days could not be priced, so their cost is not counted. Set a price for it on the Upstreams page.",
+            if n == 1 { "request" } else { "requests" }
+        )
+    ))
+    .view(UPSTREAMS)
 }
 
 /// 「仅记录」的命中：规则的动作就是仅记录，或者防护处于「监控」（那时每条规则都按仅记录

@@ -6,7 +6,7 @@ const view = { clientHeight: 682 };
 
 describe("点热力图之后热力图留在原处", () => {
   it("上面那几块变矮了：往回滚同样的距离", () => {
-    // 「需要处理的事」收起来，热力图往上挪了 110
+    // 上面的卡片矮了一截，热力图往上挪了 110
     expect(holdTarget({ ...view, scrollTop: 759, scrollHeight: 1458, top: 190 }, 300)).toEqual({ scrollTop: 649, short: 0 });
   });
 

@@ -231,8 +231,10 @@ export default memo(function Workspace({
         return;
       }
       if (!(SURFACES as readonly string[]).includes(page ?? "")) return;
+      // `requests:failed`：流量页只看失败的那一批（「请求失败」那条提醒）
+      if (page === "requests" && id === "failed") openRef.current("requests", { grouped: false, filter: { failedOnly: true } });
       // `requests:42`：打开流量页并展开那一条（菜单栏里点了一个进行中的请求）
-      if (page === "requests" && id) openRef.current("requests", { request: Number(id) });
+      else if (page === "requests" && id) openRef.current("requests", { request: Number(id) });
       // `settings:listen`：设置页并滚到那一节（「监听设置未生效」）
       else if (page === "settings" && id) openRef.current("settings", { section: id });
       else openRef.current(page as Surface);
