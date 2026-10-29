@@ -44,7 +44,7 @@ pub fn text(m: &Msg) -> String {
     tr!(zh(m).unwrap_or_else(|| m.text.clone()), m.text.clone())
 }
 
-/// 词表里的一项（`guard`、`secret_rule`、`content_rule`…），中文。表或项不在是 `None`
+/// 词表里的一项（`guard`、`content_rule`…），中文。表或项不在是 `None`
 pub fn table_zh(table: &str, key: &str) -> Option<String> {
     self::table().tables.get(table)?.get(key).cloned()
 }
@@ -310,6 +310,31 @@ fn render(src: &str, args: &BTreeMap<String, String>, tables: &Tables) -> Option
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 消息里规则名、理由的中文（`{rule:scan_rule}`、`{rule:rule_why}`、`{rule:content_rule}`）
+    /// 查的是表里的这三张；**规则的中文本身由 core 写**（tw-guard 的规则目录，安全页显示的
+    /// 就是它）。这里钉着两边一字不差：core 改了措辞，消息里不能还是旧的那句
+    #[test]
+    fn rule_tables_match_the_core_catalog() {
+        let t = &table().tables;
+        let f = tw_guard::tools::rules::builtin();
+        let tools: Vec<_> = f.injection.iter().chain(&f.dangerous).collect();
+        let names: HashMap<String, String> = tools
+            .iter()
+            .map(|r| (r.id.clone(), r.name_zh.clone()))
+            .collect();
+        let whys: HashMap<String, String> = tools
+            .iter()
+            .map(|r| (r.id.clone(), r.why_zh.clone()))
+            .collect();
+        let content: HashMap<String, String> = tw_guard::content::builtins()
+            .iter()
+            .map(|b| (b.id.clone(), b.name_zh.clone()))
+            .collect();
+        assert_eq!(t["scan_rule"], names);
+        assert_eq!(t["rule_why"], whys);
+        assert_eq!(t["content_rule"], content);
+    }
 
     /// 表里每一句、每一层场合都写得对：写坏了的那句会悄悄退回英文
     #[test]

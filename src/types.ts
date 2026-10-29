@@ -18,6 +18,7 @@ import type {
   LatencyView,
   Msg,
   ProviderQuota,
+  SecretItem,
   Status,
   StorageStatus,
   Summary,
@@ -25,24 +26,9 @@ import type {
   TranslatedView,
 } from "./generated/tw-api";
 import type { LocalEvent } from "./generated/lite-api";
-import type { SecretItem } from "./security/api.provisional";
 
 export type * from "./generated/tw-api";
 export type * from "./generated/lite-api";
-// 临时：扩充脱敏规则的 core 发版前，这几个盖住生成的同名类型。发版后删掉这一行和那个文件
-export type {
-  GuardDetail,
-  Matcher,
-  PrefixView,
-  SavedSource,
-  SavedSourceKind,
-  SecretItem,
-  SecretKind,
-  SecurityDetail,
-  SecurityEventView,
-  SecurityKindView,
-  SecurityRuleView,
-} from "./security/api.provisional";
 
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;

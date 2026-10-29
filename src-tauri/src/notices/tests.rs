@@ -955,10 +955,11 @@ fn secrets(provider: &str, items: &[(&str, bool)]) -> tw_api::Event {
             .map(|(rule, recorded)| tw_api::SecretItem {
                 rule: (*rule).into(),
                 custom: false,
-                kind: tw_api::SecretKind::Personal,
+                kind: tw_api::SecretKind::Contact,
                 masked: "z…@example.com".into(),
                 count: 1,
                 replaced: !*recorded,
+                source: None,
                 detail: hit_detail(
                     tw_api::SecurityDirection::Request,
                     rule,
@@ -1016,6 +1017,63 @@ fn a_record_only_hit_of_every_guard_is_told_with_rule_and_upstream_only() {
             content[0].body
         );
         assert!(tool[0].body.starts_with("危险命令："), "{}", tool[0].body);
+    });
+}
+
+/// 「ThinkWatch 中保存的密钥」的命中写明是哪一处保存的，**不带值的任何部分**；规则名用 core
+/// 规则目录里的中英文名
+#[test]
+fn a_saved_secret_hit_names_where_it_is_saved_and_nothing_of_the_value() {
+    let ev = |source: tw_api::SavedSource| tw_api::Event::SecretsFound {
+        id: 4,
+        provider: "relay".into(),
+        replaced: false,
+        items: vec![tw_api::SecretItem {
+            rule: "thinkwatch-saved-secret".into(),
+            custom: false,
+            kind: tw_api::SecretKind::Saved,
+            masked: String::new(),
+            count: 2,
+            replaced: false,
+            source: Some(source),
+            detail: hit_detail(
+                tw_api::SecurityDirection::Request,
+                "thinkwatch-saved-secret",
+                "Credentials saved in ThinkWatch",
+                true,
+            ),
+        }],
+        at_ms: T0,
+    };
+    let upstream = tw_api::SavedSource {
+        kind: tw_api::SavedSourceKind::UpstreamKey,
+        name: "DeepSeek".into(),
+    };
+    with_lang(Lang::Zh, || {
+        let s = rules::from_event(&ev(upstream.clone())).remove(0);
+        assert_eq!(s.title, "安全规则「ThinkWatch 中保存的密钥」命中");
+        assert_eq!(
+            s.body,
+            "密钥与隐私：经上游「relay」的请求含有上游「DeepSeek」的密钥，已记入安全日志。"
+        );
+        let s = rules::from_event(&ev(tw_api::SavedSource {
+            kind: tw_api::SavedSourceKind::ControlKey,
+            name: String::new(),
+        }))
+        .remove(0);
+        assert!(s.body.contains("含有远程控制密钥"), "{}", s.body);
+    });
+    with_lang(Lang::En, || {
+        let s = rules::from_event(&ev(upstream.clone())).remove(0);
+        assert_eq!(
+            s.title,
+            "Security Rule “Credentials saved in ThinkWatch” Matched"
+        );
+        assert!(
+            s.body.contains("contained the key of upstream “DeepSeek”"),
+            "{}",
+            s.body
+        );
     });
 }
 

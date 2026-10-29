@@ -15,10 +15,9 @@ import type {
   ProviderModelsView,
   ProviderView,
   ResolvedPrice,
+  SecurityDetail,
   Status,
 } from "@/types";
-// 控制面的原样类型：`@/types` 里的那个暂时由 src/security/api.provisional.ts 盖住（core 发版前）
-import type { SecurityDetail } from "@/generated/tw-api";
 import OV_EN from "../core/en/overview.json";
 import KEYS_EN from "../core/en/keys.json";
 import SEC_EN from "../core/en/security.json";

@@ -1,5 +1,32 @@
 {
   "content": {
+    "kinds": [
+      {
+        "name": "Hidden characters",
+        "name_zh": "隐藏字符",
+        "slug": "invisible"
+      },
+      {
+        "name": "Instruction override",
+        "name_zh": "指令覆盖",
+        "slug": "injection"
+      },
+      {
+        "name": "Identity and prompts",
+        "name_zh": "身份与提示词",
+        "slug": "persona"
+      },
+      {
+        "name": "Chinese phrasing",
+        "name_zh": "中文说法",
+        "slug": "chinese"
+      },
+      {
+        "name": "Custom",
+        "name_zh": "自定义",
+        "slug": "custom"
+      }
+    ],
     "mode": "observe",
     "rules": [
       {
@@ -16,12 +43,14 @@
           ]
         },
         "name": "Unicode tag characters",
+        "name_zh": "Unicode 标签字符",
         "on_by_default": true,
         "replacement": "***",
         "scope": [
           "request"
         ],
-        "why": "Entirely invisible in an editor, yet carried into the model's context as they are, so they can hide a whole instruction."
+        "why": "Entirely invisible in an editor, yet carried into the model's context as they are, so they can hide a whole instruction.",
+        "why_zh": "在编辑器中完全不可见，但会原样进入模型上下文，可用于隐藏整段指令。"
       },
       {
         "action": "strip",
@@ -38,12 +67,14 @@
           ]
         },
         "name": "Bidirectional controls",
+        "name_zh": "双向控制符",
         "on_by_default": true,
         "replacement": "***",
         "scope": [
           "request"
         ],
-        "why": "They can make the order shown on screen differ from the actual order of the characters."
+        "why": "They can make the order shown on screen differ from the actual order of the characters.",
+        "why_zh": "可使屏幕上的显示顺序与实际字符顺序不一致。"
       },
       {
         "action": "strip",
@@ -61,12 +92,14 @@
           ]
         },
         "name": "Zero-width characters",
+        "name_zh": "零宽字符",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
           "request"
         ],
-        "why": "Invisible in an editor, and read by the model. Emoji, Persian and other ordinary writing use them too."
+        "why": "Invisible in an editor, and read by the model. Emoji, Persian and other ordinary writing use them too.",
+        "why_zh": "在编辑器中不可见，但会被模型读到。表情符号、波斯文等正常文字也会用到。"
       },
       {
         "action": "strip",
@@ -84,12 +117,14 @@
           ]
         },
         "name": "Private-use characters",
+        "name_zh": "私用区字符",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
           "request"
         ],
-        "why": "They have no standard meaning. Some icon fonts use them."
+        "why": "They have no standard meaning. Some icon fonts use them.",
+        "why_zh": "没有标准含义。部分图标字体会用到。"
       },
       {
         "action": "block",
@@ -103,6 +138,7 @@
           "text": "ignore previous instructions"
         },
         "name": "Ignore previous instructions",
+        "name_zh": "要求忽略先前的指令",
         "on_by_default": true,
         "replacement": "***",
         "scope": [
@@ -121,6 +157,7 @@
           "text": "ignore all previous"
         },
         "name": "Ignore all previous",
+        "name_zh": "要求忽略之前的全部内容",
         "on_by_default": true,
         "replacement": "***",
         "scope": [
@@ -139,6 +176,7 @@
           "text": "disregard your instructions"
         },
         "name": "Disregard your instructions",
+        "name_zh": "要求无视指令",
         "on_by_default": true,
         "replacement": "***",
         "scope": [
@@ -157,6 +195,7 @@
           "text": "jailbreak"
         },
         "name": "Jailbreak",
+        "name_zh": "越狱",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -175,6 +214,7 @@
           "text": " dan "
         },
         "name": "DAN",
+        "name_zh": "DAN",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -193,6 +233,7 @@
           "text": "developer mode"
         },
         "name": "Developer mode",
+        "name_zh": "开发者模式",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -211,6 +252,7 @@
           "text": "you are now"
         },
         "name": "Persona manipulation",
+        "name_zh": "重新设定身份",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -229,6 +271,7 @@
           "text": "new persona"
         },
         "name": "New persona",
+        "name_zh": "新的人设",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -247,6 +290,7 @@
           "text": "act as"
         },
         "name": "Act as",
+        "name_zh": "要求扮演角色",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -265,6 +309,7 @@
           "text": "pretend to be"
         },
         "name": "Pretend to be",
+        "name_zh": "要求假装身份",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -283,6 +328,7 @@
           "text": "system prompt"
         },
         "name": "System prompt extraction",
+        "name_zh": "索取系统提示词",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -301,6 +347,7 @@
           "text": "reveal your instructions"
         },
         "name": "Reveal instructions",
+        "name_zh": "要求透露指令",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -319,6 +366,7 @@
           "text": "what are your rules"
         },
         "name": "What are your rules",
+        "name_zh": "询问规则",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -337,6 +385,7 @@
           "pattern": "[A-Za-z0-9+/=]{50,}"
         },
         "name": "Base64 smuggling",
+        "name_zh": "长串 Base64",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -355,6 +404,7 @@
           "text": "忽略之前"
         },
         "name": "Ignore previous instructions (Chinese)",
+        "name_zh": "要求忽略先前的指令（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -373,6 +423,7 @@
           "text": "忘记你"
         },
         "name": "Forget your instructions (Chinese)",
+        "name_zh": "要求忘记指令（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -391,6 +442,7 @@
           "text": "不要遵循"
         },
         "name": "Do not follow (Chinese)",
+        "name_zh": "要求不要遵循（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -409,6 +461,7 @@
           "text": "现在你是"
         },
         "name": "You are now (Chinese)",
+        "name_zh": "重新设定身份（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -427,6 +480,7 @@
           "text": "扮演"
         },
         "name": "Role-play (Chinese)",
+        "name_zh": "要求扮演角色（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -445,6 +499,7 @@
           "text": "透露你的"
         },
         "name": "Reveal your instructions (Chinese)",
+        "name_zh": "要求透露指令（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -463,6 +518,7 @@
           "text": "系统提示词"
         },
         "name": "System prompt (Chinese)",
+        "name_zh": "系统提示词（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -481,6 +537,7 @@
           "text": "越狱"
         },
         "name": "Jailbreak (Chinese)",
+        "name_zh": "越狱（中文）",
         "on_by_default": false,
         "replacement": "***",
         "scope": [
@@ -490,6 +547,18 @@
     ]
   },
   "inspect_tools": {
+    "kinds": [
+      {
+        "name": "Built-in",
+        "name_zh": "内置",
+        "slug": "command"
+      },
+      {
+        "name": "Custom",
+        "name_zh": "自定义",
+        "slug": "custom"
+      }
+    ],
     "mode": "enforce",
     "rules": [
       {
@@ -504,8 +573,10 @@
           "pattern": "(?i)(curl|wget)[^\\n|]*\\|\\s*(sudo\\s+)?(ba|z|d)?sh"
         },
         "name": "Download and run",
+        "name_zh": "下载即执行",
         "on_by_default": true,
-        "why": "Downloads and runs it straight away; what runs is decided remotely and cannot be read first"
+        "why": "Downloads and runs it straight away; what runs is decided remotely and cannot be read first",
+        "why_zh": "下载后直接执行，执行的内容由远端决定且无法预先查看"
       },
       {
         "action": "cut",
@@ -519,8 +590,10 @@
           "pattern": "(?i)base64\\s+(-d|--decode)[^\\n|]*\\|\\s*(ba)?sh"
         },
         "name": "Decode and run",
+        "name_zh": "解码后执行",
         "on_by_default": true,
-        "why": "Hides what will run inside base64"
+        "why": "Hides what will run inside base64",
+        "why_zh": "将要执行的内容隐藏在 base64 编码中"
       },
       {
         "action": "cut",
@@ -534,8 +607,10 @@
           "pattern": "(?i)(env|printenv|cat\\s+[^\\n]{0,60}\\.env)[^\\n]{0,200}(curl|wget|nc\\s)"
         },
         "name": "Send out environment variables",
+        "name_zh": "外发环境变量",
         "on_by_default": true,
-        "why": "Sends the environment, which usually holds keys, somewhere else"
+        "why": "Sends the environment, which usually holds keys, somewhere else",
+        "why_zh": "将环境变量（通常包含密钥）发送到外部"
       },
       {
         "action": "cut",
@@ -550,8 +625,10 @@
           "pattern": "(\\.ssh/id_|\\.aws/credentials|\\.netrc|/\\.env)[^\\n]{0,30}(发|传|上报|打印|输出|贴出|读出|(?i:send|upload|post|print|paste|exfil))"
         },
         "name": "Send out a credential file",
+        "name_zh": "外发凭据文件",
         "on_by_default": true,
-        "why": "Asks the model to send the contents of a credential file somewhere"
+        "why": "Asks the model to send the contents of a credential file somewhere",
+        "why_zh": "要求模型将凭据文件的内容发送出去"
       },
       {
         "action": "cut",
@@ -566,8 +643,10 @@
           "pattern": "(发送|上传|贴出|打印|输出|读取|(?i:send|upload|post|print|read))[^\\n]{0,30}(\\.ssh/id_|\\.aws/credentials|\\.netrc|/\\.env)"
         },
         "name": "Send out a credential file (verb first)",
+        "name_zh": "外发凭据文件（动词在前）",
         "on_by_default": true,
-        "why": "Asks the model to send the contents of a credential file somewhere"
+        "why": "Asks the model to send the contents of a credential file somewhere",
+        "why_zh": "要求模型将凭据文件的内容发送出去"
       },
       {
         "action": "cut",
@@ -581,8 +660,10 @@
           "pattern": "(?i)(cat|cp|scp|curl)[^\\n]{0,200}(\\.ssh/id_|\\.aws/credentials|\\.netrc)"
         },
         "name": "Read a private key or cloud credential",
+        "name_zh": "读取私钥或云凭据",
         "on_by_default": true,
-        "why": "Reads a private key or a cloud credential"
+        "why": "Reads a private key or a cloud credential",
+        "why_zh": "读取私钥或云服务凭据"
       },
       {
         "action": "cut",
@@ -596,8 +677,10 @@
           "kind": "builtin"
         },
         "name": "Send a credential to an unknown host",
+        "name_zh": "凭据发往陌生主机",
         "on_by_default": true,
-        "why": "Sends a credential to a host that is neither local nor the credential's own provider"
+        "why": "Sends a credential to a host that is neither local nor the credential's own provider",
+        "why_zh": "将凭据发往既非本机、也不是该凭据服务商的主机"
       },
       {
         "action": "cut",
@@ -611,8 +694,10 @@
           "kind": "builtin"
         },
         "name": "Read or change ThinkWatch's own data",
+        "name_zh": "读写 ThinkWatch 自己的数据",
         "on_by_default": true,
-        "why": "Reads or changes ThinkWatch's data directory, which holds every upstream key in plain text and the settings of these protections"
+        "why": "Reads or changes ThinkWatch's data directory, which holds every upstream key in plain text and the settings of these protections",
+        "why_zh": "读写 ThinkWatch 的数据目录，其中以明文保存全部上游密钥和这几项防护的设置"
       },
       {
         "action": "cut",
@@ -627,8 +712,10 @@
           "pattern": "(>>?|tee|cp|mv|ln\\s+-s)[^\\n]{0,200}(\\.zshrc|\\.bashrc|\\.bash_profile|\\.profile|\\.zprofile|LaunchAgents|LaunchDaemons|\\.git/hooks|crontab)"
         },
         "name": "Write a startup item",
+        "name_zh": "写入启动项",
         "on_by_default": true,
-        "why": "Writes somewhere that runs at login or whenever a terminal opens"
+        "why": "Writes somewhere that runs at login or whenever a terminal opens",
+        "why_zh": "写入开机或打开终端时自动执行的位置"
       },
       {
         "action": "cut",
@@ -643,8 +730,10 @@
           "pattern": "crontab\\s+(-r\\b|-\\s*($|[\"';&|)])|[^\\s-][^\\n]{0,40})"
         },
         "name": "Install a scheduled job",
+        "name_zh": "安装定时任务",
         "on_by_default": true,
-        "why": "Installs a scheduled job, or deletes every existing one"
+        "why": "Installs a scheduled job, or deletes every existing one",
+        "why_zh": "安装定时任务，或删除全部现有定时任务"
       },
       {
         "action": "record",
@@ -659,8 +748,10 @@
           "pattern": "rm\\s+(-[a-zA-Z]*\\s+)*-[a-zA-Z]*[rf][a-zA-Z]*\\s+(/|~|\\$HOME)(\\s|$|[\"';&|)])"
         },
         "name": "Delete home or root",
+        "name_zh": "删除主目录或根目录",
         "on_by_default": true,
-        "why": "Deletes the whole home directory or the root"
+        "why": "Deletes the whole home directory or the root",
+        "why_zh": "删除整个主目录或根目录"
       },
       {
         "action": "record",
@@ -675,8 +766,10 @@
           "pattern": "chmod\\s+(-R\\s+)?777"
         },
         "name": "World-writable permissions",
+        "name_zh": "开放全部写权限",
         "on_by_default": true,
-        "why": "Makes a file writable by everyone"
+        "why": "Makes a file writable by everyone",
+        "why_zh": "将文件权限设为所有人可写"
       },
       {
         "action": "record",
@@ -690,15 +783,138 @@
           "kind": "builtin"
         },
         "name": "Upload a local file to an external host",
+        "name_zh": "上传本地文件到外部主机",
         "on_by_default": true,
-        "why": "Uploads the contents of a local file to an external host"
+        "why": "Uploads the contents of a local file to an external host",
+        "why_zh": "将本地文件的内容上传到外部主机"
       }
     ]
   },
   "redact": {
+    "kinds": [
+      {
+        "name": "Saved credentials",
+        "name_zh": "保存的密钥",
+        "slug": "saved"
+      },
+      {
+        "name": "AI services",
+        "name_zh": "AI 服务",
+        "slug": "ai-services"
+      },
+      {
+        "name": "Code hosting and publishing",
+        "name_zh": "代码托管与软件发布",
+        "slug": "dev-platforms"
+      },
+      {
+        "name": "Cloud and infrastructure",
+        "name_zh": "云服务与基础设施",
+        "slug": "cloud"
+      },
+      {
+        "name": "Payments, messaging and collaboration",
+        "name_zh": "支付、通信与协作",
+        "slug": "business"
+      },
+      {
+        "name": "Private keys",
+        "name_zh": "私钥",
+        "slug": "private-keys"
+      },
+      {
+        "name": "JWTs",
+        "name_zh": "JWT",
+        "slug": "jwt"
+      },
+      {
+        "name": "Connection strings",
+        "name_zh": "连接串",
+        "slug": "conn-strings"
+      },
+      {
+        "name": "Credentials by position",
+        "name_zh": "固定位置的凭据",
+        "slug": "in-context"
+      },
+      {
+        "name": "Cryptocurrency",
+        "name_zh": "加密货币",
+        "slug": "crypto"
+      },
+      {
+        "name": "ID documents",
+        "name_zh": "证件号码",
+        "slug": "id-documents"
+      },
+      {
+        "name": "Foreign ID numbers",
+        "name_zh": "境外证件号码",
+        "slug": "foreign-ids"
+      },
+      {
+        "name": "Financial accounts",
+        "name_zh": "金融账户",
+        "slug": "financial"
+      },
+      {
+        "name": "Contact details",
+        "name_zh": "联系方式",
+        "slug": "contact"
+      },
+      {
+        "name": "Addresses and locations",
+        "name_zh": "住址与位置",
+        "slug": "location"
+      },
+      {
+        "name": "Vehicles",
+        "name_zh": "车辆",
+        "slug": "vehicle"
+      },
+      {
+        "name": "Device and network identifiers",
+        "name_zh": "设备与网络标识",
+        "slug": "device"
+      },
+      {
+        "name": "Personal information by field name",
+        "name_zh": "带字段名的个人信息",
+        "slug": "labeled-personal"
+      },
+      {
+        "name": "Internal addresses",
+        "name_zh": "内网地址",
+        "slug": "internal"
+      },
+      {
+        "name": "Custom",
+        "name_zh": "自定义",
+        "slug": "custom"
+      }
+    ],
     "mode": "enforce",
     "rules": [
       {
+        "about": "Recognized by value, whatever the format: credentials saved in ThinkWatch, namely upstream keys and header values, gateway keys, proxy passwords, the remote control key, and sync and backup credentials. Values shorter than 12 characters are not matched",
+        "about_zh": "按值识别 ThinkWatch 中保存的密钥，与格式无关：上游密钥与请求头中的值、网关密钥、代理密码、远程控制密钥、同步与备份凭据。不足 12 个字符的值不识别",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "thinkwatch-saved-secret",
+        "kind": "saved",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "saved"
+        },
+        "name": "Credentials saved in ThinkWatch",
+        "name_zh": "ThinkWatch 中保存的密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sk-ant-`, followed by at least 20 characters",
+        "about_zh": "`sk-ant-` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -712,9 +928,12 @@
           "prefix": "sk-ant-"
         },
         "name": "Anthropic API key",
+        "name_zh": "Anthropic API 密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `sk-proj-`, followed by at least 20 characters",
+        "about_zh": "`sk-proj-` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -728,9 +947,12 @@
           "prefix": "sk-proj-"
         },
         "name": "OpenAI project key",
+        "name_zh": "OpenAI 项目密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `sk-`, at least 40 characters, with both letters and digits",
+        "about_zh": "`sk-` 开头，全长至少 40 个字符，同时含字母和数字",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -743,9 +965,441 @@
           "min_len": 40
         },
         "name": "OpenAI API key",
+        "name_zh": "OpenAI API 密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `sk-svcacct-` or `sk-admin-`, followed by at least 58 characters",
+        "about_zh": "`sk-svcacct-`、`sk-admin-` 开头，其后至少 58 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "openai-service-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 58,
+              "prefix": "sk-svcacct-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 58,
+              "prefix": "sk-admin-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "OpenAI service account or admin key",
+        "name_zh": "OpenAI 服务账号与管理密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sk-or-v1-`, followed by at least 64 hex characters",
+        "about_zh": "`sk-or-v1-` 开头，其后至少 64 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "openrouter-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 64,
+              "prefix": "sk-or-v1-",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "OpenRouter API key",
+        "name_zh": "OpenRouter API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `xai-`, followed by at least 70 letters or digits",
+        "about_zh": "`xai-` 开头，其后至少 70 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "xai-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 70,
+              "prefix": "xai-",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "xAI API key",
+        "name_zh": "xAI API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `gsk_`, followed by at least 52 letters or digits",
+        "about_zh": "`gsk_` 开头，其后至少 52 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "groq-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 52,
+              "prefix": "gsk_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Groq API key",
+        "name_zh": "Groq API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `hf_` or `api_org_`, followed by at least 34 letters or digits",
+        "about_zh": "`hf_`、`api_org_` 开头，其后至少 34 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "huggingface-token",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 34,
+              "prefix": "hf_",
+              "tail": "alnum"
+            },
+            {
+              "min_tail": 34,
+              "prefix": "api_org_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Hugging Face token",
+        "name_zh": "Hugging Face 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `r8_`, followed by at least 37 letters or digits",
+        "about_zh": "`r8_` 开头，其后至少 37 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "replicate-token",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 37,
+              "prefix": "r8_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Replicate token",
+        "name_zh": "Replicate 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `pplx-`, followed by at least 48 letters or digits",
+        "about_zh": "`pplx-` 开头，其后至少 48 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "perplexity-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 48,
+              "prefix": "pplx-",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Perplexity API key",
+        "name_zh": "Perplexity API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `ABSK`, followed by at least 100 characters",
+        "about_zh": "`ABSK` 开头，其后至少 100 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "bedrock-api-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 100,
+              "prefix": "ABSK",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Amazon Bedrock API key",
+        "name_zh": "Amazon Bedrock API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `fw_`, followed by at least 20 letters or digits",
+        "about_zh": "`fw_` 开头，其后至少 20 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "fireworks-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 20,
+              "prefix": "fw_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Fireworks AI API key",
+        "name_zh": "Fireworks AI API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `csk-`, followed by at least 48 letters or digits",
+        "about_zh": "`csk-` 开头，其后至少 48 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "cerebras-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 48,
+              "prefix": "csk-",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Cerebras API key",
+        "name_zh": "Cerebras API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `lsv2_pt_` or `lsv2_sk_`, followed by at least 43 characters",
+        "about_zh": "`lsv2_pt_`、`lsv2_sk_` 开头，其后至少 43 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "langsmith-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 43,
+              "prefix": "lsv2_pt_",
+              "tail": "any"
+            },
+            {
+              "min_tail": 43,
+              "prefix": "lsv2_sk_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "LangSmith API key",
+        "name_zh": "LangSmith API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sk-lf-`, followed by at least 36 characters",
+        "about_zh": "`sk-lf-` 开头，其后至少 36 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "langfuse-secret-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 36,
+              "prefix": "sk-lf-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Langfuse secret key",
+        "name_zh": "Langfuse 私密密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `pcsk_`, followed by at least 69 characters",
+        "about_zh": "`pcsk_` 开头，其后至少 69 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "pinecone-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 69,
+              "prefix": "pcsk_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Pinecone API key",
+        "name_zh": "Pinecone API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `tvly-`, followed by at least 32 characters",
+        "about_zh": "`tvly-` 开头，其后至少 32 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "tavily-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 32,
+              "prefix": "tvly-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Tavily API key",
+        "name_zh": "Tavily API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sk-api-`, followed by at least 100 characters",
+        "about_zh": "`sk-api-` 开头，其后至少 100 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "minimax-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 100,
+              "prefix": "sk-api-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "MiniMax API key",
+        "name_zh": "MiniMax API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "32 hex characters, `.` and 16 letters or digits, run together",
+        "about_zh": "32 个十六进制字符、`.` 与 16 个字母或数字相连",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "zhipu-api-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "check": "zhipu-api-key",
+          "kind": "builtin"
+        },
+        "name": "Zhipu API key",
+        "name_zh": "智谱 API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `bce-v3/ALTAK-`, followed by 21 letters or digits, `/` and 40 hex characters, as a whole",
+        "about_zh": "`bce-v3/ALTAK-` 开头，其后为 21 个字母或数字、`/` 与 40 个十六进制字符，整段",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "qianfan-api-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "check": "qianfan-api-key",
+          "kind": "builtin"
+        },
+        "name": "Baidu Qianfan API key",
+        "name_zh": "百度千帆 API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sk-`, followed by exactly 32 letters and digits (both present) or exactly 48 lowercase letters",
+        "about_zh": "`sk-` 开头，其后恰为 32 个字母和数字（两者都有），或恰为 48 个小写字母",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "sk-compat-key",
+        "kind": "ai-services",
+        "label": "SECRET",
+        "matcher": {
+          "check": "sk-compat-key",
+          "kind": "builtin"
+        },
+        "name": "OpenAI-compatible API key",
+        "name_zh": "OpenAI 兼容格式 API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `ghp_`, followed by at least 30 characters",
+        "about_zh": "`ghp_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -759,9 +1413,12 @@
           "prefix": "ghp_"
         },
         "name": "GitHub personal access token",
+        "name_zh": "GitHub 个人令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `gho_`, followed by at least 30 characters",
+        "about_zh": "`gho_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -775,9 +1432,12 @@
           "prefix": "gho_"
         },
         "name": "GitHub OAuth token",
+        "name_zh": "GitHub OAuth 令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `ghs_`, followed by at least 30 characters",
+        "about_zh": "`ghs_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -791,9 +1451,12 @@
           "prefix": "ghs_"
         },
         "name": "GitHub server token",
+        "name_zh": "GitHub 服务器令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `ghu_`, followed by at least 30 characters",
+        "about_zh": "`ghu_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -807,9 +1470,12 @@
           "prefix": "ghu_"
         },
         "name": "GitHub user token",
+        "name_zh": "GitHub 用户令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `github_pat_`, followed by at least 30 characters",
+        "about_zh": "`github_pat_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -823,9 +1489,12 @@
           "prefix": "github_pat_"
         },
         "name": "GitHub fine-grained token",
+        "name_zh": "GitHub 细粒度令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `glpat-`, followed by at least 15 characters",
+        "about_zh": "`glpat-` 开头，其后至少 15 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -839,9 +1508,12 @@
           "prefix": "glpat-"
         },
         "name": "GitLab token",
+        "name_zh": "GitLab 令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `npm_`, followed by at least 30 characters",
+        "about_zh": "`npm_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -855,9 +1527,331 @@
           "prefix": "npm_"
         },
         "name": "npm token",
+        "name_zh": "npm 令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `ghr_`, followed by at least 36 letters or digits",
+        "about_zh": "`ghr_` 开头，其后至少 36 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "github-refresh-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 36,
+              "prefix": "ghr_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "GitHub refresh token",
+        "name_zh": "GitHub 刷新令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `glptt-`, `gldt-`, `glrt-`, `gloas-`, `glcbt-`, `glft-`, `glsoat-`, `glimt-` or `glagent-`, followed by at least 20 characters",
+        "about_zh": "`glptt-`、`gldt-`、`glrt-`、`gloas-`、`glcbt-`、`glft-`、`glsoat-`、`glimt-`、`glagent-` 开头，其后至少 20 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "gitlab-other-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 20,
+              "prefix": "glptt-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "gldt-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "glrt-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "gloas-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "glcbt-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "glft-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "glsoat-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "glimt-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "glagent-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Other GitLab token",
+        "name_zh": "GitLab 其他令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `pypi-AgEIcHlwaS5vcmc`, followed by at least 50 characters",
+        "about_zh": "`pypi-AgEIcHlwaS5vcmc` 开头，其后至少 50 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "pypi-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 50,
+              "prefix": "pypi-AgEIcHlwaS5vcmc",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "PyPI token",
+        "name_zh": "PyPI 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `rubygems_`, followed by at least 48 hex characters",
+        "about_zh": "`rubygems_` 开头，其后至少 48 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "rubygems-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 48,
+              "prefix": "rubygems_",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "RubyGems token",
+        "name_zh": "RubyGems 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `CLOJARS_`, followed by at least 60 letters or digits",
+        "about_zh": "`CLOJARS_` 开头，其后至少 60 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "clojars-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 60,
+              "prefix": "CLOJARS_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Clojars token",
+        "name_zh": "Clojars 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `dckr_pat_`, followed by at least 27 characters; starts with `dckr_oat_`, followed by at least 32 characters",
+        "about_zh": "`dckr_pat_` 开头，其后至少 27 个字符；`dckr_oat_` 开头，其后至少 32 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "docker-hub-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 27,
+              "prefix": "dckr_pat_",
+              "tail": "any"
+            },
+            {
+              "min_tail": 32,
+              "prefix": "dckr_oat_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Docker Hub token",
+        "name_zh": "Docker Hub 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `AKCp`, followed by at least 69 letters or digits",
+        "about_zh": "`AKCp` 开头，其后至少 69 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "artifactory-key",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 69,
+              "prefix": "AKCp",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "JFrog Artifactory key",
+        "name_zh": "JFrog Artifactory 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `dapi`, followed by at least 32 hex characters",
+        "about_zh": "`dapi` 开头，其后至少 32 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "databricks-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 32,
+              "prefix": "dapi",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "Databricks token",
+        "name_zh": "Databricks 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sntrys_`, followed by at least 40 characters; starts with `sntryu_`, followed by at least 64 hex characters",
+        "about_zh": "`sntrys_` 开头，其后至少 40 个字符；`sntryu_` 开头，其后至少 64 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "sentry-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 40,
+              "prefix": "sntrys_",
+              "tail": "any"
+            },
+            {
+              "min_tail": 64,
+              "prefix": "sntryu_",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "Sentry token",
+        "name_zh": "Sentry 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `glsa_`, followed by at least 41 characters; starts with `glc_`, followed by at least 32 characters",
+        "about_zh": "`glsa_` 开头，其后至少 41 个字符；`glc_` 开头，其后至少 32 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "grafana-token",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 41,
+              "prefix": "glsa_",
+              "tail": "any"
+            },
+            {
+              "min_tail": 32,
+              "prefix": "glc_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Grafana token",
+        "name_zh": "Grafana 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `PMAK-`, followed by at least 59 characters",
+        "about_zh": "`PMAK-` 开头，其后至少 59 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "postman-key",
+        "kind": "dev-platforms",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 59,
+              "prefix": "PMAK-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Postman API key",
+        "name_zh": "Postman API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `AKIA`, followed by at least 12 characters",
+        "about_zh": "`AKIA` 开头，其后至少 12 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -871,9 +1865,12 @@
           "prefix": "AKIA"
         },
         "name": "AWS access key ID",
+        "name_zh": "AWS 访问密钥 ID",
         "on_by_default": true
       },
       {
+        "about": "Starts with `ASIA`, followed by at least 12 characters",
+        "about_zh": "`ASIA` 开头，其后至少 12 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -887,9 +1884,12 @@
           "prefix": "ASIA"
         },
         "name": "AWS temporary access key ID",
+        "name_zh": "AWS 临时访问密钥 ID",
         "on_by_default": true
       },
       {
+        "about": "Starts with `AIza`, followed by at least 30 characters",
+        "about_zh": "`AIza` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -903,9 +1903,12 @@
           "prefix": "AIza"
         },
         "name": "Google API key",
+        "name_zh": "Google API 密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `ya29.`, followed by at least 20 characters",
+        "about_zh": "`ya29.` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -919,9 +1922,12 @@
           "prefix": "ya29."
         },
         "name": "Google OAuth token",
+        "name_zh": "Google OAuth 令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `dop_v1_`, followed by at least 30 characters",
+        "about_zh": "`dop_v1_` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -935,9 +1941,409 @@
           "prefix": "dop_v1_"
         },
         "name": "DigitalOcean token",
+        "name_zh": "DigitalOcean 令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `ABIA` or `ACCA`, followed by at least 16 letters or digits",
+        "about_zh": "`ABIA`、`ACCA` 开头，其后至少 16 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "aws-other-key-id",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 16,
+              "prefix": "ABIA",
+              "tail": "alnum"
+            },
+            {
+              "min_tail": 16,
+              "prefix": "ACCA",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Other AWS access key ID",
+        "name_zh": "AWS 其他访问密钥 ID",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `LTAI`, followed by at least 12 letters or digits",
+        "about_zh": "`LTAI` 开头，其后至少 12 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "alibaba-access-key-id",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 12,
+              "prefix": "LTAI",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Alibaba Cloud AccessKey ID",
+        "name_zh": "阿里云 AccessKey ID",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `AKID`, followed by at least 32 letters or digits",
+        "about_zh": "`AKID` 开头，其后至少 32 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "tencent-secret-id",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 32,
+              "prefix": "AKID",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Tencent Cloud SecretId",
+        "name_zh": "腾讯云 SecretId",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `AKLT` or `AKTP`, followed by at least 40 characters",
+        "about_zh": "`AKLT`、`AKTP` 开头，其后至少 40 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "volcengine-access-key-id",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 40,
+              "prefix": "AKLT",
+              "tail": "any"
+            },
+            {
+              "min_tail": 40,
+              "prefix": "AKTP",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Volcengine AccessKey ID",
+        "name_zh": "火山引擎 AccessKey ID",
+        "on_by_default": true
+      },
+      {
+        "about": "Three characters, a digit and `Q~`, followed by 31 to 34 characters",
+        "about_zh": "3 个字符、1 位数字与 `Q~`，其后 31 至 34 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "azure-ad-client-secret",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "check": "azure-ad-client-secret",
+          "kind": "builtin"
+        },
+        "name": "Azure AD client secret",
+        "name_zh": "Azure AD 客户端密码",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `doo_v1_` or `dor_v1_`, followed by at least 64 hex characters",
+        "about_zh": "`doo_v1_`、`dor_v1_` 开头，其后至少 64 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "digitalocean-other-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 64,
+              "prefix": "doo_v1_",
+              "tail": "hex"
+            },
+            {
+              "min_tail": 64,
+              "prefix": "dor_v1_",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "Other DigitalOcean token",
+        "name_zh": "DigitalOcean 其他令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `v1.0-`, followed by at least 171 characters",
+        "about_zh": "`v1.0-` 开头，其后至少 171 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "cloudflare-origin-ca-key",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 171,
+              "prefix": "v1.0-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Cloudflare Origin CA key",
+        "name_zh": "Cloudflare Origin CA 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `hvs.`, followed by at least 90 characters; starts with `hvb.`, followed by at least 138 characters",
+        "about_zh": "`hvs.` 开头，其后至少 90 个字符；`hvb.` 开头，其后至少 138 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "vault-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 90,
+              "prefix": "hvs.",
+              "tail": "any"
+            },
+            {
+              "min_tail": 138,
+              "prefix": "hvb.",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "HashiCorp Vault token",
+        "name_zh": "HashiCorp Vault 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "14 letters or digits and `.atlasv1.`, followed by 60 to 70 characters",
+        "about_zh": "14 个字母或数字与 `.atlasv1.`，其后 60 至 70 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "terraform-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "check": "terraform-token",
+          "kind": "builtin"
+        },
+        "name": "Terraform Cloud token",
+        "name_zh": "Terraform Cloud 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `dp.pt.`, followed by at least 43 letters or digits",
+        "about_zh": "`dp.pt.` 开头，其后至少 43 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "doppler-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 43,
+              "prefix": "dp.pt.",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Doppler token",
+        "name_zh": "Doppler 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `pul-`, followed by at least 40 hex characters",
+        "about_zh": "`pul-` 开头，其后至少 40 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "pulumi-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 40,
+              "prefix": "pul-",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "Pulumi token",
+        "name_zh": "Pulumi 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `HRKU-AA`, followed by at least 58 characters",
+        "about_zh": "`HRKU-AA` 开头，其后至少 58 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "heroku-key",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 58,
+              "prefix": "HRKU-AA",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Heroku API key",
+        "name_zh": "Heroku API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `fo1_`, followed by at least 43 characters",
+        "about_zh": "`fo1_` 开头，其后至少 43 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "flyio-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 43,
+              "prefix": "fo1_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Fly.io token",
+        "name_zh": "Fly.io 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `sbp_`, followed by at least 40 letters or digits; starts with `sb_secret_`, followed by at least 31 characters",
+        "about_zh": "`sbp_` 开头，其后至少 40 个字母或数字；`sb_secret_` 开头，其后至少 31 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "supabase-key",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 40,
+              "prefix": "sbp_",
+              "tail": "alnum"
+            },
+            {
+              "min_tail": 31,
+              "prefix": "sb_secret_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Supabase key",
+        "name_zh": "Supabase 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `AGE-SECRET-KEY-1`, followed by at least 58 letters or digits",
+        "about_zh": "`AGE-SECRET-KEY-1` 开头，其后至少 58 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "age-secret-key",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 58,
+              "prefix": "AGE-SECRET-KEY-1",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "age secret key",
+        "name_zh": "age 私钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `ops_eyJ`, followed by at least 200 characters",
+        "about_zh": "`ops_eyJ` 开头，其后至少 200 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "onepassword-token",
+        "kind": "cloud",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 200,
+              "prefix": "ops_eyJ",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "1Password service account token",
+        "name_zh": "1Password 服务账号令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `xoxb-`, followed by at least 20 characters",
+        "about_zh": "`xoxb-` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -951,9 +2357,12 @@
           "prefix": "xoxb-"
         },
         "name": "Slack bot token",
+        "name_zh": "Slack 机器人令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `xoxp-`, followed by at least 20 characters",
+        "about_zh": "`xoxp-` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -967,9 +2376,12 @@
           "prefix": "xoxp-"
         },
         "name": "Slack user token",
+        "name_zh": "Slack 用户令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `xoxa-`, followed by at least 20 characters",
+        "about_zh": "`xoxa-` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -983,9 +2395,12 @@
           "prefix": "xoxa-"
         },
         "name": "Slack app token",
+        "name_zh": "Slack 应用令牌",
         "on_by_default": true
       },
       {
+        "about": "Starts with `sk_live_`, followed by at least 20 characters",
+        "about_zh": "`sk_live_` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -999,9 +2414,12 @@
           "prefix": "sk_live_"
         },
         "name": "Stripe live key",
+        "name_zh": "Stripe 生产密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `rk_live_`, followed by at least 20 characters",
+        "about_zh": "`rk_live_` 开头，其后至少 20 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1015,9 +2433,12 @@
           "prefix": "rk_live_"
         },
         "name": "Stripe restricted key",
+        "name_zh": "Stripe 受限密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `SG.`, followed by at least 30 characters",
+        "about_zh": "`SG.` 开头，其后至少 30 个字符",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1031,9 +2452,239 @@
           "prefix": "SG."
         },
         "name": "SendGrid key",
+        "name_zh": "SendGrid 密钥",
         "on_by_default": true
       },
       {
+        "about": "Starts with `whsec_`, followed by at least 32 characters",
+        "about_zh": "`whsec_` 开头，其后至少 32 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "stripe-webhook-secret",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 32,
+              "prefix": "whsec_",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Stripe webhook signing secret",
+        "name_zh": "Stripe Webhook 签名密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `shpat_`, `shpca_`, `shppa_` or `shpss_`, followed by at least 32 hex characters",
+        "about_zh": "`shpat_`、`shpca_`、`shppa_`、`shpss_` 开头，其后至少 32 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "shopify-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 32,
+              "prefix": "shpat_",
+              "tail": "hex"
+            },
+            {
+              "min_tail": 32,
+              "prefix": "shpca_",
+              "tail": "hex"
+            },
+            {
+              "min_tail": 32,
+              "prefix": "shppa_",
+              "tail": "hex"
+            },
+            {
+              "min_tail": 32,
+              "prefix": "shpss_",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "Shopify token",
+        "name_zh": "Shopify 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `SK`, followed by at least 32 hex characters",
+        "about_zh": "`SK` 开头，其后至少 32 个十六进制字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "twilio-api-key",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 32,
+              "prefix": "SK",
+              "tail": "hex"
+            }
+          ]
+        },
+        "name": "Twilio API key",
+        "name_zh": "Twilio API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `xkeysib-`, followed by at least 81 characters",
+        "about_zh": "`xkeysib-` 开头，其后至少 81 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "brevo-key",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 81,
+              "prefix": "xkeysib-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Brevo API key",
+        "name_zh": "Brevo API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `xapp-`, `xoxe-`, `xoxe.xoxp-`, `xoxe.xoxb-` or `xoxr-`, followed by at least 20 characters",
+        "about_zh": "`xapp-`、`xoxe-`、`xoxe.xoxp-`、`xoxe.xoxb-`、`xoxr-` 开头，其后至少 20 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "slack-other-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 20,
+              "prefix": "xapp-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "xoxe-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "xoxe.xoxp-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "xoxe.xoxb-",
+              "tail": "any"
+            },
+            {
+              "min_tail": 20,
+              "prefix": "xoxr-",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Other Slack token",
+        "name_zh": "Slack 其他令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `lin_api_`, followed by at least 40 letters or digits",
+        "about_zh": "`lin_api_` 开头，其后至少 40 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "linear-key",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 40,
+              "prefix": "lin_api_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Linear API key",
+        "name_zh": "Linear API 密钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `ntn_`, followed by at least 46 letters or digits",
+        "about_zh": "`ntn_` 开头，其后至少 46 个字母或数字",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "notion-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 46,
+              "prefix": "ntn_",
+              "tail": "alnum"
+            }
+          ]
+        },
+        "name": "Notion token",
+        "name_zh": "Notion 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `ATATT3`, followed by at least 150 characters",
+        "about_zh": "`ATATT3` 开头，其后至少 150 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "atlassian-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefixes",
+          "prefixes": [
+            {
+              "min_tail": 150,
+              "prefix": "ATATT3",
+              "tail": "any"
+            }
+          ]
+        },
+        "name": "Atlassian API token",
+        "name_zh": "Atlassian API 令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "From `-----BEGIN … PRIVATE KEY-----` to its END, as a whole",
+        "about_zh": "`-----BEGIN … PRIVATE KEY-----` 至对应的 END，整段",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1045,9 +2696,12 @@
           "kind": "pem"
         },
         "name": "Private key",
+        "name_zh": "私钥",
         "on_by_default": true
       },
       {
+        "about": "Three base64url parts; the first decodes to text containing `\"alg\"`",
+        "about_zh": "三段 base64url，首段解码后含 `\"alg\"`",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1059,9 +2713,12 @@
           "kind": "jwt"
         },
         "name": "JWT",
+        "name_zh": "JWT",
         "on_by_default": true
       },
       {
+        "about": "The password in `scheme://user:password@host`; only the password is replaced",
+        "about_zh": "`协议://用户:口令@主机` 中的口令；只换口令",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1073,9 +2730,186 @@
           "kind": "conn-string"
         },
         "name": "Connection string password",
+        "name_zh": "连接串口令",
         "on_by_default": true
       },
       {
+        "about": "The value of an `Authorization`, `X-Api-Key`, `Api-Key` or `X-Goog-Api-Key` header, in curl `-H`, raw HTTP or code; only the value is replaced",
+        "about_zh": "`Authorization`、`X-Api-Key`、`Api-Key`、`X-Goog-Api-Key` 请求头的值，包括 curl 的 `-H`、HTTP 原文与代码中的写法；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "auth-header-credential",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "auth-header-credential",
+          "kind": "builtin"
+        },
+        "name": "Credential in a request header",
+        "name_zh": "请求头中的凭据",
+        "on_by_default": true
+      },
+      {
+        "about": "Passwords on a command line: `curl -u user:password`, `--user`, `mysql -ppassword`, `PGPASSWORD=… psql`; only the password is replaced",
+        "about_zh": "命令行中的口令：`curl -u 用户:口令`、`--user`、`mysql -p口令`、`PGPASSWORD=… psql`；只换口令",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "command-line-password",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "command-line-password",
+          "kind": "builtin"
+        },
+        "name": "Password on a command line",
+        "name_zh": "命令行中的口令",
+        "on_by_default": true
+      },
+      {
+        "about": "The value of the URL query parameter `access_token`, `api_key`, `apikey`, `client_secret`, `sig`, `X-Amz-Signature` or `X-Goog-Signature`; only the parameter value is replaced",
+        "about_zh": "URL 查询参数 `access_token`、`api_key`、`apikey`、`client_secret`、`sig`、`X-Amz-Signature`、`X-Goog-Signature` 的值；只换参数值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "url-token",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "url-token",
+          "kind": "builtin"
+        },
+        "name": "Token in a URL",
+        "name_zh": "URL 中的令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "The token in a Feishu / Lark, DingTalk, WeCom, Slack, Discord or Microsoft Teams bot webhook URL; only the token is replaced",
+        "about_zh": "飞书 / Lark、钉钉、企业微信、Slack、Discord、Microsoft Teams 机器人 Webhook 地址中的令牌；只换令牌段",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "bot-webhook",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "bot-webhook",
+          "kind": "builtin"
+        },
+        "name": "Bot webhook",
+        "name_zh": "机器人 Webhook",
+        "on_by_default": true
+      },
+      {
+        "about": "8 to 10 digits and `:AA`, followed by 33 characters",
+        "about_zh": "8 至 10 位数字与 `:AA`，其后 33 个字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "telegram-bot-token",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "telegram-bot-token",
+          "kind": "builtin"
+        },
+        "name": "Telegram bot token",
+        "name_zh": "Telegram 机器人令牌",
+        "on_by_default": true
+      },
+      {
+        "about": "Assignments in `.env`, YAML, TOML, INI or JSON whose variable name ends in `SECRET`, `SECRET_KEY`, `PASSWORD`, `PASSWD`, `PWD`, `TOKEN`, `API_KEY`, `APIKEY`, `ACCESS_KEY`, `PRIVATE_KEY` or `CLIENT_SECRET` (ignoring case) and whose value is a literal of at least 8 characters; only the value is replaced. Expressions, variable references and placeholders do not count",
+        "about_zh": "`.env`、YAML、TOML、INI、JSON 中变量名以 `SECRET`、`SECRET_KEY`、`PASSWORD`、`PASSWD`、`PWD`、`TOKEN`、`API_KEY`、`APIKEY`、`ACCESS_KEY`、`PRIVATE_KEY`、`CLIENT_SECRET` 结尾（不区分大小写）、值为至少 8 个字符的字面量的赋值；只换值，表达式、变量引用和占位写法不算",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "config-assignment",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "assignment",
+          "suffixes": [
+            "SECRET",
+            "SECRET_KEY",
+            "PASSWORD",
+            "PASSWD",
+            "PWD",
+            "TOKEN",
+            "API_KEY",
+            "APIKEY",
+            "ACCESS_KEY",
+            "PRIVATE_KEY",
+            "CLIENT_SECRET"
+          ]
+        },
+        "name": "Secret assigned in a config file",
+        "name_zh": "配置文件中的密钥赋值",
+        "on_by_default": true
+      },
+      {
+        "about": "12, 15, 18, 21 or 24 consecutive words from the BIP39 English or Simplified Chinese word list that pass the checksum; numbering allowed, replaced as a whole",
+        "about_zh": "连续 12、15、18、21 或 24 个 BIP39 英文或简体中文词表中的词，并通过校验和；可带编号，整段",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-mnemonic",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-mnemonic",
+          "kind": "builtin"
+        },
+        "name": "Recovery phrase",
+        "name_zh": "助记词",
+        "on_by_default": true
+      },
+      {
+        "about": "A WIF private key of 51 or 52 characters that passes Base58Check with a valid version byte",
+        "about_zh": "51 或 52 个字符的 WIF 私钥：Base58Check 校验通过，版本字节对得上",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-wif-key",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-wif-key",
+          "kind": "builtin"
+        },
+        "name": "WIF private key",
+        "name_zh": "WIF 私钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `xprv`, `tprv`, `yprv` or `zprv` and passes Base58Check",
+        "about_zh": "`xprv`、`tprv`、`yprv`、`zprv` 开头，Base58Check 校验通过",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-extended-key",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-extended-key",
+          "kind": "builtin"
+        },
+        "name": "Extended private key",
+        "name_zh": "扩展私钥",
+        "on_by_default": true
+      },
+      {
+        "about": "An 18-character resident ID number, including residence permits for Hong Kong, Macau and Taiwan residents and foreign permanent residence ID cards, whose region code, birth date since 1900 and check character all check out",
+        "about_zh": "18 位居民身份证号（含港澳台居民居住证、外国人永久居留身份证）：地区码、1900 年以来的出生日期和校验码都对得上",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1088,9 +2922,228 @@
           "kind": "cn-resident-id"
         },
         "name": "Chinese resident ID number",
+        "name_zh": "居民身份证号",
         "on_by_default": true
       },
       {
+        "about": "A 15-digit legacy resident ID number with a valid region code and 6-digit birth date, followed by a 3-digit sequence",
+        "about_zh": "15 位旧身份证号：地区码、6 位出生日期都对得上，其后 3 位顺序码",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "cn-resident-id-15",
+        "kind": "id-documents",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "cn-resident-id-15",
+          "kind": "builtin"
+        },
+        "name": "15-digit legacy resident ID number",
+        "name_zh": "15 位旧身份证号",
+        "on_by_default": false
+      },
+      {
+        "about": "Two lines of 44 characters starting with `P`, with all four check digits and the composite check digit correct; replaced as a whole",
+        "about_zh": "两行各 44 个字符、以 `P` 开头，四处校验位与综合校验位都对得上；整段",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "passport-mrz",
+        "kind": "id-documents",
+        "label": "PASSPORT",
+        "matcher": {
+          "check": "passport-mrz",
+          "kind": "builtin"
+        },
+        "name": "Passport machine-readable zone",
+        "name_zh": "护照机读区",
+        "on_by_default": true
+      },
+      {
+        "about": "Starts with `E`, or `E` and a letter, followed by 7 or 8 digits, with “护照” or “passport” in the 20 characters before it",
+        "about_zh": "`E` 或 `E` 加一个字母开头、其后 7 至 8 位数字，且前 20 个字符内出现「护照」或「passport」",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "cn-passport",
+        "kind": "id-documents",
+        "label": "PASSPORT",
+        "matcher": {
+          "check": "cn-passport",
+          "kind": "builtin"
+        },
+        "name": "Chinese passport number",
+        "name_zh": "中国护照号",
+        "on_by_default": false
+      },
+      {
+        "about": "Hong Kong, Macau and Taiwan ID numbers: Hong Kong and Taiwan ones with a correct check character; Macau ones only when the document is named just before",
+        "about_zh": "香港、澳门、台湾身份证号：香港、台湾的校验码对得上；澳门的须前文写明证件名称",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "hk-macau-taiwan-id",
+        "kind": "id-documents",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "hk-macau-taiwan-id",
+          "kind": "builtin"
+        },
+        "name": "Hong Kong, Macau or Taiwan ID number",
+        "name_zh": "港澳台身份证号",
+        "on_by_default": false
+      },
+      {
+        "about": "Mainland travel permits for Hong Kong and Macau residents (`H` or `M` and 8 digits) and for Taiwan residents (8 digits), with “通行证”, “回乡证” or “台胞证” in the 20 characters before it",
+        "about_zh": "港澳居民来往内地通行证（`H` 或 `M` 加 8 位数字）与台湾居民来往大陆通行证（8 位数字），且前 20 个字符内出现「通行证」「回乡证」或「台胞证」",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "mainland-travel-permit",
+        "kind": "id-documents",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "mainland-travel-permit",
+          "kind": "builtin"
+        },
+        "name": "Mainland travel permit number",
+        "name_zh": "港澳台往来内地通行证号",
+        "on_by_default": false
+      },
+      {
+        "about": "A US Social Security number written as `ddd-dd-dddd`, excluding area, group and serial numbers never issued",
+        "about_zh": "`ddd-dd-dddd` 写法的美国社会安全号，不会分配的区号、组号与序号除外",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "us-ssn",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "us-ssn",
+          "kind": "builtin"
+        },
+        "name": "US Social Security number",
+        "name_zh": "美国社会安全号",
+        "on_by_default": false
+      },
+      {
+        "about": "A UK National Insurance number: 2 letters, 6 digits and one of A to D, excluding letter pairs never issued",
+        "about_zh": "2 个字母、6 位数字与 A 至 D 之一组成的英国国民保险号，不会分配的字母组合除外",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "uk-nino",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "uk-nino",
+          "kind": "builtin"
+        },
+        "name": "UK National Insurance number",
+        "name_zh": "英国国民保险号",
+        "on_by_default": false
+      },
+      {
+        "about": "Starts with S, T, F or G, followed by 7 digits and a correct check letter",
+        "about_zh": "S、T、F、G 之一开头，7 位数字加校验字母，校验字母对得上",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "sg-nric",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "sg-nric",
+          "kind": "builtin"
+        },
+        "name": "Singapore NRIC / FIN",
+        "name_zh": "新加坡 NRIC / FIN",
+        "on_by_default": false
+      },
+      {
+        "about": "A 6-digit birth date, `-` and 7 digits, with a valid date and an 8th digit from 1 to 8",
+        "about_zh": "6 位出生日期、`-` 与 7 位数字，日期有效、第 8 位为 1 至 8",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "kr-rrn",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "kr-rrn",
+          "kind": "builtin"
+        },
+        "name": "Korean resident registration number",
+        "name_zh": "韩国居民登录号",
+        "on_by_default": false
+      },
+      {
+        "about": "12 digits with a correct check digit, with “マイナンバー”, “個人番号” or “My Number” in the 20 characters before it",
+        "about_zh": "12 位数字，校验位对得上，且前 20 个字符内出现「マイナンバー」「個人番号」或「My Number」",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "jp-my-number",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "jp-my-number",
+          "kind": "builtin"
+        },
+        "name": "Japanese My Number",
+        "name_zh": "日本个人番号",
+        "on_by_default": false
+      },
+      {
+        "about": "12 digits (optionally in groups of four), the first from 2 to 9, passing the Verhoeff check",
+        "about_zh": "12 位数字（可四位一组），首位为 2 至 9，Verhoeff 校验通过",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "in-aadhaar",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "in-aadhaar",
+          "kind": "builtin"
+        },
+        "name": "Indian Aadhaar number",
+        "name_zh": "印度 Aadhaar 号码",
+        "on_by_default": false
+      },
+      {
+        "about": "A Brazilian CPF written as `ddd.ddd.ddd-dd`, with both check digits correct",
+        "about_zh": "`ddd.ddd.ddd-dd` 写法的巴西 CPF，两位校验码对得上",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "br-cpf",
+        "kind": "foreign-ids",
+        "label": "ID_NUMBER",
+        "matcher": {
+          "check": "br-cpf",
+          "kind": "builtin"
+        },
+        "name": "Brazilian CPF",
+        "name_zh": "巴西 CPF",
+        "on_by_default": false
+      },
+      {
+        "about": "A UnionPay, Visa, Mastercard, American Express, JCB, Discover or Diners Club card number whose prefix and length match and that passes the Luhn check; public test card numbers excepted",
+        "about_zh": "银联、Visa、Mastercard、American Express、JCB、Discover、Diners Club 的卡号：号段、位数对得上并通过 Luhn 校验；公开的测试卡号除外",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1216,9 +3269,30 @@
           ]
         },
         "name": "Bank card number",
+        "name_zh": "银行卡号",
         "on_by_default": true
       },
       {
+        "about": "A country code, two check digits and the account number length set for that country, passing MOD 97-10; written in one run or in groups of four",
+        "about_zh": "国家代码、两位校验码与该国规定位数的账号，MOD 97-10 校验通过；连写或四位一组",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "iban",
+        "kind": "financial",
+        "label": "ACCOUNT_NUMBER",
+        "matcher": {
+          "check": "iban",
+          "kind": "builtin"
+        },
+        "name": "IBAN",
+        "name_zh": "国际银行账号（IBAN）",
+        "on_by_default": true
+      },
+      {
+        "about": "Email addresses: `name@domain`",
+        "about_zh": "邮箱地址：`名称@域名`",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1230,9 +3304,12 @@
           "kind": "email"
         },
         "name": "Email address",
+        "name_zh": "邮箱地址",
         "on_by_default": false
       },
       {
+        "about": "Chinese mainland mobile numbers: 11 digits starting with `1`, the second 3 to 9, not run together with other digits; a `+86`, `0086` or `86-` prefix and 3-4-4 groups separated by spaces or hyphens are allowed",
+        "about_zh": "中国大陆手机号：`1` 开头的 11 位数字，第二位为 3 到 9，前后不紧挨其他数字；可带 `+86`、`0086`、`86-` 前缀，可按 3-4-4 以空格或连字符分隔",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1244,9 +3321,308 @@
           "kind": "cn-mobile-phone"
         },
         "name": "Chinese mainland mobile number",
+        "name_zh": "中国大陆手机号",
         "on_by_default": false
       },
       {
+        "about": "A 2- or 3-digit area code starting with `0` and a 7- or 8-digit number, with a valid area code and brackets or a hyphen (`010-12345678`, `(0755)1234567`)",
+        "about_zh": "`0` 开头的 2 至 3 位区号加 7 至 8 位号码，区号有效，须带括号或连字符（`010-12345678`、`(0755)1234567`）",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "cn-landline",
+        "kind": "contact",
+        "label": "PHONE",
+        "matcher": {
+          "check": "cn-landline",
+          "kind": "builtin"
+        },
+        "name": "Chinese mainland landline number",
+        "name_zh": "中国大陆固定电话",
+        "on_by_default": false
+      },
+      {
+        "about": "Starts with `+`, with a valid country code and the length set for that country; spaces and hyphens allowed",
+        "about_zh": "`+` 开头，国家码有效、位数与该国规定一致；可带空格与连字符",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "intl-phone",
+        "kind": "contact",
+        "label": "PHONE",
+        "matcher": {
+          "check": "intl-phone",
+          "kind": "builtin"
+        },
+        "name": "International phone number",
+        "name_zh": "国际电话号码",
+        "on_by_default": false
+      },
+      {
+        "about": "A Chinese mainland street address: administrative area names, a street, road, lane or village, and a house number; addresses that stop at the district do not count",
+        "about_zh": "行政区划名称、街道路巷村之一与门牌号（号、栋、单元、室）组成的中国大陆详细地址；只到区县的不算",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "cn-address",
+        "kind": "location",
+        "label": "ADDRESS",
+        "matcher": {
+          "check": "cn-address",
+          "kind": "builtin"
+        },
+        "name": "Chinese mainland street address",
+        "name_zh": "中国大陆详细地址",
+        "on_by_default": false
+      },
+      {
+        "about": "A latitude and longitude pair within range, each with at least 5 decimal places",
+        "about_zh": "成对出现、在取值范围内、小数不少于 5 位的纬度与经度",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "geo-coordinates",
+        "kind": "location",
+        "label": "LOCATION",
+        "matcher": {
+          "check": "geo-coordinates",
+          "kind": "builtin"
+        },
+        "name": "Precise coordinates",
+        "name_zh": "精确坐标",
+        "on_by_default": false
+      },
+      {
+        "about": "A province abbreviation, a letter and 5 letters or digits (6 for new-energy vehicles), without I or O",
+        "about_zh": "省份简称、字母与 5 位字母或数字（新能源车为 6 位），不含 I、O",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "cn-license-plate",
+        "kind": "vehicle",
+        "label": "PLATE",
+        "matcher": {
+          "check": "cn-license-plate",
+          "kind": "builtin"
+        },
+        "name": "Chinese mainland license plate",
+        "name_zh": "中国大陆车牌号",
+        "on_by_default": false
+      },
+      {
+        "about": "17 characters without I, O or Q, with a correct check character in position 9",
+        "about_zh": "17 个字符、不含 I、O、Q，第 9 位校验码对得上",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "vin",
+        "kind": "vehicle",
+        "label": "VIN",
+        "matcher": {
+          "check": "vin",
+          "kind": "builtin"
+        },
+        "name": "Vehicle identification number (VIN)",
+        "name_zh": "车辆识别代号（VIN）",
+        "on_by_default": false
+      },
+      {
+        "about": "15 digits passing the Luhn check, with “IMEI” in the 20 characters before it",
+        "about_zh": "15 位数字，Luhn 校验通过，且前 20 个字符内出现「IMEI」",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "imei",
+        "kind": "device",
+        "label": "DEVICE_ID",
+        "matcher": {
+          "check": "imei",
+          "kind": "builtin"
+        },
+        "name": "IMEI",
+        "name_zh": "IMEI",
+        "on_by_default": false
+      },
+      {
+        "about": "6 pairs of hex characters separated by `:` or `-`; all-zero, broadcast and multicast addresses excepted",
+        "about_zh": "6 组两位十六进制字符，以 `:` 或 `-` 分隔；全零、广播与组播地址除外",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "mac-address",
+        "kind": "device",
+        "label": "DEVICE_ID",
+        "matcher": {
+          "check": "mac-address",
+          "kind": "builtin"
+        },
+        "name": "MAC address",
+        "name_zh": "MAC 地址",
+        "on_by_default": false
+      },
+      {
+        "about": "Public IPv4 and IPv6 addresses; private, loopback, link-local, carrier-grade NAT, documentation and multicast addresses excepted",
+        "about_zh": "公网 IPv4、IPv6 地址；私有、回环、链路本地、运营商级 NAT、文档示例与组播地址除外",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "public-ip",
+        "kind": "device",
+        "label": "IP",
+        "matcher": {
+          "check": "public-ip",
+          "kind": "builtin"
+        },
+        "name": "Public IP address",
+        "name_zh": "公网 IP 地址",
+        "on_by_default": false
+      },
+      {
+        "about": "The value of a field named `姓名`, `真实姓名`, `联系人`, `收件人`, `收货人`, `real_name`, `full_name`, `legal_name`, `first_name`, `last_name`, `given_name`, `family_name` or `name`, written as `name: value`, `\"name\": \"value\"` or under a table header; only the value is replaced",
+        "about_zh": "字段名为 `姓名`、`真实姓名`、`联系人`、`收件人`、`收货人`、`real_name`、`full_name`、`legal_name`、`first_name`、`last_name`、`given_name`、`family_name`、`name` 的值，包括 `字段名: 值`、`\"字段名\": \"值\"` 与表格表头的写法；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "labeled-name",
+        "kind": "labeled-personal",
+        "label": "NAME",
+        "matcher": {
+          "kind": "labeled",
+          "names": [
+            "姓名",
+            "真实姓名",
+            "联系人",
+            "收件人",
+            "收货人",
+            "real_name",
+            "full_name",
+            "legal_name",
+            "first_name",
+            "last_name",
+            "given_name",
+            "family_name",
+            "name"
+          ]
+        },
+        "name": "Name by field name",
+        "name_zh": "带字段名的姓名",
+        "on_by_default": false
+      },
+      {
+        "about": "The value of a field named `住址`, `家庭住址`, `收货地址`, `联系地址`, `home_address`, `shipping_address`, `residential_address` or `address`, written as `name: value`, `\"name\": \"value\"` or under a table header; only the value is replaced",
+        "about_zh": "字段名为 `住址`、`家庭住址`、`收货地址`、`联系地址`、`home_address`、`shipping_address`、`residential_address`、`address` 的值，包括 `字段名: 值`、`\"字段名\": \"值\"` 与表格表头的写法；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "labeled-address",
+        "kind": "labeled-personal",
+        "label": "ADDRESS",
+        "matcher": {
+          "kind": "labeled",
+          "names": [
+            "住址",
+            "家庭住址",
+            "收货地址",
+            "联系地址",
+            "home_address",
+            "shipping_address",
+            "residential_address",
+            "address"
+          ]
+        },
+        "name": "Address by field name",
+        "name_zh": "带字段名的住址",
+        "on_by_default": false
+      },
+      {
+        "about": "The value of a field named `出生日期`, `生日`, `birthday`, `birth_date`, `date_of_birth` or `dob`, written as `name: value`, `\"name\": \"value\"` or under a table header; only the value is replaced",
+        "about_zh": "字段名为 `出生日期`、`生日`、`birthday`、`birth_date`、`date_of_birth`、`dob` 的值，包括 `字段名: 值`、`\"字段名\": \"值\"` 与表格表头的写法；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "labeled-birth-date",
+        "kind": "labeled-personal",
+        "label": "BIRTH_DATE",
+        "matcher": {
+          "kind": "labeled",
+          "names": [
+            "出生日期",
+            "生日",
+            "birthday",
+            "birth_date",
+            "date_of_birth",
+            "dob"
+          ]
+        },
+        "name": "Birth date by field name",
+        "name_zh": "带字段名的出生日期",
+        "on_by_default": false
+      },
+      {
+        "about": "The value of a field named `银行账号`, `开户账号`, `银行卡号`, `account_number`, `bank_account` or `bank_account_number`, written as `name: value`, `\"name\": \"value\"` or under a table header; only the value is replaced",
+        "about_zh": "字段名为 `银行账号`、`开户账号`、`银行卡号`、`account_number`、`bank_account`、`bank_account_number` 的值，包括 `字段名: 值`、`\"字段名\": \"值\"` 与表格表头的写法；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "labeled-account",
+        "kind": "labeled-personal",
+        "label": "ACCOUNT_NUMBER",
+        "matcher": {
+          "kind": "labeled",
+          "names": [
+            "银行账号",
+            "开户账号",
+            "银行卡号",
+            "account_number",
+            "bank_account",
+            "bank_account_number"
+          ]
+        },
+        "name": "Bank account by field name",
+        "name_zh": "带字段名的银行账号",
+        "on_by_default": false
+      },
+      {
+        "about": "The value of a field named `病历号`, `住院号`, `诊断`, `病史`, `medical_record_number` or `diagnosis`, written as `name: value`, `\"name\": \"value\"` or under a table header; only the value is replaced",
+        "about_zh": "字段名为 `病历号`、`住院号`、`诊断`、`病史`、`medical_record_number`、`diagnosis` 的值，包括 `字段名: 值`、`\"字段名\": \"值\"` 与表格表头的写法；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": false,
+        "id": "labeled-health",
+        "kind": "labeled-personal",
+        "label": "HEALTH",
+        "matcher": {
+          "kind": "labeled",
+          "names": [
+            "病历号",
+            "住院号",
+            "诊断",
+            "病史",
+            "medical_record_number",
+            "diagnosis"
+          ]
+        },
+        "name": "Health information by field name",
+        "name_zh": "带字段名的健康信息",
+        "on_by_default": false
+      },
+      {
+        "about": "Addresses starting with `10.`, `172.16–31.`, `192.168.` or `100.64–127.`, and IPv6 addresses in `fc00::/7`; not 127.0.0.1",
+        "about_zh": "`10.`、`172.16–31.`、`192.168.`、`100.64–127.` 开头的地址与 `fc00::/7` 内的 IPv6 地址，不含 127.0.0.1",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1258,9 +3634,12 @@
           "kind": "private-ip"
         },
         "name": "Internal IP address",
+        "name_zh": "内网地址",
         "on_by_default": false
       },
       {
+        "about": "Domains ending in `.local`, `.internal`, `.lan`, `.corp`, `.home.arpa` or `.intranet`",
+        "about_zh": "以 `.local`、`.internal`、`.lan`、`.corp`、`.home.arpa`、`.intranet` 结尾的域名",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -1273,10 +3652,14 @@
           "suffixes": [
             ".local",
             ".internal",
-            ".lan"
+            ".lan",
+            ".corp",
+            ".home.arpa",
+            ".intranet"
           ]
         },
         "name": "Internal domain",
+        "name_zh": "内部域名",
         "on_by_default": false
       },
       {

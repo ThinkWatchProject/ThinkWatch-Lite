@@ -35,7 +35,7 @@ const KINDS: SecurityKindView[] = [
   { slug: "custom", name: "Custom", name_zh: "自定义" },
 ];
 
-const guard = (rules: SecurityRuleView[], kinds?: SecurityKindView[]): GuardDetail => ({ mode: "enforce", rules, kinds });
+const guard = (rules: SecurityRuleView[], kinds: SecurityKindView[] = []): GuardDetail => ({ mode: "enforce", rules, kinds });
 
 /** 把一份规则目录放进缓存，和安全页取到的一样 */
 async function seed(d: Partial<SecurityDetail>) {
