@@ -28,7 +28,7 @@ before the client runs them.
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/screenshots/en/overview-dark.png">
-  <img src="docs/screenshots/en/overview-light.png" alt="The overview for the last seven days: what needs attention (failed requests, a cut tool call, unpriced requests); six cards for tokens, cost, cache hits, requests, first token and traffic, each with the change against the seven days before and a chart; and the statistics by model below">
+  <img src="docs/screenshots/en/overview-light.png" alt="The overview for the last seven days: tokens, cost, requests, cache hits, first token and traffic, each with the change against the seven days before, over a chart of the selected one; below, where the tokens went by model and the quotas and balances the upstreams report">
 </picture>
 
 ## Sponsors

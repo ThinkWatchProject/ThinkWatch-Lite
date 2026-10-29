@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { CostBucket, CostBucketGroup, Dashboard, ProviderView, Summary } from "@/types";
+import type { CostBucket, CostBucketGroup, Dashboard, Summary } from "@/types";
 import {
-  attention,
-  attentionCovered,
-  attentionMark,
   breakdown,
   cacheOf,
   delta,
@@ -15,7 +12,6 @@ import {
   liveModelsAt,
   rankCost,
   slotTitle,
-  topFailure,
   type Grid,
 } from "./series";
 import { overviewText } from "./overview.i18n";
@@ -418,94 +414,6 @@ describe("明细表", () => {
     expect(rows.map((r) => r.name)).toEqual(["c", "a", "b"]);
     expect(rows[1]).toMatchObject({ requests: 3, failed: 1, tokens: 450, ctx: 450, read: 300, cost: 15, estimated: 5 });
     expect(rows[2]).toMatchObject({ unpriced: 3 });
-  });
-});
-
-describe("失败集中在哪个上游", () => {
-  const at = 0;
-  const g = (name: string, failed: number) => group(at, name, 0, { failed, requests: failed });
-
-  it("过半才点名；没到上游的（空名字）不归给谁", () => {
-    expect(topFailure([g("openrouter", 11), g("anthropic", 4), g("", 3)], 18)).toEqual({ name: "openrouter", n: 11 });
-    expect(topFailure([g("openrouter", 9), g("anthropic", 4), g("", 5)], 18)).toBeNull();
-    expect(topFailure([g("", 18)], 18)).toBeNull();
-  });
-
-  it("跨格加起来", () => {
-    expect(topFailure([g("a", 2), { ...g("a", 2), at_ms: HOUR }, g("b", 1)], 5)).toEqual({ name: "a", n: 4 });
-  });
-
-  it("取不到按上游分的那份：不点名", () => {
-    expect(topFailure(null, 5)).toBeNull();
-  });
-});
-
-describe("需要处理的事", () => {
-  const provider = (name: string, over: Partial<ProviderView> = {}) => ({ name, disabled: false, health: "closed", ...over }) as ProviderView;
-
-  it("什么都不用处理：空的，那一条整个不出现", () => {
-    expect(attention(dashboard(0, []), [provider("a")])).toEqual([]);
-  });
-
-  it("失败、切断的工具调用、用不了的上游、无法计价，按这个次序", () => {
-    const d = dashboard(0, [], {
-      summary: summary({
-        failed: 18,
-        unpriced_requests: 3,
-        security: { ...summary().security, tool_calls: 2, tool_calls_cut: 1, secrets: 40 },
-      }),
-      buckets_by_provider: [group(0, "openrouter", 0, { failed: 11 })],
-    });
-    const items = attention(d, [
-      provider("a"),
-      provider("b", { health: "open" }),
-      provider("c", { disabled: true, health: "open" }),
-    ]);
-    expect(items).toEqual([
-      { kind: "failed", n: 18, top: { name: "openrouter", n: 11 } },
-      { kind: "toolCut", n: 1 },
-      { kind: "upstreams", down: [{ name: "b", why: "open" }] },
-      { kind: "unpriced", n: 3 },
-    ]);
-  });
-
-  describe("忽略之后什么时候再出现", () => {
-    const bucket = (at: number, over: Partial<CostBucket>) =>
-      ({ at_ms: at, requests: 1, failed: 0, unpriced_requests: 0, ...over }) as CostBucket;
-
-    it("失败：看最近一次落在哪一格、那格几条；旧的滚出区间不算新情况", () => {
-      const seen = attentionMark({ kind: "failed", n: 5, top: null }, [bucket(1, { failed: 3 }), bucket(2, { failed: 2 })]);
-      expect(seen).toEqual({ at: 2, n: 2 });
-      // 旧的那一格滚走了
-      expect(attentionCovered(seen, attentionMark({ kind: "failed", n: 2, top: null }, [bucket(2, { failed: 2 })]))).toBe(true);
-      // 同一格又多了一条
-      expect(attentionCovered(seen, attentionMark({ kind: "failed", n: 3, top: null }, [bucket(2, { failed: 3 })]))).toBe(false);
-      // 后面的格子又有了
-      expect(attentionCovered(seen, attentionMark({ kind: "failed", n: 3, top: null }, [bucket(2, { failed: 2 }), bucket(3, { failed: 1 })]))).toBe(false);
-    });
-
-    it("取不到格子时按总数：没变多就不出现", () => {
-      const seen = attentionMark({ kind: "failed", n: 5, top: null }, null);
-      expect(seen).toBe(5);
-      expect(attentionCovered(seen, 4)).toBe(true);
-      expect(attentionCovered(seen, 6)).toBe(false);
-      // 一次没取到格子、一次取到了：对不上，宁可再提醒一次
-      expect(attentionCovered(seen, { at: 1, n: 1 })).toBe(false);
-    });
-
-    it("上游：多一家、换了原因才是新情况，少一家不是", () => {
-      const seen = attentionMark({ kind: "upstreams", down: [{ name: "b", why: "open" }, { name: "a", why: "auth" }] }, null);
-      expect(seen).toEqual(["a:auth", "b:open"]);
-      expect(attentionCovered(seen, ["b:open"])).toBe(true);
-      expect(attentionCovered(seen, ["a:auth", "b:open", "c:login"])).toBe(false);
-      expect(attentionCovered(seen, ["b:login"])).toBe(false);
-    });
-  });
-
-  /** 日常的脱敏是防护在正常工作，不用处理；记录档里看见但没切断的工具调用也不算 */
-  it("只有脱敏、只记录了的工具调用：不出现", () => {
-    const d = dashboard(0, [], { summary: summary({ security: { ...summary().security, secrets: 12, secrets_replaced: 12, tool_calls: 3 } }) });
-    expect(attention(d, [])).toEqual([]);
   });
 });
 

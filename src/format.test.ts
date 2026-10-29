@@ -154,6 +154,15 @@ describe("token", () => {
     expect(compact(200_000)).toBe("200k");
     expect(compact(2_698_000)).toBe("2.7M");
   });
+
+  it("十亿以上写 B，三位有效数字；先取整再定单位", () => {
+    expect(compact(1_809_800_000)).toBe("1.81B");
+    expect(compact(18_100_000_000)).toBe("18.1B");
+    expect(compact(181_400_000_000)).toBe("181B");
+    expect(compact(999_940_000)).toBe("999.9M");
+    expect(compact(999_960_000)).toBe("1.00B");
+    expect(compact(9_996_000_000)).toBe("10.0B");
+  });
 });
 
 describe("一行的金额", () => {

@@ -17,23 +17,7 @@ export const overviewText = messages(
     noUpstreams: "尚未添加上游",
     showUpstreams: "在上游页中查看",
 
-    // 需要处理的事。一件一句，陈述式
-    attentionLabel: "需要处理的事",
-    /** 失败过半集中在一个上游时点出它；全在一个上游时说「均」 */
-    attnFailed: (n: number, top: { name: string; n: number } | null) =>
-      `${n} 次请求失败` + (top ? (top.n === n ? `，均发生在 ${top.name}` : `，其中 ${top.name} ${top.n} 次`) : ""),
-    attnToolCut: (n: number) => `危险命令防护切断了 ${n} 个可疑工具调用`,
-    attnUpstream: (name: string, why: string) => `${name} ${why}`,
-    attnUpstreams: (n: number, names: string[]) =>
-      `${n} 个上游不可用：${names.slice(0, 3).join("、")}${names.length > 3 ? " 等" : ""}`,
-    whyOpen: "熔断中",
-    whyAuth: "凭据被拒",
-    whyLogin: "需要重新登录",
-    attnUnpriced: (n: number) => `${n} 条请求无法计价：所用模型未定价，费用未计入`,
-    /** 实时档：这几句的数按 24 小时算 */
-    scoped: (period: string, text: string) => `${period}内${sp(text)}${text}`,
     viewInTraffic: "在流量中查看",
-    showLog: "在安全日志中查看",
 
     // 用量：六个指标的名目
     usageLabel: "用量",
@@ -53,7 +37,6 @@ export const overviewText = messages(
      */
     deltaTip: (period: string, before: string, now: string) => `较上一个${sp(period)}${period}：${before} → ${now}`,
     /** 上一个区间没有数据时，幅度那一格（「—」）的悬停说明 */
-    noPrior: (period: string) => `上一个${sp(period)}${period}无记录`,
 
     // 大图
     /** 悬停抬头里还没过完的那一格止于「现在」 */
@@ -62,6 +45,7 @@ export const overviewText = messages(
     today: "今天",
     /** 那一样读取失败：**不是没有** */
     chartUnavailable: "暂时取不到",
+    unrecorded: "未记录",
     /** 图例右边：一格多宽 */
     perSlot: (width: string) => `每格 ${width}`,
     hours: (n: number) => `${n} 小时`,
@@ -176,25 +160,7 @@ export const overviewText = messages(
     noUpstreams: "No upstreams yet",
     showUpstreams: "View in Upstreams",
 
-    attentionLabel: "Needs attention",
-    attnFailed: (n: number, top: { name: string; n: number } | null) =>
-      (n === 1 ? "1 request failed" : `${n} requests failed`) +
-      (top ? (top.n === n ? (n === 1 ? ` on ${top.name}` : `, all on ${top.name}`) : `, ${top.n} of them on ${top.name}`) : ""),
-    attnToolCut: (n: number) =>
-      n === 1 ? "Dangerous-command protection cut off 1 suspicious tool call" : `Dangerous-command protection cut off ${n} suspicious tool calls`,
-    attnUpstream: (name: string, why: string) => `${name}: ${why}`,
-    attnUpstreams: (n: number, names: string[]) =>
-      `${n} upstreams unavailable: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ", …" : ""}`,
-    whyOpen: "circuit open",
-    whyAuth: "credentials rejected",
-    whyLogin: "sign-in required",
-    attnUnpriced: (n: number) =>
-      n === 1
-        ? "1 request unpriced: its model has no price, so its cost is not included"
-        : `${n} requests unpriced: their models have no price, so their cost is not included`,
-    scoped: (period: string, text: string) => `Last ${period}: ${text}`,
     viewInTraffic: "View in Traffic",
-    showLog: "View in the security log",
 
     usageLabel: "Usage",
     metricsLabel: "Metrics",
@@ -207,11 +173,11 @@ export const overviewText = messages(
     chartOf: (name: string) => `${name} over time`,
 
     deltaTip: (period: string, before: string, now: string) => `vs. prior ${period}: ${before} → ${now}`,
-    noPrior: (period: string) => `No data for the prior ${period}`,
 
     now: "Now",
     today: "Today",
     chartUnavailable: "Unavailable right now",
+    unrecorded: "Not recorded",
     perSlot: (width: string) => `${width} per bar`,
     hours: (n: number) => (n === 1 ? "1 hour" : `${n} hours`),
     days: (n: number) => (n === 1 ? "1 day" : `${n} days`),

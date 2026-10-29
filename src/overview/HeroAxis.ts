@@ -15,23 +15,12 @@ const DAY = 24 * HOUR;
 /** 大图的绘图区多高（骨架照它留地方） */
 export const CHART_H = 184;
 
-/** 纵轴分几格：四格五条线 */
-export const Y_STEPS = 4;
+/** 纵轴分几格：四格或五格，哪种的顶低用哪种 */
+const STEPS = [4, 5] as const;
 
-/**
- * 纵轴的顶：四格，每格是 1 / 2 / 2.5 / 5 乘 10 的幂（乘 `unit`），顶上留出一点空，最高的
- * 那根柱子不顶着最上面那条线。
- *
- * · `integer`：数的是个数（请求、token、字节），每格必须是整数 —— 没有「2.5 次请求」。
- *   一格是 2.5 的那一档跳过，不到 1 的按 1 算：只有一两次请求的图，纵轴是 0–4。
- * · `unit`：先换算到这个单位再取整齐的数。字节按 1024 进位，取整要在 KB、MB 里取，
- *   不然刻度是「97.7 KB」。
- * · 全是零（或者没有数）时给最小的那一档：个数是 0–4，别的是 0–1 个单位。
- */
-export function niceTop(max: number, { integer = false, unit = 1 }: { integer?: boolean; unit?: number } = {}): number {
-  const m = max / unit;
-  if (!(m > 0) || !Number.isFinite(m)) return (integer ? Y_STEPS : 1) * unit;
-  const raw = (m * 1.04) / Y_STEPS;
+/** 一格在 `steps` 格下取多大：1 / 2 / 2.5 / 5 乘 10 的幂，顶上留出一点空 */
+function stepFor(m: number, steps: number, integer: boolean): number {
+  const raw = (m * 1.04) / steps;
   let e = 10 ** Math.floor(Math.log10(raw));
   for (;;) {
     for (const f of [1, 2, 2.5, 5]) {
@@ -39,15 +28,43 @@ export function niceTop(max: number, { integer = false, unit = 1 }: { integer?: 
       const step = Number((f * e).toPrecision(12));
       if (step < raw * (1 - 1e-9)) continue;
       if (integer && (step < 1 || !Number.isInteger(step))) continue;
-      return step * Y_STEPS * unit;
+      return step;
     }
     e *= 10;
   }
 }
 
-/** 纵轴上那五个数：0 到顶，四等分。浮点误差抹掉（「0.30000000000000004」） */
-export function yTicks(top: number): number[] {
-  return Array.from({ length: Y_STEPS + 1 }, (_, k) => Number(((top * k) / Y_STEPS).toPrecision(12)));
+/**
+ * 纵轴的刻度：0 到顶，每格是 1 / 2 / 2.5 / 5 乘 10 的幂（乘 `unit`），顶上留出一点空，最高
+ * 的点不贴着最上面那条线。
+ *
+ * **四格和五格里取顶低的那种。**只有四格时，峰值略超一档顶就翻倍：3.9M 的图画到 8M，上半
+ * 截空着；五格是 0–5M。两种一样高时取四格，线少一条。
+ *
+ * · `integer`：数的是个数（请求、token、字节），每格必须是整数 —— 没有「2.5 次请求」。
+ *   一格是 2.5 的那一档跳过，不到 1 的按 1 算：只有一两次请求的图，纵轴是 0–4。
+ * · `unit`：先换算到这个单位再取整齐的数。字节按 1024 进位，取整要在 KB、MB 里取，
+ *   不然刻度是「97.7 KB」。
+ * · 全是零（或者没有数）时给最小的那一档：个数是 0–4，别的是 0–1 个单位。
+ *
+ * 返回各条刻度线的值（浮点误差抹掉，没有「0.30000000000000004」），最后一个是顶。
+ */
+export function niceTicks(max: number, { integer = false, unit = 1 }: { integer?: boolean; unit?: number } = {}): number[] {
+  const m = max / unit;
+  let steps = 4;
+  let step = integer ? 1 : 0.25;
+  if (m > 0 && Number.isFinite(m)) {
+    let best = Infinity;
+    for (const n of STEPS) {
+      const s = stepFor(m, n, integer);
+      if (s * n < best - 1e-9) {
+        best = s * n;
+        steps = n;
+        step = s;
+      }
+    }
+  }
+  return Array.from({ length: steps + 1 }, (_, k) => Number((step * k * unit).toPrecision(12)));
 }
 
 /**

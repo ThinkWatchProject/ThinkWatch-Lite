@@ -85,12 +85,12 @@ export function OverviewSkeleton() {
         <Skeleton className="mt-6 h-[150px] w-full rounded-md opacity-40" />
       </div>
 
-      {/* 明细表：切换 28、8、表头 28、行 31 */}
-      <div>
+      {/* 明细：和上面几块同一副外框。标题行 28、8、表头 28、行 31 */}
+      <div className="rounded-[10px] border border-border bg-panel px-4 pt-3 pb-1">
         <Skeleton className="h-7 w-40 rounded-lg" />
         <div className="mt-2 h-7 border-b border-border" />
         {[0.9, 0.6, 0.4, 0.25].map((w, i) => (
-          <div key={i} className="flex h-[31px] items-center gap-6 border-b border-border" style={{ opacity: 1 - i * 0.18 }}>
+          <div key={i} className="flex h-[31px] items-center gap-6 border-b border-border last:border-b-0" style={{ opacity: 1 - i * 0.18 }}>
             <Skeleton className="h-3 rounded-sm" style={{ width: `${w * 30}%` }} />
             <div className="ml-auto flex gap-6">
               {[0, 1, 2, 3, 4, 5].map((j) => (

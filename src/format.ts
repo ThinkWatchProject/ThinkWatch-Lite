@@ -116,6 +116,9 @@ function sameDay(a: Date, b: Date): boolean {
  * **先按这一档的精度取整，再看它还在不在这一档。**按取整之前的值挑单位的话，
  * 9_960 落在「一位小数的 k」那一档，写出来是「10.0k」；999_600 落在「整数 k」
  * 那一档，写出来是「1000k」。取整之后进了位的，交给下一档去写（「10k」「1.0M」）。
+ *
+ * 十亿以上写 B，三位有效数字（「1.81B」「18.1B」「181B」）：一个月的用量过十亿很常见，
+ * 写成「1809.8M」是六位数加一位小数，比账本上的数还难掂量。
  */
 export function compact(n: number): string {
   if (n < 1000) return String(n);
@@ -123,7 +126,10 @@ export function compact(n: number): string {
   if (Number(tenths) < 10) return `${tenths}k`;
   const k = Math.round(n / 1000);
   if (k < 1000) return `${k}k`;
-  return `${(n / 1_000_000).toFixed(1)}M`;
+  const m = (n / 1_000_000).toFixed(1);
+  if (Number(m) < 1000) return `${m}M`;
+  const b = n / 1_000_000_000;
+  return `${b >= 999.5 ? Math.round(b) : b.toPrecision(3)}B`;
 }
 
 /**

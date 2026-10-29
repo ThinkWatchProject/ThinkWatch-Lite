@@ -34,9 +34,9 @@ export function Quota({ d, ov }: { d: Dashboard; ov: Overview | null }) {
     <section
       aria-label={t.title}
       data-slot="overview-quota"
-      className="flex min-w-0 flex-col rounded-[10px] border border-border bg-panel px-3.5 pt-3 pb-2"
+      className="flex min-w-0 flex-col rounded-[10px] border border-border bg-panel px-4 pt-3 pb-2"
     >
-      <div className="flex h-7 items-center gap-2.5 px-0.5">
+      <div className="flex h-7 items-center gap-2.5">
         <h3 className="tw-head text-muted-foreground">{t.title}</h3>
         <LinkText className="ml-auto tw-label text-muted-foreground hover:text-foreground" onOpen={() => nav.open("upstreams")}>
           {t.showUpstreams}
@@ -80,7 +80,7 @@ function Row({ r, now }: { r: QuotaRow; now: number }) {
     <span className="ml-auto shrink-0 tw-label whitespace-nowrap text-muted-foreground">{t.resetAt(clock)}</span>
   ) : null;
   return (
-    <li className="border-t border-border/60 px-0.5 py-2 first:border-t-0">
+    <li className="border-t border-border/60 py-2 first:border-t-0">
       <div className="flex h-5 min-w-0 items-center gap-2.5">
         <UpstreamLogo name={p.name} baseUrl={p.base_url} protocol={p.protocol} className="text-muted-foreground" />
         <span className="shrink-0 tw-body whitespace-nowrap">{p.name}</span>

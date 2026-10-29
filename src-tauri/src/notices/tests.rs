@@ -1707,8 +1707,14 @@ fn chinese_notices_say_core_reasons_in_chinese() {
 // ---------------------------------------------------------------- 对账
 
 /// 一份真的现状：隔离实例里凭据在启动时就失效（令牌端点回 invalid_grant）、配置文件
-/// 刚被外部改坏；额度那一段是手写的（一个窗口用完、一个没有）
-fn snapshot() -> (tw_api::Status, tw_api::Overview, Vec<tw_api::ProviderQuota>) {
+/// 刚被外部改坏；额度那一段是手写的（一个窗口用完、一个没有）；价目表那一段也是手写的
+/// （一个模型最近有 13 次请求无法计价）
+fn snapshot() -> (
+    tw_api::Status,
+    tw_api::Overview,
+    Vec<tw_api::ProviderQuota>,
+    tw_api::PricingStatus,
+) {
     #[derive(serde::Deserialize)]
     struct F {
         status: tw_api::Status,
@@ -1716,15 +1722,25 @@ fn snapshot() -> (tw_api::Status, tw_api::Overview, Vec<tw_api::ProviderQuota>) 
         quotas: Vec<tw_api::ProviderQuota>,
     }
     let f: F = serde_json::from_str(include_str!("fixtures/snapshot.json")).unwrap();
-    (f.status, f.overview, f.quotas)
+    let pricing = serde_json::from_value(serde_json::json!({
+        "date": "2026-10-28",
+        "source": "fetched",
+        "models": 2400,
+        "auto_update": true,
+        "unpriced_recent": 13,
+        "unpriced_models": [{ "provider": "openrouter", "model": "qwen/qwen3-coder-plus", "requests": 13 }],
+    }))
+    .unwrap();
+    (f.status, f.overview, f.quotas, pricing)
 }
 
 fn snapshot_keys(now: u64) -> Vec<String> {
-    let (status, overview, quotas) = snapshot();
+    let (status, overview, quotas, pricing) = snapshot();
     let snap = rules::Snapshot {
         status: &status,
         overview: &overview,
         quotas: &quotas,
+        pricing: &pricing,
     };
     let mut keys: Vec<String> = rules::from_snapshot(&snap, now)
         .into_iter()
@@ -1739,19 +1755,29 @@ fn snapshot_keys(now: u64) -> Vec<String> {
 fn the_snapshot_says_what_the_events_would_have_said() {
     assert_eq!(
         snapshot_keys(T0),
-        ["config", "credential:官方", "quota:chatgpt:primary"]
+        [
+            "config",
+            "credential:官方",
+            "quota:chatgpt:primary",
+            "unpriced:openrouter:qwen/qwen3-coder-plus"
+        ]
     );
     // 到了重置的时刻，那个窗口就不算用完了
     assert_eq!(
         snapshot_keys(4_102_444_800_001),
-        ["config", "credential:官方"]
+        [
+            "config",
+            "credential:官方",
+            "unpriced:openrouter:qwen/qwen3-coder-plus"
+        ]
     );
     with_lang(Lang::Zh, || {
-        let (status, overview, quotas) = snapshot();
+        let (status, overview, quotas, pricing) = snapshot();
         let snap = rules::Snapshot {
             status: &status,
             overview: &overview,
             quotas: &quotas,
+            pricing: &pricing,
         };
         let s = rules::from_snapshot(&snap, T0);
         let cred = s.iter().find(|s| s.key == "credential:官方").unwrap();
@@ -1761,7 +1787,38 @@ fn the_snapshot_says_what_the_events_would_have_said() {
             config.body,
             "网关密钥名称「default」重复。上一版配置仍在服务。"
         );
+        let unpriced = s.iter().find(|s| s.key.starts_with("unpriced:")).unwrap();
+        assert_eq!(unpriced.title, "模型「qwen/qwen3-coder-plus」未定价");
+        assert_eq!(
+            unpriced.body,
+            "最近 7 天经「openrouter」的 13 次请求无法计价，费用未计入。在上游页为它设定价格。"
+        );
+        assert_eq!(unpriced.level, Level::Info);
     });
+}
+
+/// 请求失败只进应用内、攒成一条（概览上那条「需要处理的事」挪到了提醒里）；界面上中止的不算
+#[test]
+fn a_failed_request_is_an_in_app_notice_and_an_abort_is_not() {
+    let failed = |source: tw_api::FailureSource| {
+        rules::from_event(&tw_api::Event::RequestFailed {
+            id: 9,
+            model: "claude-sonnet-5".into(),
+            source,
+            message: msg("gw.upstream.status", "upstream returned 529"),
+            sent_bytes: None,
+            received_bytes: None,
+            duration_ms: None,
+            usage: None,
+            answered_model: None,
+        })
+    };
+    let s = failed(tw_api::FailureSource::Upstream);
+    assert_eq!(s.len(), 1);
+    assert_eq!(s[0].key, "failed");
+    assert_eq!(s[0].level, Level::Info);
+    assert_eq!(rules::default_view("failed"), "requests:failed");
+    assert!(failed(tw_api::FailureSource::Aborted).is_empty());
 }
 
 /// 对账：**开着的不动**（不涨次数、看过的还是看过的、不再弹），没开的补上，现状里
@@ -1794,11 +1851,12 @@ async fn reconciling_fills_in_what_was_missed_without_saying_anything_twice() {
     );
     let shown_before = b.titles().len();
 
-    let (status, overview, quotas) = snapshot();
+    let (status, overview, quotas, pricing) = snapshot();
     let snap = rules::Snapshot {
         status: &status,
         overview: &overview,
         quotas: &quotas,
+        pricing: &pricing,
     };
     let asked_at = T0 + 1_000;
     b.bus

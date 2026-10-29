@@ -477,6 +477,19 @@ pub(crate) async fn bridge_events(app: tauri::AppHandle) {
                 if matches!(ev, tw_api::Event::EventsDropped { .. }) {
                     reconcile_notices(&a);
                 }
+                // **算不出费用的请求落地了**：哪个模型没有价格，事件里没有，按现状对一次账
+                // （`/pricing` 说得出是哪家上游的哪个模型）。一分钟最多一次：一个没定价的
+                // 模型每个请求都会来一条
+                if matches!(
+                    ev,
+                    tw_api::Event::RequestPriced {
+                        cost_micros: None,
+                        ..
+                    }
+                ) && unpriced_due()
+                {
+                    reconcile_notices(&a);
+                }
                 // **安全模式下换进了一份能用的配置**（界面里改好保存、一键修复、回滚、在
                 // 编辑器里改好）：按正常模式重启，网关自己恢复，不用再去点「重新启动」
                 if matches!(ev, tw_api::Event::ConfigReloaded { .. })
@@ -560,6 +573,20 @@ async fn until_switched<F: std::future::Future>(
     }
 }
 
+/// 无法计价触发的对账，上一次是什么时候（毫秒）。见事件流里 `RequestPriced` 那一处
+static UNPRICED_AT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// 离上一次无法计价触发的对账过了一分钟没有；过了就记下这一次
+fn unpriced_due() -> bool {
+    use std::sync::atomic::Ordering;
+    let now = notices::now_ms();
+    let last = UNPRICED_AT.load(Ordering::Relaxed);
+    now.saturating_sub(last) >= 60_000
+        && UNPRICED_AT
+            .compare_exchange(last, now, Ordering::Relaxed, Ordering::Relaxed)
+            .is_ok()
+}
+
 /// 提醒按 core 的现状对账（见 [`notices::Notices::reconcile`]）。问不到就算了：
 /// 下一次接上还会再问，事件流上来的照常处理。
 pub(crate) fn reconcile_notices(app: &tauri::AppHandle) {
@@ -573,12 +600,15 @@ pub(crate) fn reconcile_notices(app: &tauri::AppHandle) {
         };
         let asked_at = notices::now_ms();
         let c = &st.control;
-        let (status, overview, quotas) = tokio::join!(
+        let (status, overview, quotas, pricing) = tokio::join!(
             c.status(),
             c.call::<ep::Overview>(&[], &()),
-            c.call::<ep::Quota>(&[], &())
+            c.call::<ep::Quota>(&[], &()),
+            c.call::<ep::Pricing>(&[], &())
         );
-        let (Ok(status), Ok(overview), Ok(quotas)) = (status, overview, quotas) else {
+        let (Ok(status), Ok(overview), Ok(quotas), Ok(pricing)) =
+            (status, overview, quotas, pricing)
+        else {
             tracing::debug!("提醒对账：没问到 core 的现状");
             return;
         };
@@ -586,6 +616,7 @@ pub(crate) fn reconcile_notices(app: &tauri::AppHandle) {
             status: &status,
             overview: &overview,
             quotas: &quotas,
+            pricing: &pricing,
         };
         n.reconcile(notices::rules::from_snapshot(&snap, asked_at), asked_at);
     });

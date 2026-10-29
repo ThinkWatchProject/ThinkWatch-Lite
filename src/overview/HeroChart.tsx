@@ -1,8 +1,8 @@
-import { useId, useLayoutEffect, useState, type KeyboardEvent, type ReactNode } from "react";
+import { useId, useLayoutEffect, useState, type KeyboardEvent } from "react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { slotTitle, type Grid } from "./series";
-import { CHART_H, slotPhase, xTicks, yTicks } from "./HeroAxis";
+import { CHART_H, slotPhase, xTicks } from "./HeroAxis";
 import { lineGeometry } from "./geometry";
 import { overviewText } from "./overview.i18n";
 
@@ -15,14 +15,15 @@ import { overviewText } from "./overview.i18n";
 export type TipRow = { v: string; k: string; key?: string };
 export type TipBody = { main: string; rows: TipRow[]; rows2: TipRow[] };
 
+/** 一条线。`wash`：线下面铺一片淡色（面积曲线）；`dash`：画成虚线（进行中的那一段） */
+export type ChartLine = { values: readonly (number | null)[]; color: string; wash?: boolean; dash?: boolean };
+
 export interface ChartSpec {
   grid: Grid;
-  /** 柱：`a` 在下，`b` 叠在上面（失败、下载），中间留 2px */
-  bars: { a: readonly number[]; b?: readonly number[]; colorA: string; colorB?: string } | null;
-  /** 线：第一条是主要的。`wash`：线下面铺一片淡色 */
-  lines: { values: readonly (number | null)[]; color: string; wash?: boolean }[] | null;
-  /** 纵轴的顶 */
-  top: number;
+  /** 线：第一条是主要的 */
+  lines: ChartLine[];
+  /** 纵轴各条刻度线的值，最后一个是顶（`niceTicks`） */
+  ticks: number[];
   axis: (v: number) => string;
   tip: (i: number) => TipBody;
   legend: { label: string; color: string; shape: "rect" | "stroke" }[];
@@ -47,13 +48,12 @@ function useWidth(el: HTMLElement | null): number {
 const TICK_W = 64;
 
 /**
- * 大图：左边纵轴四格，横向网格线，柱或线，下面横轴的日期、时刻。指着（或键盘的左右键）
- * 逐格出提示：柱的那一格底色升一档，线的那一格画竖线和点。正在进行的那一格（到现在为止，
- * 还没过完）画淡一些；「某一天」选的是今天时，此刻之后的格子空着，指不上。
+ * 大图：左边纵轴四五格，横向网格线，线（可加的指标线下铺淡色），下面横轴的日期、时刻。
+ * 指着（或键盘的左右键）逐格出提示，那一格画竖线、每条线上一个点。正在进行的那一格（到现在
+ * 为止，还没过完）用虚线接上；「某一天」选的是今天时，此刻之后的格子空着，指不上。还没有
+ * 逐条记录的前几格铺一片淡底、写「未记录」，不画线。
  *
- * 柱子最宽 16px、不超过格宽的七成，顶上 4px 圆角，叠起来的两段之间空 2px；有量的那一段
- * 至少看得见（约 2px）。线 2px，没有样本的格子断开、用一段淡的虚线接上（`lineGeometry`）。
- * 没有入场动画；换区间时柱高走过渡（`motion-bar`），实时档不走 —— 格子每十秒挪一次。
+ * 线 2px，没有样本的格子断开、用一段淡的虚线接上（`lineGeometry`）。没有入场动画。
  */
 export function Chart({
   spec,
@@ -62,6 +62,7 @@ export function Chart({
   now,
   live,
   label,
+  unrecorded = 0,
 }: {
   spec: ChartSpec | null;
   cursor: number | null;
@@ -69,6 +70,8 @@ export function Chart({
   now: number;
   live: boolean;
   label: string;
+  /** 前几格还没有逐条记录（库是那之后才有的）：标「未记录」，不画线、不当成零 */
+  unrecorded?: number;
 }) {
   const t = useText(overviewText);
   const tipId = useId();
@@ -81,11 +84,11 @@ export function Chart({
       </div>
     );
   }
-  const { grid, top } = spec;
+  const { grid, ticks } = spec;
+  const top = ticks[ticks.length - 1] ?? 1;
   const n = grid.at.length;
   const phase = (i: number) => slotPhase(grid, i, now);
   const pctOf = (v: number) => Math.min(100, Math.max(0, (v / top) * 100));
-  const ticks = yTicks(top);
   const xs = n > 0 ? xTicks(grid, Math.max(1, Math.floor(w / TICK_W)), { today: t.today, now }) : [];
   // 贴着右边的标签放不下就不写：标签往右排开，右边没有地方
   const shownX = w > 0 ? xs.filter((x) => x.f * w + 36 <= w) : xs;
@@ -113,7 +116,22 @@ export function Chart({
   };
 
   const center = (i: number) => ((i + 0.5) / n) * 100;
-  const tip = cursor !== null ? spec.tip(cursor) : null;
+  const blank = Math.min(unrecorded, n);
+  const tip =
+    cursor === null ? null : cursor < blank ? { main: t.unrecorded, rows: [], rows2: [] } : spec.tip(cursor);
+  /*
+    历史档：线只画到上一格为止，正在进行的那一格（还没过完，数还会涨）用一段虚线接上，
+    此刻之后的不画；还没有记录的那几格不画 —— 那里没有数，不是零
+  */
+  const lines = spec.lines.flatMap((l): ChartLine[] => {
+    const known = l.values.map((v, i) => (i < blank ? null : v));
+    if (live) return [{ ...l, values: known }];
+    const solid = known.map((v, i) => (phase(i) === "past" ? v : null));
+    const k = known.findIndex((_, i) => phase(i) === "ongoing");
+    if (k <= blank) return [{ ...l, values: solid }];
+    const tail = known.map((v, i) => (i === k || i === k - 1 ? v : null));
+    return [{ ...l, values: solid }, { ...l, values: tail, wash: false, dash: true }];
+  });
 
   return (
     <div className="mt-3 flex">
@@ -155,58 +173,22 @@ export function Chart({
             />
           ))}
 
-          {spec.lines && <Lines lines={spec.lines} n={n} top={top} />}
+          {blank > 0 && (
+            <div
+              aria-hidden
+              className="absolute inset-y-0 left-0 rounded-[2px] bg-foreground/[0.035]"
+              style={{ width: `${(blank / n) * 100}%` }}
+            >
+              {(blank / n) * w >= 56 && (
+                <span className="absolute top-1.5 left-2 tw-label whitespace-nowrap text-muted-foreground">{t.unrecorded}</span>
+              )}
+            </div>
+          )}
 
-          <div aria-hidden className="absolute inset-0 flex">
-            {grid.at.map((at, i) => {
-              const ph = phase(i);
-              const hot = i === cursor;
-              let bars: ReactNode = null;
-              if (spec.bars && ph !== "future") {
-                const a = spec.bars.a[i] ?? 0;
-                const b = spec.bars.b?.[i] ?? 0;
-                // 有量的那一段至少看得见
-                const ah = a > 0 ? Math.max(1.2, pctOf(a)) : 0;
-                const bh = b > 0 ? Math.max(1.2, pctOf(b)) : 0;
-                const bar = cn(
-                  "absolute bottom-0 left-1/2 w-4 max-w-[70%] -translate-x-1/2",
-                  !live && "motion-bar",
-                  ph === "ongoing" && "opacity-50",
-                );
-                bars = (
-                  <>
-                    {ah > 0 && (
-                      <span
-                        className={cn(bar, bh === 0 && "rounded-t-[4px]")}
-                        style={{ height: `${ah}%`, background: spec.bars.colorA }}
-                      />
-                    )}
-                    {bh > 0 && (
-                      <span
-                        className={cn(bar, "rounded-t-[4px]")}
-                        style={{
-                          height: `${bh}%`,
-                          bottom: ah > 0 ? `calc(${ah}% + 2px)` : 0,
-                          background: spec.bars.colorB,
-                        }}
-                      />
-                    )}
-                  </>
-                );
-              }
-              return (
-                <div
-                  key={live ? i : at}
-                  className={cn("relative h-full min-w-0 flex-1", hot && spec.bars && "bg-foreground/[0.035]")}
-                >
-                  {bars}
-                </div>
-              );
-            })}
-          </div>
+          <Lines lines={lines} n={n} top={top} />
 
           {/* 线：指着的那一格画竖线，每条线上一个点 */}
-          {spec.lines && cursor !== null && (
+          {cursor !== null && (
             <>
               <span
                 aria-hidden
@@ -214,7 +196,7 @@ export function Chart({
                 style={{ left: `${center(cursor)}%` }}
               />
               {spec.lines.map((l, k) => {
-                const v = l.values[cursor];
+                const v = cursor < blank ? null : l.values[cursor];
                 if (v == null) return null;
                 return (
                   <span
@@ -255,7 +237,7 @@ export function Chart({
 }
 
 /**
- * 线（缓存命中率、首 token 的两条分位、实时档的速率）。画在 1000 × 100 的坐标里横向拉伸，
+ * 线（各指标的面积曲线、首 token 的两条分位、进行中的那段虚线）。画在 1000 × 100 的坐标里横向拉伸，
  * 线宽不跟着拉（`non-scaling-stroke`）。点在每一格的正中。前后都没有邻居的孤点画成小圆点
  * （用 HTML 画，SVG 里拉伸会变成椭圆）。
  */
@@ -264,7 +246,7 @@ function Lines({
   n,
   top,
 }: {
-  lines: NonNullable<ChartSpec["lines"]>;
+  lines: ChartLine[];
   n: number;
   top: number;
 }) {
@@ -312,6 +294,8 @@ function Lines({
                 fill="none"
                 stroke={l.color}
                 strokeWidth={2}
+                strokeDasharray={l.dash ? "3 4" : undefined}
+                opacity={l.dash ? 0.7 : undefined}
                 strokeLinejoin="round"
                 strokeLinecap="round"
                 vectorEffect="non-scaling-stroke"
@@ -342,7 +326,8 @@ function Lines({
 function TipBox({ id, title, body, x, right }: { id: string; title: string; body: TipBody; x: number; right: boolean }) {
   const row = (r: TipRow, k: number) => (
     <div key={k} className="flex min-w-0 items-center gap-[7px] leading-[18px]">
-      <span aria-hidden className="block h-0.5 w-2.5 shrink-0 rounded-[1px]" style={{ background: r.key ?? "transparent" }} />
+      {/* 图里对得上的那一样才有图例；没有的不留位置，和标题左对齐 */}
+      {r.key && <span aria-hidden className="block h-0.5 w-2.5 shrink-0 rounded-[1px]" style={{ background: r.key }} />}
       <span className="shrink-0 font-semibold tw-num">{r.v}</span>
       <span className="min-w-0 truncate text-muted-foreground">{r.k}</span>
     </div>
