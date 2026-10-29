@@ -37,10 +37,19 @@ export function costCell(
   // **估算不能冒充实测**：合计里有估算的部分，就要带着记号
   const estimated = s.cost_micros_estimated > 0;
   return {
-    text: (outside.length > 0 ? "≥" : "") + (estimated ? "~" : "") + usd(s.cost_micros),
+    text: costPrefix(outside.length > 0, estimated) + usd(s.cost_micros),
     muted: false,
     notes: [...(estimated ? [t.estimatedTip(usd(s.cost_micros_estimated))] : []), ...outside],
   };
+}
+
+/**
+ * 金额前面的记号，概览与会话的费用共用：缺了算不出来的请求，金额只是下限（「≥」）；
+ * **估算不能冒充实测**，含估算的带「~」。两样都有只写「≥」：它已经说了不是准数，估算了
+ * 多少写在悬停里。
+ */
+export function costPrefix(incomplete: boolean, estimated: boolean): string {
+  return incomplete ? "≥" : estimated ? "~" : "";
 }
 
 /** 会话瀑布里一轮的费用：落了库的那一轮，或者表里还没落库的那一行 */

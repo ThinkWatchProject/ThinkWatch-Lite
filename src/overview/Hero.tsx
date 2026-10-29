@@ -414,7 +414,7 @@ function Change({
 function CostValue({ c, amount, scope }: { c: ReturnType<typeof rankCost>; amount: number; scope: string }) {
   if (c.kind !== "amount") return <>—</>;
   /*
-    指标只有一百多像素宽：「≥~」两个限定符按大数的字号写，「≥~$52.57」就放不下了。限定符
+    指标只有一百多像素宽：限定符按大数的字号写，「≥$52.57」就放不下了。限定符
     缩小写在前面，意思不变；一千美元以上不写分，写满几位的整数
   */
   return (

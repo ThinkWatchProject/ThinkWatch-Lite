@@ -1,4 +1,5 @@
 import { densify, monthDay } from "@/format";
+import { costPrefix } from "@/traffic/costCell";
 import { usd, type CostBucket, type CostBucketGroup, type Dashboard, type ProviderView, type Summary } from "@/types";
 import { LIVE_BUCKET_MS, LIVE_REACH_MS, liveRate, type LiveEnd, type LiveSample } from "./useLive";
 import type { overviewText } from "./overview.i18n";
@@ -372,19 +373,11 @@ export function cacheOf(s: Pick<Summary, "input_tokens" | "cache_read_tokens" | 
 }
 
 /**
- * 金额前面的记号：缺了算不出来的请求，金额只是下限（「≥」）；**估算不能冒充实测**，
- * 含估算的带「~」。
- */
-function costPrefix(incomplete: boolean, estimated: boolean): string {
-  return (incomplete ? "≥" : "") + (estimated ? "~" : "");
-}
-
-/**
  * 一个费用写什么：**一个数或一个词，说明进悬停**。卡片上的费用、明细表费用那一格都按它。
  *
  * · 有用量、却一条都没算出费用：「无法计价」。**不写 $0** —— 那是在说它不花钱。
  * · 连用量都没有：「无用量」。
- * · 其余写金额。有算不出来的请求时金额只是下限，写成「≥」；含估算的带「~」。
+ * · 其余写金额。有算不出来的请求时金额只是下限，写成「≥」；只含估算的带「~」。
  *   全都算出来了、合计是零时写 $0：不计费的上游（本地模型）就是这样，它说的是真的。
  * · 实时档里价钱还没到的请求（`pending`）同样不在金额里：金额写成下限，等它们到了
  *   再补上。

@@ -392,10 +392,10 @@ describe("费用写什么", () => {
     expect(rankCost(c({ cost: 500, pending: 1 }), t)).toMatchObject({ prefix: "≥", notes: [t.rankPending(1)] });
   });
 
-  it("含估算：带「~」，估算的数写在悬停里；两样都有是「≥~」", () => {
+  it("含估算：带「~」，估算的数写在悬停里；两样都有只写「≥」", () => {
     expect(rankCost(c({ cost: 500, estimated: 120 }), t)).toEqual({ kind: "amount", prefix: "~", notes: [t.estimated("$0.0001")] });
     expect(rankCost(c({ cost: 500, estimated: 120, unpriced: 1 }), t)).toMatchObject({
-      prefix: "≥~",
+      prefix: "≥",
       notes: [t.estimated("$0.0001"), t.rankUnpriced(1)],
     });
   });
