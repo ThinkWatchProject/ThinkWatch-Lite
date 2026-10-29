@@ -17,7 +17,7 @@ import { coreText } from "@/i18n/core.i18n";
 import { cn } from "@/lib/utils";
 import { compact, latency, money, ms, statusTone, tokens, traffic, when } from "@/format";
 import { failureKind, notSentText, translatedText } from "@/labels";
-import { ruleName } from "@/security/labels";
+import { ruleName, savedSourceText } from "@/security/labels";
 import { notSent } from "@/requestRouting";
 import { promptTokens, upstreamText, waitingFor, type Filter, type SortDir, type SortKey } from "@/requestTable";
 import { resumeClock } from "@/upstreams/throttle";
@@ -1276,7 +1276,10 @@ function UpstreamCell({ r, via }: { r: RequestRow; via: ViaConfig | null }) {
           // 换掉了是灰的；原样发出去的要看得出来
           variant={secrets.replaced ? "secondary" : "warning"}
           tip={(secrets.replaced ? t.redactedTip : t.secretsTip)(
-            secrets.items.map((x) => `${ruleName("redact", x.rule, x.custom)} ×${x.count}`),
+            // 保存的密钥写是哪一把（上游「DeepSeek」的密钥），比规则名说得清楚
+            secrets.items.map(
+              (x) => `${x.source ? savedSourceText(x.source) : ruleName("redact", x.rule, x.custom)} ×${x.count}`,
+            ),
           )}
         >
           {(secrets.replaced ? t.redacted : t.withSecrets)(secrets.count)}

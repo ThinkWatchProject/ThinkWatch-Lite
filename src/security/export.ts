@@ -19,7 +19,7 @@ import type {
 } from "@/types";
 import { replacedOf } from "./rules";
 import { exportText } from "./export.i18n";
-import { matchingOf, partLabel, snapshotName } from "./labels";
+import { hitValue, matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { MAX_PAGE } from "./useSecurityLog";
 
@@ -152,7 +152,8 @@ export function toCsv(events: SecurityEventView[]): string {
       s.pattern ?? "",
       mode ? lt.matching[mode] : "",
       s.core_version,
-      e.excerpt,
+      // 保存的密钥没有值，写来源
+      hitValue(e, e.excerpt).text,
       e.count,
       e.revealed ?? "",
       lt.directions[e.direction],

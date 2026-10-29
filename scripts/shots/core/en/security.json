@@ -704,7 +704,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "anthropic-api-key",
-        "kind": "api-keys",
+        "kind": "ai-services",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -720,7 +720,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "openai-project-key",
-        "kind": "api-keys",
+        "kind": "ai-services",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -736,7 +736,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "openai-api-key",
-        "kind": "api-keys",
+        "kind": "ai-services",
         "label": "SECRET",
         "matcher": {
           "kind": "openai-legacy",
@@ -751,7 +751,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "github-personal-token",
-        "kind": "api-keys",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -767,7 +767,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "github-oauth-token",
-        "kind": "api-keys",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -783,7 +783,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "github-server-token",
-        "kind": "api-keys",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -799,7 +799,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "github-user-token",
-        "kind": "api-keys",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -815,7 +815,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "github-fine-grained-token",
-        "kind": "api-keys",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -830,15 +830,15 @@
         "custom": false,
         "default_action": "placeholder",
         "enabled": true,
-        "id": "slack-bot-token",
-        "kind": "api-keys",
+        "id": "gitlab-token",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
-          "min_tail": 20,
-          "prefix": "xoxb-"
+          "min_tail": 15,
+          "prefix": "glpat-"
         },
-        "name": "Slack bot token",
+        "name": "GitLab token",
         "on_by_default": true
       },
       {
@@ -846,31 +846,15 @@
         "custom": false,
         "default_action": "placeholder",
         "enabled": true,
-        "id": "slack-user-token",
-        "kind": "api-keys",
+        "id": "npm-token",
+        "kind": "dev-platforms",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
-          "min_tail": 20,
-          "prefix": "xoxp-"
+          "min_tail": 30,
+          "prefix": "npm_"
         },
-        "name": "Slack user token",
-        "on_by_default": true
-      },
-      {
-        "action": "placeholder",
-        "custom": false,
-        "default_action": "placeholder",
-        "enabled": true,
-        "id": "slack-app-token",
-        "kind": "api-keys",
-        "label": "SECRET",
-        "matcher": {
-          "kind": "prefix",
-          "min_tail": 20,
-          "prefix": "xoxa-"
-        },
-        "name": "Slack app token",
+        "name": "npm token",
         "on_by_default": true
       },
       {
@@ -879,7 +863,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "aws-access-key-id",
-        "kind": "api-keys",
+        "kind": "cloud",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -895,7 +879,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "aws-temporary-key-id",
-        "kind": "api-keys",
+        "kind": "cloud",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -911,7 +895,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "google-api-key",
-        "kind": "api-keys",
+        "kind": "cloud",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -927,7 +911,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "google-oauth-token",
-        "kind": "api-keys",
+        "kind": "cloud",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -942,15 +926,63 @@
         "custom": false,
         "default_action": "placeholder",
         "enabled": true,
-        "id": "gitlab-token",
-        "kind": "api-keys",
+        "id": "digitalocean-token",
+        "kind": "cloud",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
-          "min_tail": 15,
-          "prefix": "glpat-"
+          "min_tail": 30,
+          "prefix": "dop_v1_"
         },
-        "name": "GitLab token",
+        "name": "DigitalOcean token",
+        "on_by_default": true
+      },
+      {
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "slack-bot-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "xoxb-"
+        },
+        "name": "Slack bot token",
+        "on_by_default": true
+      },
+      {
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "slack-user-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "xoxp-"
+        },
+        "name": "Slack user token",
+        "on_by_default": true
+      },
+      {
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "slack-app-token",
+        "kind": "business",
+        "label": "SECRET",
+        "matcher": {
+          "kind": "prefix",
+          "min_tail": 20,
+          "prefix": "xoxa-"
+        },
+        "name": "Slack app token",
         "on_by_default": true
       },
       {
@@ -959,7 +991,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "stripe-live-key",
-        "kind": "api-keys",
+        "kind": "business",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -975,7 +1007,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "stripe-restricted-key",
-        "kind": "api-keys",
+        "kind": "business",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -990,40 +1022,8 @@
         "custom": false,
         "default_action": "placeholder",
         "enabled": true,
-        "id": "npm-token",
-        "kind": "api-keys",
-        "label": "SECRET",
-        "matcher": {
-          "kind": "prefix",
-          "min_tail": 30,
-          "prefix": "npm_"
-        },
-        "name": "npm token",
-        "on_by_default": true
-      },
-      {
-        "action": "placeholder",
-        "custom": false,
-        "default_action": "placeholder",
-        "enabled": true,
-        "id": "digitalocean-token",
-        "kind": "api-keys",
-        "label": "SECRET",
-        "matcher": {
-          "kind": "prefix",
-          "min_tail": 30,
-          "prefix": "dop_v1_"
-        },
-        "name": "DigitalOcean token",
-        "on_by_default": true
-      },
-      {
-        "action": "placeholder",
-        "custom": false,
-        "default_action": "placeholder",
-        "enabled": true,
         "id": "sendgrid-key",
-        "kind": "api-keys",
+        "kind": "business",
         "label": "SECRET",
         "matcher": {
           "kind": "prefix",
@@ -1081,7 +1081,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "cn-resident-id",
-        "kind": "personal",
+        "kind": "id-documents",
         "label": "ID_NUMBER",
         "matcher": {
           "born_since": 1900,
@@ -1096,7 +1096,7 @@
         "default_action": "placeholder",
         "enabled": true,
         "id": "bank-card",
-        "kind": "personal",
+        "kind": "financial",
         "label": "CARD_NUMBER",
         "matcher": {
           "kind": "bank-card",
@@ -1224,7 +1224,7 @@
         "default_action": "placeholder",
         "enabled": false,
         "id": "email",
-        "kind": "personal",
+        "kind": "contact",
         "label": "EMAIL",
         "matcher": {
           "kind": "email"
@@ -1238,7 +1238,7 @@
         "default_action": "placeholder",
         "enabled": false,
         "id": "cn-mobile-phone",
-        "kind": "personal",
+        "kind": "contact",
         "label": "PHONE",
         "matcher": {
           "kind": "cn-mobile-phone"

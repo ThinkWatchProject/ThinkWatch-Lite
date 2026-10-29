@@ -1,3 +1,4 @@
+import { Fragment } from "react";
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { getLang, textOf, useText } from "@/i18n";
 import { contentWhy, ruleWhy as coreRuleWhy } from "@/i18n/core.i18n";
@@ -8,6 +9,8 @@ import type {
   GuardMode,
   HitLocation,
   Matcher,
+  PrefixView,
+  SavedSource,
   SecurityEventView,
   SecurityOutcome,
   SecurityRuleView,
@@ -151,6 +154,21 @@ export function byCodepoints(e: SecurityEventView): boolean {
 }
 
 /**
+ * 「ThinkWatch 中保存的密钥」命中的是哪一处配置里的值：上游「DeepSeek」的密钥、网关密钥
+ * 「默认」…… **只有来源，没有值**：这条规则报出来的值是空的，连头尾都不留 —— 来源已经
+ * 说清楚是哪一把。不认识的来源（更新的 core）退回名字本身。
+ */
+export function savedSourceText(s: SavedSource): string {
+  const f = textOf(securityLabelsText).savedSource[s.kind] as ((name: string) => string) | undefined;
+  return f ? f(s.name) : s.name;
+}
+
+/** 安全日志一条（或流量页上的一项）的值那一段：保存的密钥写来源，其余是打码后的值 */
+export function hitValue(x: { source?: SavedSource | null }, masked: string): { text: string; mono: boolean } {
+  return x.source ? { text: savedSourceText(x.source), mono: false } : { text: masked, mono: true };
+}
+
+/**
  * 一次命中的细节，日志和请求详情里的第二行。
  *
  * **各项防护的 `excerpt` 和 `count` 说的不是一回事**：出站脱敏是打码的值和出现
@@ -167,10 +185,13 @@ export function EventDetail({ e, codepoints = false }: { e: SecurityEventView; c
         {e.revealed ? t.revealed(e.revealed) : <span className="font-mono">{e.excerpt}</span>}
       </>
     );
+  // 保存的密钥没有值可写，写来源；值是空的（更早的记录）就只剩次数
+  const v = hitValue(e, e.excerpt);
+  const times = e.count > 1 ? t.times(e.count) : null;
   return (
     <>
-      <span className="font-mono">{e.excerpt}</span>
-      {e.count > 1 && ` · ${t.times(e.count)}`}
+      {v.text && <span className={v.mono ? "font-mono" : undefined}>{v.text}</span>}
+      {times && (v.text ? ` · ${times}` : times)}
     </>
   );
 }
@@ -187,12 +208,43 @@ export function Code({ children }: { children: string }) {
 
 const code = (s: string) => <Code key={s}>{s}</Code>;
 
+/**
+ * 多前缀规则的前缀按尾部要求分段：最短尾长和尾部字符都一样的连成一段（`hvs.`、`hvb.`
+ * 尾长不同就是两段），段的先后按各自第一次出现的位置
+ */
+export function prefixRuns(list: readonly PrefixView[]): { prefixes: string[]; minTail: number; tail: string }[] {
+  const out: { prefixes: string[]; minTail: number; tail: string }[] = [];
+  for (const p of list) {
+    const run = out.find((r) => r.minTail === p.min_tail && r.tail === p.tail);
+    if (run) run.prefixes.push(p.prefix);
+    else out.push({ prefixes: [p.prefix], minTail: p.min_tail, tail: p.tail });
+  }
+  return out;
+}
+
 /** 内置规则的匹配判据，写成一句话 */
 export function MatcherText({ m }: { m: Matcher }) {
   const t = useText(securityLabelsText).matcher;
   switch (m.kind) {
     case "prefix":
       return t.prefix(code, m.prefix, m.min_tail);
+    case "prefixes":
+      return (
+        <>
+          {prefixRuns(m.prefixes).map((r, i) => (
+            <Fragment key={r.prefixes.join(" ")}>
+              {i > 0 && t.prefixesSep}
+              {t.prefixes(code, r.prefixes, r.minTail, t.tails[r.tail] ?? t.tails.any ?? r.tail)}
+            </Fragment>
+          ))}
+        </>
+      );
+    case "saved":
+      return <>{t.saved}</>;
+    case "assignment":
+      return t.assignment(code, m.suffixes);
+    case "labeled":
+      return t.labeled(code, m.names);
     case "openai-legacy":
       return t.openaiLegacy(code, m.min_len);
     case "pem":
@@ -215,7 +267,7 @@ export function MatcherText({ m }: { m: Matcher }) {
       return t.cnMobilePhone(code);
     // 代码里做的检查没有可展示的写法：按检查名说它查什么，不说怎么查
     case "builtin":
-      return <>{t.builtin[m.check] ?? t.builtinOther}</>;
+      return <>{t.builtin[m.check]?.(code) ?? t.builtinOther}</>;
     case "regex":
       return t.regex(code, m.pattern, m.case_sensitive ?? false);
     case "contains":

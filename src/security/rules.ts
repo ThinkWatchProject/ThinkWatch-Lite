@@ -6,7 +6,7 @@ import type { ContentMatch, ContentScope, Guard, OutcomeDetail, RuleAction, Secu
 
 /** 规则表里的一组：内置规则按类别各一组，自定义规则在最后一组 */
 export interface RuleGroup<T> {
-  /** 类别（`api-keys`、`invisible`…）；工具调用的内置规则是 `command`；自定义的是 `custom` */
+  /** 类别（`ai-services`、`invisible`…）；工具调用的内置规则是 `command`；自定义的是 `custom` */
   key: string;
   custom: boolean;
   rows: T[];
@@ -40,7 +40,7 @@ export function groupRules<T>(rows: readonly T[], ruleOf: (row: T) => SecurityRu
 }
 
 /**
- * 一条规则写的是什么，拿来检索：正则、要找的文字、码位、前缀、域名后缀。代码里做的检查
+ * 一条规则写的是什么，拿来检索：正则、要找的文字、码位、前缀、域名后缀、变量名和字段名。代码里做的检查
  * 和没有写法的内置规则（PEM、JWT…）是空的，只按名字找得到
  */
 export function patternText(r: SecurityRuleView): string {
@@ -56,6 +56,12 @@ export function patternText(r: SecurityRuleView): string {
       return m.prefix;
     case "domain-suffix":
       return m.suffixes.join(" ");
+    case "prefixes":
+      return m.prefixes.map((p) => p.prefix).join(" ");
+    case "assignment":
+      return m.suffixes.join(" ");
+    case "labeled":
+      return m.names.join(" ");
     default:
       return "";
   }
