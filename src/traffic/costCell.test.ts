@@ -50,12 +50,12 @@ describe("会话费用那一格", () => {
     expect(c.notes).toEqual([t.estimatedTip("$0.061")]);
   });
 
-  it("既有估算又缺了轮次时两个记号都在", () => {
+  it("既有估算又缺了轮次时只写「≥」，估算了多少照样在悬停里", () => {
     const c = costCell(
       session({ cost_micros_estimated: 5_000, priced_turns: 9, unpriced_turns: 1 }),
       t,
     );
-    expect(c.text).toBe("≥~$0.233");
+    expect(c.text).toBe("≥$0.233");
     expect(c.notes).toEqual([t.estimatedTip("$0.0050"), t.unpricedTurnsTip(1)]);
   });
 
