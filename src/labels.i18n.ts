@@ -1,6 +1,4 @@
 import { messages } from "@/i18n";
-// 密钥与隐私的规则名和 core 消息的中文是同一张表（Rust 写系统通知时也读它）
-import CORE_ZH from "@/i18n/core.zh.json";
 
 /** `labels.ts` 里那些名称表和说法 */
 export const labelsText = messages(
@@ -127,10 +125,6 @@ export const labelsText = messages(
       semantics: "语义",
     },
 
-    // ------------------------------------------------------------ 安全
-    /** 密钥与隐私的内置规则名。和系统通知（Rust）共用 core.zh.json 里的同一张表 */
-    secrets: CORE_ZH.tables.secret_rule as Record<string, string>,
-
     // ------------------------------------------------------------ 客户端接管
     takesEffect: {
       immediately: "下一个请求即使用新配置。",
@@ -254,38 +248,6 @@ export const labelsText = messages(
       semantics: "Semantic",
     },
 
-    secrets: {
-      "anthropic-api-key": "Anthropic API key",
-      "openai-api-key": "OpenAI API key",
-      "openai-project-key": "OpenAI project key",
-      "github-personal-token": "GitHub personal access token",
-      "github-oauth-token": "GitHub OAuth token",
-      "github-server-token": "GitHub server token",
-      "github-user-token": "GitHub user token",
-      "github-fine-grained-token": "GitHub fine-grained token",
-      "slack-bot-token": "Slack bot token",
-      "slack-user-token": "Slack user token",
-      "slack-app-token": "Slack app token",
-      "aws-access-key-id": "AWS access key ID",
-      "aws-temporary-key-id": "AWS temporary access key ID",
-      "google-api-key": "Google API key",
-      "google-oauth-token": "Google OAuth token",
-      "gitlab-token": "GitLab token",
-      "stripe-live-key": "Stripe live key",
-      "stripe-restricted-key": "Stripe restricted key",
-      "npm-token": "npm token",
-      "digitalocean-token": "DigitalOcean token",
-      "sendgrid-key": "SendGrid key",
-      "private-key": "Private key",
-      jwt: "JWT",
-      "conn-string-password": "Connection string password",
-      "cn-resident-id": "Chinese resident ID number",
-      "bank-card": "Bank card number",
-      email: "Email address",
-      "cn-mobile-phone": "Chinese mainland mobile number",
-      "internal-ip": "Internal IP address",
-      "internal-domain": "Internal domain",
-    },
 
     takesEffect: {
       immediately: "The next request uses the new configuration.",

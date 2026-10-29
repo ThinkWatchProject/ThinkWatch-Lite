@@ -40,29 +40,6 @@ const MESSAGES: Record<string, string> = CORE_ZH.messages;
 const CONTEXTS: { arg: string; en: string; zh: string }[] = CORE_ZH.contexts;
 
 /**
- * 内置内容规则为什么值得看一眼（隐藏字符那一组有）。按规则 id 查，查不到就用 core 的原话。
- *
- * **和工具调用规则的那一句（`ruleWhy`）分两张表**：两项的规则 id 是各起各的，同一个 id
- * （`you-are-now`）在两边说的不是一件事
- */
-export function contentWhy(rule: string, text: string): string {
-  if (getLang() === "en") return text;
-  return CORE_TABLES.content_why?.[rule] ?? text;
-}
-
-/**
- * 内置扫描规则命中之后那一句「为什么」。
- *
- * **它不是 `Msg`，是一个规则 id 加一句话** —— 工具调用防火墙的事件里带
- * 的就是这两样。内置规则查表说中文；用户自己加的规则查不到，那句话本来
- * 就是他自己写的，原样显示。
- */
-export function ruleWhy(rule: string, text: string): string {
-  if (getLang() === "en") return text;
-  return CORE_TABLES.rule_why?.[rule] ?? text;
-}
-
-/**
  * 一句没有码的话，包成 [`Msg`]。
  *
  * **给的是退路，不是常规写法。**界面自己造的失败（invoke 抛了别的东西、

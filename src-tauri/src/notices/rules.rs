@@ -397,7 +397,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             custom,
             detail,
             ..
-        } => watched("inspect_tools", provider, rule, *custom, detail)
+        } => watched("inspect_tools", provider, rule, *custom, None, detail)
             .into_iter()
             .collect(),
         Event::ContentMatched {
@@ -406,7 +406,7 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             custom,
             detail,
             ..
-        } => watched("content", provider, rule, *custom, detail)
+        } => watched("content", provider, rule, *custom, None, detail)
             .into_iter()
             .collect(),
         // 一次请求里找到的每个值各一项；同一条规则找到几个值，就是同一条规则命中了几次
@@ -414,7 +414,16 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             provider, items, ..
         } => items
             .iter()
-            .filter_map(|i| watched("redact", provider, &i.rule, i.custom, &i.detail))
+            .filter_map(|i| {
+                watched(
+                    "redact",
+                    provider,
+                    &i.rule,
+                    i.custom,
+                    i.source.as_ref(),
+                    &i.detail,
+                )
+            })
             .collect(),
         Event::KeyLimitAlert { .. } => key_limit(ev),
         // **请求失败只进应用内**（概览上原来那条「需要处理的事」挪到这里）：多数失败是上游
@@ -860,7 +869,8 @@ fn unpriced(m: &tw_api::UnpricedModel) -> Signal {
 /// 处理）。**只认 core 说的结局**（`outcome_detail` 是 `recorded`），不自己按档位和动作推。
 ///
 /// 规格（安全页重整 §3）：仅记录 = 记入安全日志并发出系统通知。正文**只有规则名和上游**，
-/// 不带命中的原文（锁屏上也看得见）。键按规则分（`secwatch:<防护>:<b|c>:<规则>`），所以
+/// 不带命中的原文（锁屏上也看得见）。「ThinkWatch 中保存的密钥」再写明是哪一处保存的
+/// （`source`：上游「DeepSeek」的密钥……），**只有来源，没有值的任何部分**。键按规则分（`secwatch:<防护>:<b|c>:<规则>`），所以
 /// **同一条规则 5 分钟里至多弹一次**（[`Signal::event`] 的冷却）；同时命中的几条规则由总线
 /// 合成一条通知（[`Signal::merged`]，那一行是这条规则在合成通知里的样子）。
 fn watched(
@@ -868,6 +878,7 @@ fn watched(
     provider: &str,
     rule: &str,
     custom: bool,
+    source: Option<&tw_api::SavedSource>,
     detail: &tw_api::SecurityHitDetail,
 ) -> Option<Signal> {
     if !matches!(detail.outcome_detail, tw_api::OutcomeDetail::Recorded {}) {
@@ -876,17 +887,37 @@ fn watched(
     let name = guard_rule_name(guard, rule, custom, &detail.rule_snapshot.name);
     let what = guard_name(guard);
     let answer = detail.direction == tw_api::SecurityDirection::Response;
-    let body = match (answer, crate::i18n::current()) {
-        (false, crate::i18n::Lang::Zh) => {
+    let body = match (source, answer, crate::i18n::current()) {
+        (Some(s), false, crate::i18n::Lang::Zh) => {
+            let s = saved_source_zh(s);
+            format!("{what}：经上游「{provider}」的请求含有{s}，已记入安全日志。")
+        }
+        (Some(s), true, crate::i18n::Lang::Zh) => {
+            let s = saved_source_zh(s);
+            format!("{what}：上游「{provider}」的回答含有{s}，已记入安全日志。")
+        }
+        (Some(s), false, crate::i18n::Lang::En) => {
+            let s = saved_source_en(s);
+            format!(
+                "{what}: a request through upstream “{provider}” contained {s}. It was recorded in the security log."
+            )
+        }
+        (Some(s), true, crate::i18n::Lang::En) => {
+            let s = saved_source_en(s);
+            format!(
+                "{what}: an answer from upstream “{provider}” contained {s}. It was recorded in the security log."
+            )
+        }
+        (None, false, crate::i18n::Lang::Zh) => {
             format!("{what}：经上游「{provider}」的请求命中此规则，已记入安全日志。")
         }
-        (true, crate::i18n::Lang::Zh) => {
+        (None, true, crate::i18n::Lang::Zh) => {
             format!("{what}：上游「{provider}」的回答命中此规则，已记入安全日志。")
         }
-        (false, crate::i18n::Lang::En) => format!(
+        (None, false, crate::i18n::Lang::En) => format!(
             "{what}: a request through upstream “{provider}” matched this rule. It was recorded in the security log."
         ),
-        (true, crate::i18n::Lang::En) => format!(
+        (None, true, crate::i18n::Lang::En) => format!(
             "{what}: an answer from upstream “{provider}” matched this rule. It was recorded in the security log."
         ),
     };
@@ -923,58 +954,68 @@ fn guard_name(guard: &str) -> String {
     )
 }
 
-/// 规则的名字，和安全页上的一样：自定义规则就是用户起的名字；内置的中文查词表（和界面同一张），
-/// 查不到、或者英文界面，用 core 给的英文名
+/// 保存的密钥是哪一处的，放进句中（「经上游「X」的请求含有上游「DeepSeek」的密钥」）。
+/// 和安全页上写的一样（`savedSourceText`）
+fn saved_source_zh(s: &tw_api::SavedSource) -> String {
+    use tw_api::SavedSourceKind as K;
+    let n = &s.name;
+    match s.kind {
+        K::UpstreamKey => format!("上游「{n}」的密钥"),
+        K::UpstreamHeader => format!("上游「{n}」请求头中的值"),
+        K::AccessKey => format!("网关密钥「{n}」"),
+        K::ProxyPassword => format!("代理「{n}」的密码"),
+        K::ControlKey => "远程控制密钥".to_string(),
+        K::SyncCredential => "同步与备份凭据".to_string(),
+    }
+}
+
+/// 同上，英文，句中的写法（小写开头）
+fn saved_source_en(s: &tw_api::SavedSource) -> String {
+    use tw_api::SavedSourceKind as K;
+    let n = &s.name;
+    match s.kind {
+        K::UpstreamKey => format!("the key of upstream “{n}”"),
+        K::UpstreamHeader => format!("a header value of upstream “{n}”"),
+        K::AccessKey => format!("gateway key “{n}”"),
+        K::ProxyPassword => format!("the password of proxy “{n}”"),
+        K::ControlKey => "the remote control key".to_string(),
+        K::SyncCredential => "a sync and backup credential".to_string(),
+    }
+}
+
+/// 规则的名字，和安全页上的一样：自定义规则就是用户起的名字；内置的取 core 规则目录里的
+/// 中英文名（钉着的这一版 tw-guard，安全页上 core 给的是同一份）。目录里没有的（连着的远程
+/// core 更新、多了规则），用事件里的英文名
 fn guard_rule_name(guard: &str, rule: &str, custom: bool, english: &str) -> String {
     if custom {
         return rule.to_string();
     }
     let english = if english.is_empty() { rule } else { english };
-    match guard {
-        "inspect_tools" => tool_rule_name(rule),
-        _ => {
-            let table = if guard == "redact" {
-                "secret_rule"
-            } else {
-                "content_rule"
-            };
-            tr!(
-                crate::core_text::table_zh(table, rule).unwrap_or_else(|| english.to_string()),
-                english.to_string()
-            )
-        }
-    }
+    let zh = match guard {
+        "redact" => tw_guard::redact::rules::builtin(rule).map(|b| b.name_zh.to_string()),
+        "content" => tw_guard::content::builtin(rule).map(|b| b.name_zh.clone()),
+        _ => tool_rule(rule).map(|r| r.name_zh.clone()),
+    };
+    tr!(
+        zh.filter(|z| !z.is_empty())
+            .unwrap_or_else(|| english.to_string()),
+        english.to_string()
+    )
+}
+
+/// 一条内置的工具调用规则（危险命令和提示注入两组）
+fn tool_rule(id: &str) -> Option<&'static tw_guard::tools::rules::RuleSpec> {
+    let f = tw_guard::tools::rules::builtin();
+    f.dangerous.iter().chain(&f.injection).find(|r| r.id == id)
 }
 
 /// 工具调用规则的名字，和安全页上的一样。**只有内置的这些**：自定义规则的
 /// id 就是用户起的名字，原样用。
 fn tool_rule_name(rule: &str) -> String {
-    let (zh, en) = match rule {
-        "curl-pipe-sh" => ("下载即执行", "Download and run"),
-        "base64-decode-exec" => ("解码后执行", "Decode and run"),
-        "exfil-env" => ("外发环境变量", "Send out environment variables"),
-        "exfil-credentials" => ("外发凭据文件", "Send out a credential file"),
-        "exfil-credentials-reversed" => (
-            "外发凭据文件（动词在前）",
-            "Send out a credential file (verb first)",
-        ),
-        "ssh-key-read" => ("读取私钥或云凭据", "Read a private key or cloud credential"),
-        "secret-to-unknown-host" => ("凭据发往陌生主机", "Send a credential to an unknown host"),
-        "thinkwatch-data" => (
-            "读写 ThinkWatch 自己的数据",
-            "Read or change ThinkWatch's own data",
-        ),
-        "write-startup-item" => ("写入启动项", "Write a startup item"),
-        "crontab-install" => ("安装定时任务", "Install a scheduled job"),
-        "rm-rf-root" => ("删除主目录或根目录", "Delete home or root"),
-        "chmod-777" => ("开放全部写权限", "World-writable permissions"),
-        "upload-file-to-host" => (
-            "上传本地文件到外部主机",
-            "Upload a local file to an external host",
-        ),
-        other => return other.to_string(),
-    };
-    tr!(zh, en).to_string()
+    match tool_rule(rule) {
+        Some(r) => guard_rule_name("inspect_tools", rule, false, &r.name),
+        None => rule.to_string(),
+    }
 }
 
 /// 网关本身的状态。**这是唯一的 critical** —— 它一停，所有客户端都在瞎

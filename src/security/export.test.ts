@@ -1,10 +1,36 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
+import { fetchInto } from "@/lib/resource";
 import type { HitLocation, SecurityEventView, SecurityEventsPage, SecurityEventsQuery } from "@/types";
 import { csvCell, fetchAll, fileName, locationLine, outcomeLine, toCsv, toJson } from "./export";
+import { CATALOG_KEY } from "./catalog";
 import { matchingOf, partLabel, snapshotName } from "./labels";
 
 afterEach(() => setLang("zh"));
+
+// 内置规则的中文名由 core 在规则表里给，按 id 查：放一份规则目录进缓存
+beforeAll(async () => {
+  const none = { mode: "enforce" as const, rules: [] };
+  await fetchInto(CATALOG_KEY, async () => ({
+    redact: {
+      mode: "enforce" as const,
+      rules: [
+        {
+          id: "anthropic-api-key",
+          custom: false,
+          name: "Anthropic API key",
+          name_zh: "Anthropic API 密钥",
+          kind: "ai-services",
+          matcher: { kind: "prefix" as const, prefix: "sk-ant-", min_tail: 20 },
+          enabled: true,
+          on_by_default: true,
+        },
+      ],
+    },
+    inspect_tools: none,
+    content: none,
+  }));
+});
 
 const loc = (x: Partial<HitLocation>): HitLocation => ({
   part: "message",

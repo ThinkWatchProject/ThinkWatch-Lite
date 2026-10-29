@@ -1,17 +1,19 @@
+import { Fragment } from "react";
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { getLang, textOf, useText } from "@/i18n";
-import { contentWhy, ruleWhy as coreRuleWhy } from "@/i18n/core.i18n";
-import { secretLabel } from "@/labels";
 import type {
   ContentMatch,
   Guard,
   GuardMode,
   HitLocation,
   Matcher,
+  SavedSource,
   SecurityEventView,
+  SecurityKindView,
   SecurityOutcome,
   SecurityRuleView,
 } from "@/types";
+import { catalogRule, localized } from "./catalog";
 import { securityLabelsText } from "./labels.i18n";
 
 /**
@@ -51,48 +53,46 @@ export function outcomeTone(action: SecurityOutcome): StatusTone {
 export const OUTCOMES: readonly SecurityOutcome[] = ["cut", "blocked", "stripped", "replaced", "recorded"];
 
 /**
- * 一条规则叫什么。
+ * 一条规则叫什么：日志、流量页徽标这些只带 id 的地方用。
  *
- * 出站脱敏的内置规则 id 就是凭据种类（`anthropic-api-key` …），和流量页上
- * 那张名称表是同一张；另两项各查这里的一张表：工具调用审查查扫描规则那张，
- * 内容过滤查内容规则那张（隐藏字符那一组也在里面）。
- * **自定义规则的 id 就是用户起的名字**，原样显示。表里都没有的，退回 core
- * 给的英文名，再没有就是 id。
+ * **名字由 core 给**（规则表里的 `name` / `name_zh`），这里按 id 到规则目录里查（见
+ * `catalog.ts`；用到的组件要挂上 `useRuleCatalog`）。**自定义规则的 id 就是用户起的名字**，
+ * 原样显示。目录还没取到、或者规则已经没有了，退回日志里存的英文名，再没有就是 id。
  */
 export function ruleName(guard: string, id: string, custom?: boolean, fallback?: string): string {
   if (custom) return id;
-  const t = textOf(securityLabelsText);
-  switch (guard) {
-    case "redact": {
-      const name = secretLabel(id);
-      return name !== id ? name : (fallback ?? id);
-    }
-    case "content":
-      return t.contentRules[id] ?? fallback ?? id;
-    default:
-      return t.rules[id] ?? fallback ?? id;
-  }
+  const r = catalogRule(guard, id);
+  return r ? viewName(r) : (fallback ?? id);
 }
 
-/** 规则列表里的一条叫什么 */
-export function viewName(guard: Guard, r: SecurityRuleView): string {
-  return ruleName(guard, r.id, r.custom, r.name);
+/** 规则列表里的一条叫什么：内置的按界面语言取 `name` / `name_zh`，自定义的就是它的名字 */
+export function viewName(r: SecurityRuleView): string {
+  return r.custom ? r.name : localized(r.name, r.name_zh);
 }
 
 /**
- * 内置规则为什么值得看一眼。中文查词表，查不到就用 core 的原话。
- *
- * 内容规则（隐藏字符那一组有）和工具调用规则各查各的表：两边的 id 是各起各的。
+ * 内置规则为什么值得看一眼（危险命令、内容过滤有；规则名说得清的没有）。按界面语言取
+ * `why` / `why_zh`。
  */
 export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
   if (r.custom || !r.why) return "";
-  if (guard !== "content") return coreRuleWhy(r.id, r.why);
-  const why = contentWhy(r.id, r.why);
-  // 英文那句可能以名字开头（「Bidirectional controls: …」），名字已经在上一行了
+  const why = localized(r.why, r.why_zh);
+  if (guard !== "content" || why !== r.why) return why;
+  // 内容规则英文那句可能以名字开头（「Bidirectional controls: …」），名字已经在上一行了
   const lead = `${r.name}:`.toLowerCase();
   if (!why.toLowerCase().startsWith(lead)) return why;
   const rest = why.slice(lead.length).trimStart();
   return rest.charAt(0).toUpperCase() + rest.slice(1);
+}
+
+/**
+ * 规则表的分组叫什么：core 给的 `kinds` 里按 `slug` 查。查不到（旧的 core 不给）时
+ * 自定义那一组照样叫「自定义」，其余写 slug。
+ */
+export function kindName(kinds: readonly SecurityKindView[] | undefined, slug: string): string {
+  const k = kinds?.find((x) => x.slug === slug);
+  if (k) return localized(k.name, k.name_zh);
+  return slug === "custom" ? textOf(securityLabelsText).custom : slug;
 }
 
 /** 命中在哪儿：危险命令是哪个工具；内容过滤是「工具结果」，或者「回答」（查的是回答正文） */
@@ -128,7 +128,7 @@ export function partLabel(l: HitLocation): string {
 
 /**
  * 命中那一刻的规则叫什么。**按快照，不按现在的规则表**：规则改了名、删掉了，日志里
- * 还是当时那一条。内置规则的名字照常查词表（快照里的英文名是退路）。
+ * 还是当时那一条。内置规则的名字按 id 到规则目录里查（快照里的英文名是退路）。
  */
 export function snapshotName(e: SecurityEventView): string {
   const s = e.rule_snapshot;
@@ -151,6 +151,21 @@ export function byCodepoints(e: SecurityEventView): boolean {
 }
 
 /**
+ * 「ThinkWatch 中保存的密钥」命中的是哪一处配置里的值：上游「DeepSeek」的密钥、网关密钥
+ * 「默认」…… **只有来源，没有值**：这条规则报出来的值是空的，连头尾都不留 —— 来源已经
+ * 说清楚是哪一把。不认识的来源（更新的 core）退回名字本身。
+ */
+export function savedSourceText(s: SavedSource): string {
+  const f = textOf(securityLabelsText).savedSource[s.kind] as ((name: string) => string) | undefined;
+  return f ? f(s.name) : s.name;
+}
+
+/** 安全日志一条（或流量页上的一项）的值那一段：保存的密钥写来源，其余是打码后的值 */
+export function hitValue(x: { source?: SavedSource | null }, masked: string): { text: string; mono: boolean } {
+  return x.source ? { text: savedSourceText(x.source), mono: false } : { text: masked, mono: true };
+}
+
+/**
  * 一次命中的细节，日志和请求详情里的第二行。
  *
  * **各项防护的 `excerpt` 和 `count` 说的不是一回事**：出站脱敏是打码的值和出现
@@ -167,10 +182,13 @@ export function EventDetail({ e, codepoints = false }: { e: SecurityEventView; c
         {e.revealed ? t.revealed(e.revealed) : <span className="font-mono">{e.excerpt}</span>}
       </>
     );
+  // 保存的密钥没有值可写，写来源；值是空的（更早的记录）就只剩次数
+  const v = hitValue(e, e.excerpt);
+  const times = e.count > 1 ? t.times(e.count) : null;
   return (
     <>
-      <span className="font-mono">{e.excerpt}</span>
-      {e.count > 1 && ` · ${t.times(e.count)}`}
+      {v.text && <span className={v.mono ? "font-mono" : undefined}>{v.text}</span>}
+      {times && (v.text ? ` · ${times}` : times)}
     </>
   );
 }
@@ -187,32 +205,59 @@ export function Code({ children }: { children: string }) {
 
 const code = (s: string) => <Code key={s}>{s}</Code>;
 
-/** 内置规则的匹配判据，写成一句话 */
+/**
+ * core 写的一句说明，反引号括起来的一段画成代码（反引号本身不显示）。反引号总是成对的；
+ * 万一落单，最后那一段照普通文字画
+ */
+export function CoreText({ text }: { text: string }) {
+  const parts = text.split("`");
+  const paired = parts.length % 2 === 1;
+  return (
+    <>
+      {parts.map((p, i) =>
+        i % 2 === 1 && (paired || i < parts.length - 1) ? (
+          <Code key={i}>{p}</Code>
+        ) : (
+          <Fragment key={i}>{i % 2 === 1 ? `\`${p}` : p}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
+
+/**
+ * 一条规则认什么，写成一句话。
+ *
+ * **密钥与隐私的内置规则由 core 写**（`about` / `about_zh`）。其余的按判据写：自定义
+ * 规则和内容规则是正则、包含、码位，危险命令里代码实现的检查按检查名说它查什么。
+ */
+export function RuleMatchText({ r }: { r: SecurityRuleView }) {
+  useText(securityLabelsText);
+  const about = r.custom ? "" : localized(r.about, r.about_zh);
+  return about ? <CoreText text={about} /> : <MatcherText m={r.matcher} />;
+}
+
+/** 判据里能列出来的写法（前缀、后缀、变量名、字段名）：说明缺了的时候至少列出这些 */
+function listed(m: Matcher): string[] {
+  switch (m.kind) {
+    case "prefix":
+      return [m.prefix];
+    case "prefixes":
+      return m.prefixes.map((p) => p.prefix);
+    case "domain-suffix":
+    case "assignment":
+      return m.suffixes;
+    case "labeled":
+      return m.names;
+    default:
+      return [];
+  }
+}
+
+/** 规则的判据，写成一句话。没有 core 写的说明时用 */
 export function MatcherText({ m }: { m: Matcher }) {
   const t = useText(securityLabelsText).matcher;
   switch (m.kind) {
-    case "prefix":
-      return t.prefix(code, m.prefix, m.min_tail);
-    case "openai-legacy":
-      return t.openaiLegacy(code, m.min_len);
-    case "pem":
-      return t.pem(code);
-    case "jwt":
-      return t.jwt(code);
-    case "conn-string":
-      return t.connString(code);
-    case "private-ip":
-      return t.privateIp(code);
-    case "domain-suffix":
-      return t.domainSuffix(code, m.suffixes);
-    case "cn-resident-id":
-      return t.cnResidentId(m.born_since);
-    case "bank-card":
-      return t.bankCard(m.networks.map((n) => n.name));
-    case "email":
-      return t.email(code);
-    case "cn-mobile-phone":
-      return t.cnMobilePhone(code);
     // 代码里做的检查没有可展示的写法：按检查名说它查什么，不说怎么查
     case "builtin":
       return <>{t.builtin[m.check] ?? t.builtinOther}</>;
@@ -222,6 +267,21 @@ export function MatcherText({ m }: { m: Matcher }) {
       return t.contains(code, m.text, m.case_sensitive ?? false);
     case "codepoints":
       return t.codepoints(code, m.ranges);
+    default: {
+      // 内置脱敏规则的说明由 core 给；旧的 core 不给时，列出写法，没有写法的说是内置检查
+      const xs = listed(m);
+      if (xs.length === 0) return <>{t.builtinOther}</>;
+      return (
+        <>
+          {xs.map((x, i) => (
+            <Fragment key={x}>
+              {i > 0 && t.listSep}
+              {code(x)}
+            </Fragment>
+          ))}
+        </>
+      );
+    }
   }
 }
 

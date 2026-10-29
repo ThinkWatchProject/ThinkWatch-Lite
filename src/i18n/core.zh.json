@@ -142,38 +142,6 @@
       "thinkwatch-data": "读写 ThinkWatch 自己的数据",
       "upload-file-to-host": "上传本地文件到外部主机"
     },
-    "secret_rule": {
-      "anthropic-api-key": "Anthropic API 密钥",
-      "openai-api-key": "OpenAI API 密钥",
-      "openai-project-key": "OpenAI 项目密钥",
-      "github-personal-token": "GitHub 个人令牌",
-      "github-oauth-token": "GitHub OAuth 令牌",
-      "github-server-token": "GitHub 服务器令牌",
-      "github-user-token": "GitHub 用户令牌",
-      "github-fine-grained-token": "GitHub 细粒度令牌",
-      "slack-bot-token": "Slack 机器人令牌",
-      "slack-user-token": "Slack 用户令牌",
-      "slack-app-token": "Slack 应用令牌",
-      "aws-access-key-id": "AWS 访问密钥 ID",
-      "aws-temporary-key-id": "AWS 临时访问密钥 ID",
-      "google-api-key": "Google API 密钥",
-      "google-oauth-token": "Google OAuth 令牌",
-      "gitlab-token": "GitLab 令牌",
-      "stripe-live-key": "Stripe 生产密钥",
-      "stripe-restricted-key": "Stripe 受限密钥",
-      "npm-token": "npm 令牌",
-      "digitalocean-token": "DigitalOcean 令牌",
-      "sendgrid-key": "SendGrid 密钥",
-      "private-key": "私钥",
-      "jwt": "JWT",
-      "conn-string-password": "连接串口令",
-      "cn-resident-id": "居民身份证号",
-      "bank-card": "银行卡号",
-      "email": "邮箱地址",
-      "cn-mobile-phone": "中国大陆手机号",
-      "internal-ip": "内网地址",
-      "internal-domain": "内部域名"
-    },
     "content_rule": {
       "unicode-tags": "Unicode 标签字符",
       "bidi-controls": "双向控制符",
@@ -201,12 +169,6 @@
       "zh-reveal-your": "要求透露指令（中文）",
       "zh-system-prompt": "系统提示词（中文）",
       "zh-jailbreak": "越狱（中文）"
-    },
-    "content_why": {
-      "unicode-tags": "在编辑器中完全不可见，但会原样进入模型上下文，可用于隐藏整段指令。",
-      "bidi-controls": "可使屏幕上的显示顺序与实际字符顺序不一致。",
-      "zero-width": "在编辑器中不可见，但会被模型读到。表情符号、波斯文等正常文字也会用到。",
-      "private-use": "没有标准含义。部分图标字体会用到。"
     },
     "zai_step": {
       "authorize_url": "获取授权地址",

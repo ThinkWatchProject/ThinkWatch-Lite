@@ -26,6 +26,7 @@ export function marksFromEvents(
               rule: e.rule,
               custom: e.custom === true,
               masked: e.excerpt,
+              source: e.source,
               count: e.count,
               replaced: e.action === "replaced",
               // 和实时事件那一项（`SecretItem.detail`）同一个形状

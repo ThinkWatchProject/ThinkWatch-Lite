@@ -17,8 +17,8 @@ import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { ACTIONS } from "./api";
-import type { Guard, GuardDetail, GuardMode, RuleAction, SecurityRuleView } from "@/types";
-import { MatcherText, modeName, modeTone, ruleWhy, viewName } from "./labels";
+import type { Guard, GuardDetail, GuardMode, RuleAction, SecurityKindView, SecurityRuleView } from "@/types";
+import { kindName, modeName, modeTone, RuleMatchText, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { guardTabText, nowText } from "./GuardTab.i18n";
 import { patternOf } from "./RuleDialog";
@@ -180,7 +180,14 @@ export function GuardTab({
         </Button>
       </div>
 
-      <RuleTable guard={guard} mode={detail.mode} rules={detail.rules} query={query} actions={actions} />
+      <RuleTable
+        guard={guard}
+        mode={detail.mode}
+        rules={detail.rules}
+        kinds={detail.kinds}
+        query={query}
+        actions={actions}
+      />
     </div>
   );
 }
@@ -224,17 +231,19 @@ function RuleTable({
   guard,
   mode,
   rules,
+  kinds,
   query,
   actions,
 }: {
   guard: Guard;
   mode: GuardMode;
   rules: SecurityRuleView[];
+  /** 分组和分组名，core 给的（旧的 core 不给） */
+  kinds: SecurityKindView[] | undefined;
   query: string;
   actions: RuleActions;
 }) {
   const t = useText(guardTabText);
-  const lt = useText(securityLabelsText);
   const menu = useMenu(actions);
   const content = guard === "content";
   const span = content ? 6 : 5;
@@ -242,7 +251,7 @@ function RuleTable({
   const present = usePresentList(rules, keyOf);
   const groups = useMemo(() => {
     const shown = present.filter(
-      ({ item: r, presence }) => presence === "exit" || ruleMatches(r, viewName(guard, r), query),
+      ({ item: r, presence }) => presence === "exit" || ruleMatches(r, viewName(r), query),
     );
     return groupRules(shown, (p) => p.item);
   }, [present, guard, query]);
@@ -277,7 +286,8 @@ function RuleTable({
         )}
         {groups.map((g) => {
           const live = g.rows.filter((p) => p.presence !== "exit").map((p) => p.item);
-          const title = (g.custom ? lt.kinds.custom : lt.kinds[g.key]) ?? g.key;
+          // 分组名由 core 给（`kinds`），按界面语言取
+          const title = kindName(kinds, g.key);
           return (
             <Fragment key={g.key}>
               <GroupHead
@@ -349,7 +359,7 @@ function RuleRow({
 }) {
   const t = useText(guardTabText);
   const lt = useText(securityLabelsText);
-  const name = viewName(guard, r);
+  const name = viewName(r);
   const why = ruleWhy(guard, r);
   const pattern = r.matcher.kind === "regex" ? r.matcher.pattern : "";
   return (
@@ -383,7 +393,7 @@ function RuleRow({
           </TableCell>
         ) : (
           <TableCell className="truncate text-muted-foreground">
-            <MatcherText m={r.matcher} />
+            <RuleMatchText r={r} />
           </TableCell>
         )}
         {guard === "content" && (
