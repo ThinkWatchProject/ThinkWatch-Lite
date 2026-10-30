@@ -263,6 +263,27 @@ describe("从事件缝出一行", () => {
     expect(r?.receivedBytes).toBe(480);
   });
 
+  /** 生成太慢被切断的：失败事件带着判定时的速度，速度一格照常有数 */
+  it("生成太慢的失败带上速度", () => {
+    const rows = new Map<number, RequestRow>();
+    applyEvent(rows, started());
+    applyEvent(rows, { kind: "request_headers", id: 1, status: 200, ttfb_ms: 900 });
+    applyEvent(rows, {
+      kind: "request_failed",
+      id: 1,
+      model: "qwen3",
+      source: "upstream",
+      message: plain("`local-vllm` 太慢"),
+      duration_ms: 31_000,
+      tokens_per_sec: 9,
+      usage: { input: 2_000, output: 280, cache_read: 0, cache_write: 0 },
+    });
+    const r = rows.get(1);
+    expect(r?.state).toBe("failed");
+    expect(r?.tokensPerSec).toBe(9);
+    expect(r?.outputTokens).toBe(280);
+  });
+
   /** 响应头之前就失败的：有耗时，**没有用量就不填** */
   it("响应头之前的失败只有耗时", () => {
     const rows = new Map<number, RequestRow>();

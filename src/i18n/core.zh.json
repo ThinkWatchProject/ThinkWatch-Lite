@@ -690,6 +690,7 @@
     "config.base_url_backslash": "上游「{upstream}」的接口地址含有反斜杠：{url}。地址中请只使用正斜杠。",
     "config.base_url_userinfo": "上游「{upstream}」的接口地址在主机前带有用户名或密码。凭据请改写在 key 或 headers 中。",
     "config.zero_concurrency": "网关密钥「{key}」的 max_concurrent 为 0，使用它的请求会一直等待。不限制并发时请删除 max_concurrent。",
+    "config.min_speed_range": "上游「{upstream}」的 min_speed.{field} 为 {value}，须在 {min} 到 {max} 之间。",
     "config.provider_concurrency_range": "上游「{upstream}」的 max_concurrent 为 {value}，须在 1 到 {max} 之间。不限制并发时请删除 max_concurrent。",
     "config.redact_exceptions_too_many": "security.redact.exceptions 中有 {count} 个值，最多 {max} 个。",
     "config.redact_exception_hash_bad": "security.redact.exceptions 中的例外「{sha256}」不是 SHA-256：须为 64 个小写十六进制字符。",
