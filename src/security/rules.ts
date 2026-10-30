@@ -2,7 +2,15 @@
  * 规则表和规则对话框里不画东西的那部分：分组、检索、内容规则
  * 「检查对象」和「动作」「匹配方式」的联动。拆出来是为了能单独测。
  */
-import type { ContentMatch, ContentScope, Guard, OutcomeDetail, RuleAction, SecurityRuleView } from "@/types";
+import type {
+  ContentMatch,
+  ContentScope,
+  Guard,
+  OutcomeDetail,
+  RuleAction,
+  SecurityRuleHits,
+  SecurityRuleView,
+} from "@/types";
 
 /** 规则表里的一组：内置规则按类别各一组，自定义规则在最后一组 */
 export interface RuleGroup<T> {
@@ -37,6 +45,82 @@ export function groupRules<T>(rows: readonly T[], ruleOf: (row: T) => SecurityRu
   }
   if (custom) out.push(custom);
   return out;
+}
+
+/** 规则的键：内置和自定义可以同名。安全日志的一条按同样的写法认出是哪条规则 */
+export const ruleKey = (r: Pick<SecurityRuleView, "custom" | "id">) => `${r.custom ? "c" : "b"}:${r.id}`;
+
+// ------------------------------------------------------------------ 组头的命中次数
+
+/** 一段时间里每条规则命中了几次（键见 `ruleKey`），core 按规则数好的 */
+export type RuleHits = Record<string, number>;
+
+export function countHits(rows: readonly Pick<SecurityRuleHits, "rule" | "custom" | "count">[]): RuleHits {
+  const counts: RuleHits = {};
+  for (const h of rows) {
+    const k = ruleKey({ custom: h.custom, id: h.rule });
+    counts[k] = (counts[k] ?? 0) + h.count;
+  }
+  return counts;
+}
+
+/** 一组规则一共几条命中。还没读到是 `undefined` */
+export function hitsOf(hits: RuleHits | undefined, rules: readonly SecurityRuleView[]): number | undefined {
+  if (!hits) return undefined;
+  return rules.reduce((n, r) => n + (hits[ruleKey(r)] ?? 0), 0);
+}
+
+/**
+ * 有命中的组排在内置规则的最前面，其余照 core 的顺序（两部分里各自不变）；自定义的那一组
+ * 照旧在最后。命中次数还没读到时原样不动
+ */
+export function hitsFirst<T>(groups: readonly RuleGroup<T>[], hit: (g: RuleGroup<T>) => boolean): RuleGroup<T>[] {
+  const builtin = groups.filter((g) => !g.custom);
+  return [
+    ...builtin.filter(hit),
+    ...builtin.filter((g) => !hit(g)),
+    ...groups.filter((g) => g.custom),
+  ];
+}
+
+// ------------------------------------------------------------------ 组的展开
+
+/**
+ * 规则表里哪几组展开着。**默认全部收起**；展开、收起是看的人自己的选择，按防护各记一份、
+ * 记在这台机器上。存的是展开着的那几组
+ */
+const openKey = (guard: Guard) => `security.groups.${guard}`;
+
+export function readOpenGroups(guard: Guard): Set<string> {
+  try {
+    const raw = window.localStorage.getItem(openKey(guard));
+    const keys: unknown = raw ? JSON.parse(raw) : [];
+    return new Set(Array.isArray(keys) ? keys.filter((k): k is string => typeof k === "string") : []);
+  } catch {
+    // 隐私窗口、禁用站点数据、存的东西坏了：照默认全部收起
+    return new Set();
+  }
+}
+
+export function writeOpenGroups(guard: Guard, open: ReadonlySet<string>) {
+  try {
+    window.localStorage.setItem(openKey(guard), JSON.stringify([...open]));
+  } catch {
+    // 记不住只是下次要再展开一次
+  }
+}
+
+/**
+ * 一组现在展开没有。**检索时匹配的组一律展开**（筛出来的行要看得见），除非这一次检索里
+ * 又被收起了（`closedInSearch`，换了检索词就清掉）；不检索时按记下的
+ */
+export function groupOpen(
+  key: string,
+  searching: boolean,
+  open: ReadonlySet<string>,
+  closedInSearch: ReadonlySet<string>,
+): boolean {
+  return searching ? !closedInSearch.has(key) : open.has(key);
 }
 
 /**

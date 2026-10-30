@@ -67,6 +67,8 @@ const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   more_locations: 0,
   rule_snapshot: { builtin: true, id: "anthropic-api-key", name: "Anthropic API key", core_version: "0.68.0" },
   outcome_detail: { action: "replaced", placeholders: ["<<TW_SECRET_1>>"] },
+  excepted: false,
+  exceptable: false,
   ...x,
 });
 

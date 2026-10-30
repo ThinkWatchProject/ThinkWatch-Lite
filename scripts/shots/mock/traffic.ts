@@ -549,8 +549,11 @@ function generate() {
 // ───────────────────────────────────────── 安全日志
 
 type Detail = "direction" | "locations" | "more_locations" | "rule_snapshot" | "outcome_detail";
-type Hit = Omit<SecurityEventView, "id" | "at_ms" | "request_id" | "provider" | "client" | "model" | "client_hint" | "peer" | "key_masked" | Detail> &
-  Partial<Pick<SecurityEventView, Detail>>;
+type Hit = Omit<
+  SecurityEventView,
+  "id" | "at_ms" | "request_id" | "provider" | "client" | "model" | "client_hint" | "peer" | "key_masked" | "excepted" | "exceptable" | Detail
+> &
+  Partial<Pick<SecurityEventView, Detail | "excepted" | "exceptable">>;
 
 /**
  * 一次命中的细节，照 core 的写法补：脱敏在发出的请求里、占位符 `<<TW_SECRET_n>>`；工具调用在
@@ -609,6 +612,8 @@ function securityLog() {
       client_hint: row.client_hint ?? null,
       peer: null,
       key_masked: row.key_masked ?? null,
+      excepted: false,
+      exceptable: false,
       ...hit,
       ...detailOf(hit),
     };

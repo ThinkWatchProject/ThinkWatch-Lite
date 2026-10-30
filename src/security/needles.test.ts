@@ -30,6 +30,8 @@ const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   more_locations: 0,
   rule_snapshot: { builtin: true, id: "aws-access-key-id", name: "AWS access key", core_version: "0.68.0" },
   outcome_detail: { action: "recorded" },
+  excepted: false,
+  exceptable: false,
   ...x,
 });
 

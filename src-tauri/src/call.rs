@@ -147,6 +147,7 @@ webview_endpoints![
     // 安全
     Security,
     SecurityEvents,
+    SecurityRuleCounts,
     SetSecurityMode,
     ToggleBuiltinRule,
     SetBuiltinRuleAction,
@@ -155,6 +156,10 @@ webview_endpoints![
     UpdateCustomRule,
     DeleteCustomRule,
     TestSecurity,
+    RedactExceptions,
+    AddRedactException,
+    ExceptSecurityEvent,
+    RemoveRedactException,
     // 账号登录（发起和取消是命令：要开浏览器、要记住这一次）
     ChatgptLoginStatus,
     ChatgptUsage,

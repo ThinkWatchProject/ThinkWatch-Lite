@@ -48,6 +48,7 @@ import { catalogKinds } from "./catalog";
 import { kindName, modeName, RuleMatchText, ruleName, ruleWhy, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { ruleDialogText } from "./RuleDialog.i18n";
+import { exceptionsText } from "./Exceptions.i18n";
 import {
   actionAllowed,
   actionOf,
@@ -276,9 +277,12 @@ function TrialBox({
   action,
   output = true,
   refusal,
+  listExcepted = true,
 }: {
   trial: Trial;
   sample: string;
+  /** 例外的值逐个写一行「例外，不处理」。「测试…」的命中表里已经写了，不重复 */
+  listExcepted?: boolean;
   /** 标成什么颜色。不给就按每一处自己的动作 */
   action?: RuleAction;
   /** 显示处理后的样子（core 给了的话） */
@@ -287,6 +291,7 @@ function TrialBox({
   refusal?: string;
 }) {
   const t = useText(ruleDialogText);
+  const xt = useText(exceptionsText);
   if (trial.state === "idle") return null;
   if (trial.state === "failed") {
     return (
@@ -297,7 +302,9 @@ function TrialBox({
   }
   const done = trial.state === "done" ? trial : null;
   const hits: SecurityTestHit[] = done?.hits ?? [];
-  const bad = hits.some((h) => tone(action ?? h.action) === "bad");
+  // 例外的值照样认得出，但不处理：不标出来，也不算进颜色
+  const handled = hits.filter((h) => !h.excepted);
+  const bad = handled.some((h) => tone(action ?? h.action) === "bad");
   const refused = refusal != null && done?.refused === true;
   const sent = output && !refused ? (done?.output ?? null) : null;
   return (
@@ -305,7 +312,7 @@ function TrialBox({
       <p
         className={cn(
           "tw-label",
-          !done || hits.length === 0 ? "text-muted-foreground" : bad ? "text-destructive" : "text-warning-foreground",
+          !done || handled.length === 0 ? "text-muted-foreground" : bad ? "text-destructive" : "text-warning-foreground",
         )}
       >
         {!done ? <Spinner className="size-3" /> : hits.length > 0 ? t.hits(hits.length) : t.noHit}
@@ -313,9 +320,17 @@ function TrialBox({
       {hits.length > 0 && (
         <Highlight
           text={sample}
-          marks={hits.map((h) => ({ start: h.start, end: h.end, tone: tone(action ?? h.action) }))}
+          marks={handled.map((h) => ({ start: h.start, end: h.end, tone: tone(action ?? h.action) }))}
         />
       )}
+      {listExcepted &&
+        hits
+          .filter((h) => h.excepted)
+          .map((h, i) => (
+            <p key={`${h.start}:${i}`} className="tw-label text-muted-foreground">
+              <span className="font-mono">{h.excerpt}</span> · {xt.trial}
+            </p>
+          ))}
       {refused && <p className="tw-label text-destructive">{refusal}</p>}
       {sent != null && (
         <div className="mt-1 flex flex-col gap-1 border-t border-border/70 pt-2">
@@ -817,6 +832,7 @@ export function TestDialog({ guard, onClose }: { guard: Guard; onClose: () => vo
   const [sample, setSample] = useState("");
   const [side, setSide] = useState<ContentScope>("request");
   const content = guard === "content";
+  const xt = useText(exceptionsText);
   const trial = useTrial(guard, sample, { scope: content ? side : undefined });
   const hits = trial.state === "done" ? trial.hits : [];
 
@@ -835,6 +851,7 @@ export function TestDialog({ guard, onClose }: { guard: Guard; onClose: () => vo
                 <TrialBox
                   trial={trial}
                   sample={sample}
+                  listExcepted={false}
                   refusal={content && side === "request" ? t.refused(modeName("enforce")) : undefined}
                 />
                 {hits.length > 0 && (
@@ -869,9 +886,12 @@ export function TestDialog({ guard, onClose }: { guard: Guard; onClose: () => vo
                               <span className="ml-1.5 font-sans">· {t.line(lineOf(sample, h.start))}</span>
                             </TableCell>
                             <TableCell
-                              className={cn("truncate", tone(a) === "bad" ? "text-destructive" : "text-muted-foreground")}
+                              className={cn(
+                                "truncate",
+                                !h.excepted && tone(a) === "bad" ? "text-destructive" : "text-muted-foreground",
+                              )}
                             >
-                              {lt.ruleActions[a] ?? a}
+                              {h.excepted ? xt.trial : (lt.ruleActions[a] ?? a)}
                             </TableCell>
                           </TableRow>
                         );

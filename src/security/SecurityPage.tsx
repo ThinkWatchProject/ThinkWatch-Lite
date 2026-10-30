@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useResource } from "@/lib/resource";
+import { invalidate, useResource } from "@/lib/resource";
 import { AnimatedNumber } from "@/ui/motion";
 import { notify, undoable } from "@/ui/notify";
 import { Page, PageHeader, SummaryItem } from "@/ui/page";
@@ -11,12 +11,22 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/ui/tabs";
 import { useText } from "@/i18n";
 import { GUARDS } from "@/types";
 import { api, type RuleSave } from "./api";
-import type { ConfigWritten, Guard, GuardMode, RuleAction, SecurityDetail, SecurityRuleView } from "@/types";
+import type {
+  Guard,
+  GuardMode,
+  RedactException,
+  RedactExceptions,
+  RuleAction,
+  SecurityDetail,
+  SecurityEventView,
+  SecurityRuleView,
+} from "@/types";
 import { actionOf, scopeOf } from "./rules";
 import { GuardSkeleton, GuardTab, type RuleActions } from "./GuardTab";
 import { modeName, modeTone, OUTCOMES, outcomeTone, viewName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { LogTab, type LogActions } from "./LogTab";
+import { AddExceptionDialog, ExceptDialog, ExceptionsSection, RemoveExceptionDialog } from "./Exceptions";
 import { BuiltinRuleDialog, DeleteRuleDialog, patternOf, RuleDialog, TestDialog, type RuleSeed } from "./RuleDialog";
 import { securityPageText } from "./SecurityPage.i18n";
 import { narrowed, useSecurityLog, type SecurityLog } from "./useSecurityLog";
@@ -36,7 +46,10 @@ type DialogState =
   | { kind: "rule"; guard: Guard; editing: SecurityRuleView | null; seed?: RuleSeed }
   | { kind: "builtin"; guard: Guard; rule: SecurityRuleView }
   | { kind: "test"; guard: Guard }
-  | { kind: "delete"; guard: Guard; rule: SecurityRuleView };
+  | { kind: "delete"; guard: Guard; rule: SecurityRuleView }
+  | { kind: "except"; event: SecurityEventView }
+  | { kind: "addException" }
+  | { kind: "removeException"; item: RedactException };
 
 /** 自定义规则现在的样子，改一处（启停、动作）时其余原样带回去 */
 function saveOf(guard: Guard, r: SecurityRuleView, enabled: boolean, action = actionOf(guard, r)): RuleSave {
@@ -93,6 +106,10 @@ export default function SecurityPage({
   const lt = useText(securityLabelsText);
   const [tab, setTab] = useState<SecurityTab>("log");
   const detail = useResource<SecurityDetail>("security-detail", () => api.detail(), { deps: [configVersion] });
+  // 密钥与隐私的例外值：在配置里，配置一变就重读
+  const exceptions = useResource<RedactExceptions>("security-exceptions", () => api.exceptions(), {
+    deps: [configVersion],
+  });
   // 日志的区间放在这一层：页头的命中次数和日志是同一次读取
   const [range, setRange] = useRange("tw-security-range", "1d");
   /** 日志「类型」列头上筛着的那一项。离开这一页就回到全部 */
@@ -128,7 +145,7 @@ export default function SecurityPage({
     version.current = configVersion;
   }, [configVersion]);
   const queue = useRef<Promise<unknown>>(Promise.resolve());
-  const write = useCallback((run: (base: string) => Promise<ConfigWritten>) => {
+  const write = useCallback(<W extends { version: string }>(run: (base: string) => Promise<W>) => {
     const p = queue.current
       .then(() => run(version.current))
       .then((w) => {
@@ -260,7 +277,18 @@ export default function SecurityPage({
     test: () => setDialog({ kind: "test", guard }),
   });
 
+  /**
+   * 例外变了：例外表、日志里的「例外」标签和「列为例外」按钮都跟着变（日志读的时候按现在的
+   * 例外表算），规则表组头的命中次数不变
+   */
+  const exceptionsChanged = () => {
+    settle();
+    void exceptions.reload();
+    invalidate("security-log:");
+  };
+
   const logActions: LogActions = {
+    except: (event) => setDialog({ kind: "except", event }),
     viewRule: (guard, id, custom) => {
       const r = find(guard, id, custom);
       if (!r) return;
@@ -333,7 +361,21 @@ export default function SecurityPage({
           <TabsContent key={g} value={g} className="pt-4">
             <Loadable r={detail} loading={<GuardSkeleton />} errorTitle={t.loadFailed}>
               {(data) => (
-                <GuardTab guard={g} detail={data[g]} modePending={busy(`mode/${g}`)} actions={actions(g)} />
+                <GuardTab
+                  guard={g}
+                  detail={data[g]}
+                  modePending={busy(`mode/${g}`)}
+                  actions={actions(g)}
+                  below={
+                    g === "redact" && (
+                      <ExceptionsSection
+                        r={exceptions}
+                        onAdd={() => setDialog({ kind: "addException" })}
+                        onRemove={(item) => setDialog({ kind: "removeException", item })}
+                      />
+                    )
+                  }
+                />
               )}
             </Loadable>
           </TabsContent>
@@ -365,6 +407,38 @@ export default function SecurityPage({
             await write((base) => api.setAction(g, dialog.rule.id, a, base));
             setDialog(null);
             settle();
+          }}
+        />
+      )}
+      {dialog?.kind === "except" && (
+        <ExceptDialog
+          e={dialog.event}
+          onClose={() => setDialog(null)}
+          onConfirm={async () => {
+            await write((base) => api.exceptEvent(dialog.event.id, base));
+            setDialog(null);
+            exceptionsChanged();
+          }}
+        />
+      )}
+      {dialog?.kind === "addException" && (
+        <AddExceptionDialog
+          onClose={() => setDialog(null)}
+          onAdd={async (value) => {
+            await write((base) => api.addException(value, base));
+            setDialog(null);
+            exceptionsChanged();
+          }}
+        />
+      )}
+      {dialog?.kind === "removeException" && (
+        <RemoveExceptionDialog
+          item={dialog.item}
+          onClose={() => setDialog(null)}
+          onRemove={async () => {
+            await write((base) => api.removeException(dialog.item.sha256, base));
+            setDialog(null);
+            exceptionsChanged();
           }}
         />
       )}

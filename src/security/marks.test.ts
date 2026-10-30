@@ -20,6 +20,8 @@ const ev = (x: Partial<SecurityEventView>): SecurityEventView => ({
   more_locations: 0,
   rule_snapshot: { builtin: true, id: "anthropic-api-key", name: "Anthropic API key", core_version: "0.68.0" },
   outcome_detail: { action: "recorded" },
+  excepted: false,
+  exceptable: false,
   ...x,
 });
 
