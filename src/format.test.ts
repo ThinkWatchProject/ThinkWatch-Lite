@@ -89,6 +89,11 @@ describe("会话的跨度", () => {
     expect(span(42_400)).toBe("42 s");
     setLang("zh");
   });
+
+  it("进了位就按下一档写", () => {
+    expect(span(59_600)).toBe("1 分");
+    expect(span(3_570_000)).toBe("1.0 小时");
+  });
 });
 
 describe("绝对时间", () => {

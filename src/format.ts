@@ -60,12 +60,17 @@ export function msShort(n: number): string {
 /**
  * 一段跨度（一次会话从头到尾）：`42 秒`、`7 分`、`1.5 小时`。和 `ms` 说的不是同一个量：
  * 那是一个请求等了多久，要精确到毫秒；这是一次任务做了多久，读的是量级。
+ *
+ * **先取整再定单位**：59.6 秒取整是 60，该写成「1 分」，不是「60 秒」；59.5 分同理是
+ * 「1.0 小时」，不是「60 分」。
  */
 export function span(n: number): string {
   // 取文案要在调用的那一刻，不能提到模块级 —— 换了语言它不会跟着换
   const t = textOf(formatText).span;
-  if (n < 60_000) return t.seconds(Math.round(n / 1000));
-  if (n < 3_600_000) return t.minutes(Math.round(n / 60_000));
+  const secs = Math.round(n / 1000);
+  if (secs < 60) return t.seconds(secs);
+  const mins = Math.round(n / 60_000);
+  if (mins < 60) return t.minutes(mins);
   return t.hours((n / 3_600_000).toFixed(1));
 }
 
