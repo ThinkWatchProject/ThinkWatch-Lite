@@ -157,6 +157,10 @@ export interface UpstreamForm {
   pricing: string;
   /** 同时最多发给这家几个请求，1 到 1000。空 = 不限 */
   maxConcurrent: string;
+  /** 生成过慢时中断：最低生成速度，token/秒，1 到 1000。空 = 不按速度中断 */
+  minSpeed: string;
+  /** 判定时长，秒，5 到 120。缺省 20，显式填着；速度空着时不交 */
+  minSpeedWindow: string;
   /** 用量上限（`limits:`），和密钥的同一套编辑器。没有一条 = 不限 */
   limits: LimitRow[];
   disabled: boolean;
@@ -409,6 +413,8 @@ export function blankForm(): UpstreamForm {
     billing: "per-token",
     pricing: "",
     maxConcurrent: "",
+    minSpeed: "",
+    minSpeedWindow: String(MIN_SPEED_WINDOW_DEFAULT),
     limits: [],
     disabled: false,
     balance: null,
@@ -499,6 +505,7 @@ export function formFromView(p: ProviderView): UpstreamForm {
     billing: p.billing === "free" ? "free" : "per-token",
     pricing: p.pricing ?? "",
     maxConcurrent: p.max_concurrent != null ? String(p.max_concurrent) : "",
+    ...minSpeedFields(p.min_speed),
     limits: rowsOf(p.limits),
     disabled: p.disabled,
     balance,
@@ -550,6 +557,7 @@ export function formFromImport(p: ImportProposal, taken: string[]): UpstreamForm
     awsRegion: p.region && bedrockRegionOf(baseUrl) === null ? p.region : "",
     forwardClientIdentity: p.client_identity,
     maxConcurrent: p.concurrency != null ? String(p.concurrency) : "",
+    ...minSpeedFields(p.min_speed),
     limits: rowsOf(p.limits),
     manualModels: p.models,
     scope: p.models_only ? "some" : "all",
@@ -757,6 +765,7 @@ export function toInput(f: UpstreamForm): ProviderInput {
     billing: f.billing,
     pricing: f.pricing || undefined,
     max_concurrent: concurrencyOf(f) ?? undefined,
+    min_speed: minSpeedOf(f) ?? undefined,
     limits: inputsOf(f.limits),
     disabled: f.disabled,
   };
@@ -764,7 +773,7 @@ export function toInput(f: UpstreamForm): ProviderInput {
 
 /**
  * 「高级设置」里的几项有没有不是默认值的：写了请求头、打开了转发客户端身份、代理不可用时
- * 改为直连、写了并发上限或用量上限、「自定义」的余额来源不是自动识别。**有就自动展开** —— 收着的一节里
+ * 改为直连、写了并发上限、最低生成速度或用量上限、「自定义」的余额来源不是自动识别。**有就自动展开** —— 收着的一节里
  * 藏着一项在起作用的设置，和没写一样看不见。只有名称或只有值的请求头也算：那一行正等着补全，
  * 保存按不下去
  */
@@ -774,6 +783,7 @@ export function advancedNonDefault(f: UpstreamForm): boolean {
     f.forwardClientIdentity ||
     f.onProxyFail !== "fail" ||
     f.maxConcurrent.trim() !== "" ||
+    f.minSpeed.trim() !== "" ||
     f.limits.length > 0 ||
     (fieldRules(f).balance && (f.balance ?? "auto") !== "auto")
   );
@@ -789,6 +799,51 @@ export function concurrencyOf(f: UpstreamForm): number | null | undefined {
   if (!/^\d+$/.test(v)) return undefined;
   const n = Number(v);
   return n >= 1 && n <= MAX_CONCURRENCY ? n : undefined;
+}
+
+/** 最低生成速度的范围（token/秒），和 core 的 `min_speed.tokens_per_sec` 一样 */
+export const MAX_MIN_SPEED = 1000;
+/** 判定时长的范围与缺省（秒），和 core 的 `min_speed.window_secs` 一样 */
+export const MIN_SPEED_WINDOW = { min: 5, max: 120 } as const;
+export const MIN_SPEED_WINDOW_DEFAULT = 20;
+
+/** 配置里的 `min_speed` 回填成两格：没有是速度空着、判定时长 20 */
+function minSpeedFields(m: { tokens_per_sec: number; window_secs: number } | null | undefined) {
+  return {
+    minSpeed: m ? String(m.tokens_per_sec) : "",
+    minSpeedWindow: String(m?.window_secs ?? MIN_SPEED_WINDOW_DEFAULT),
+  };
+}
+
+function wholeIn(v: string, min: number, max: number): number | undefined {
+  if (!/^\d+$/.test(v)) return undefined;
+  const n = Number(v);
+  return n >= min && n <= max ? n : undefined;
+}
+
+/** 速度那一格写的不是 1 到 1000 的整数 */
+export function minSpeedBad(f: Pick<UpstreamForm, "minSpeed">): boolean {
+  const v = f.minSpeed.trim();
+  return v !== "" && wholeIn(v, 1, MAX_MIN_SPEED) === undefined;
+}
+
+/** 判定时长那一格写的不是 5 到 120 的整数。**速度空着时不算**：那时这一项不交 */
+export function minSpeedWindowBad(f: Pick<UpstreamForm, "minSpeed" | "minSpeedWindow">): boolean {
+  if (f.minSpeed.trim() === "") return false;
+  return wholeIn(f.minSpeedWindow.trim(), MIN_SPEED_WINDOW.min, MIN_SPEED_WINDOW.max) === undefined;
+}
+
+/**
+ * 两格合成的 `min_speed`：速度空着是不中断（`null`），任一格写错是 `undefined`（保存按不下去，
+ * 见 `connectionMissing`）
+ */
+export function minSpeedOf(
+  f: Pick<UpstreamForm, "minSpeed" | "minSpeedWindow">,
+): { tokens_per_sec: number; window_secs: number } | null | undefined {
+  if (f.minSpeed.trim() === "") return null;
+  const tokens = wholeIn(f.minSpeed.trim(), 1, MAX_MIN_SPEED);
+  const secs = wholeIn(f.minSpeedWindow.trim(), MIN_SPEED_WINDOW.min, MIN_SPEED_WINDOW.max);
+  return tokens === undefined || secs === undefined ? undefined : { tokens_per_sec: tokens, window_secs: secs };
 }
 
 /**
@@ -852,6 +907,8 @@ export function connectionMissing(
     if (r.value.trim() === "") return t.headerValue(header);
   }
   if (concurrencyOf(f) === undefined) return t.concurrency;
+  if (minSpeedBad(f)) return t.minSpeed;
+  if (minSpeedWindowBad(f)) return t.minSpeedWindow;
   return null;
 }
 

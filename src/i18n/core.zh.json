@@ -472,6 +472,7 @@
     "gw.upstream.stream_ended_early": "上游在给出任何内容之前结束了回答。",
     "gw.upstream.idle_timeout": "上游「{upstream}」在 {secs} 秒内没有发出内容。",
     "gw.upstream.idle_timeout_mid_stream": "上游「{upstream}」回答到一半后停止发送内容，{secs} 秒内没有新的内容。",
+    "gw.upstream.too_slow": "上游「{upstream}」最近 {secs} 秒的生成速度为 {rate} token/秒，低于最低生成速度 {min} token/秒。",
     "gw.request.aborted": "请求已被手动中止。",
     "gw.upstream.stream_error": "上游「{upstream}」在回答过程中报错：{message}",
     "gw.upstream.stream_exception": "上游「{upstream}」以 {kind} 结束了响应流：{message}",

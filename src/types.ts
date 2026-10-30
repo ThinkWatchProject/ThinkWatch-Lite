@@ -30,6 +30,21 @@ import type { LocalEvent } from "./generated/lite-api";
 export type * from "./generated/tw-api";
 export type * from "./generated/lite-api";
 
+// ─── TEMP(min-speed)：core 发版前手写的「生成过慢时中断」类型 ───
+//
+// 按接口约定第 2 节的形状手写，core 那一版还没发：`ProviderView.min_speed`、
+// `ProviderInput.min_speed`。**接上生成的类型时整段删掉**（连同上面 import 的两个
+// `Generated*` 别名）—— 生成的 `ProviderView` / `ProviderInput` 自己就带这一项，
+// 用到它们的地方都从 `@/types` 取，不用改。本地写的导出盖过 `export type *` 的同名项。
+import type { ProviderInput as GeneratedProviderInput, ProviderView as GeneratedProviderView } from "./generated/tw-api";
+
+/** 生成过慢时中断：最近 `window_secs` 秒的生成速度低于 `tokens_per_sec` token/秒时中断 */
+export type MinSpeedView = { tokens_per_sec: number; window_secs: number };
+export type MinSpeedInput = { tokens_per_sec: number; window_secs: number };
+export type ProviderView = GeneratedProviderView & { min_speed?: MinSpeedView | null };
+export type ProviderInput = GeneratedProviderInput & { min_speed?: MinSpeedInput | null };
+// ─── TEMP(min-speed) 到此为止 ───
+
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;
 
