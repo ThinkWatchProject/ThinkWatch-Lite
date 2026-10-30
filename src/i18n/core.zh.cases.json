@@ -403,5 +403,18 @@
       "text": "No upstream that can serve this request became available in time. Paused after answering 429: `anthropic`. At a per-minute or per-hour usage limit: `openrouter`, `relay`. Used up for the current day, week or month: —. At the concurrency limit: —. Try again shortly."
     },
     "zh": "等待期间没有可处理此请求的上游恢复可用。因 429 暂停：「anthropic」。达到按分钟或小时计的用量上限：「openrouter」、「relay」。当天、当周或当月的用量上限已用完：—。达到并发上限：—。请稍后重试。"
+  },
+  {
+    "msg": {
+      "code": "gw.upstream.too_slow",
+      "args": {
+        "upstream": "local-vllm",
+        "rate": "9",
+        "min": "15",
+        "secs": "20"
+      },
+      "text": "Upstream `local-vllm` generated 9 tokens per second over the last 20 seconds, below the minimum of 15."
+    },
+    "zh": "上游「local-vllm」最近 20 秒的生成速度为 9 token/秒，低于最低生成速度 15 token/秒。"
   }
 ]

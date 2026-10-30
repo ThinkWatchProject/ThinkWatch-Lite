@@ -16,6 +16,7 @@ import {
   headerRow,
   inScope,
   limitsMissing,
+  minSpeedOf,
   modelsMissing,
   oauthKept,
   retarget,
@@ -129,6 +130,37 @@ describe("编辑时回填原样", () => {
         "并发上限须为 1 到 1000 之间的整数",
       );
       expect(toInput({ ...f, maxConcurrent: bad }).max_concurrent).toBeUndefined();
+    }
+  });
+
+  it("生成过慢时中断：回填、原样交回；速度清空就是不中断，判定时长缺省 20 显式填着", () => {
+    const f = formFromView(view({ min_speed: { tokens_per_sec: 15, window_secs: 45 } }));
+    expect([f.minSpeed, f.minSpeedWindow]).toEqual(["15", "45"]);
+    expect(toInput(f).min_speed).toEqual({ tokens_per_sec: 15, window_secs: 45 });
+    expect(toInput({ ...f, minSpeed: "" }).min_speed).toBeUndefined();
+    // 没设过的：速度空着，判定时长写着 20
+    for (const g of [formFromView(view()), formFromView(view({ min_speed: null })), blankForm()]) {
+      expect([g.minSpeed, g.minSpeedWindow]).toEqual(["", "20"]);
+      expect(toInput(g).min_speed).toBeUndefined();
+    }
+    // 只填速度，判定时长按显示的 20 交
+    expect(toInput({ ...blankForm(), minSpeed: "8" }).min_speed).toEqual({ tokens_per_sec: 8, window_secs: 20 });
+  });
+
+  it("生成速度只收 1 到 1000、判定时长只收 5 到 120 的整数，写错了保存不了", () => {
+    const f = formFromView(view());
+    for (const [rate, secs] of [["1", "5"], ["1000", "120"], ["15", "20"], ["", "abc"], ["", ""]] as const) {
+      expect(connectionMissing({ ...f, minSpeed: rate, minSpeedWindow: secs }, "relay", ["relay"])).toBeNull();
+    }
+    for (const bad of ["0", "1001", "2.5", "-1", "abc"]) {
+      expect(connectionMissing({ ...f, minSpeed: bad }, "relay", ["relay"])).toBe("最低生成速度须为 1 到 1000 之间的整数");
+      expect(minSpeedOf({ ...f, minSpeed: bad })).toBeUndefined();
+    }
+    for (const bad of ["4", "121", "", "20.5", "abc"]) {
+      expect(connectionMissing({ ...f, minSpeed: "15", minSpeedWindow: bad }, "relay", ["relay"])).toBe(
+        "判定时长须为 5 到 120 之间的整数",
+      );
+      expect(minSpeedOf({ ...f, minSpeed: "15", minSpeedWindow: bad })).toBeUndefined();
     }
   });
 
@@ -867,6 +899,9 @@ describe("高级设置自动展开", () => {
     expect(advancedNonDefault({ ...f, forwardClientIdentity: true })).toBe(true);
     expect(advancedNonDefault({ ...f, onProxyFail: "direct" })).toBe(true);
     expect(advancedNonDefault({ ...f, maxConcurrent: "4" })).toBe(true);
+    expect(advancedNonDefault({ ...f, minSpeed: "15" })).toBe(true);
+    // 判定时长只在速度填了时起作用
+    expect(advancedNonDefault({ ...f, minSpeedWindow: "60" })).toBe(false);
     // 写错的并发上限也算：要让人看见那一格才改得了
     expect(advancedNonDefault({ ...f, maxConcurrent: "abc" })).toBe(true);
   });

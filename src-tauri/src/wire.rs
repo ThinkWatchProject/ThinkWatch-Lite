@@ -927,6 +927,16 @@ pub struct ImportLimit {
     pub cache_reads: bool,
 }
 
+/// 生成过慢时中断：最近 `window_secs` 秒的生成速度低于 `tokens_per_sec` token/秒时中断
+/// （配置里的 `min_speed`）
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, TS)]
+pub struct ImportMinSpeed {
+    /// 1 到 1000
+    pub tokens_per_sec: u32,
+    /// 判定时长，5 到 120 秒。链接没写是 20
+    pub window_secs: u32,
+}
+
 /// 链接带来的新价目表：和上游一起创建，名称跟着上游
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, TS)]
 pub struct ImportSheet {
@@ -961,6 +971,8 @@ pub struct ImportProposal {
     pub client_identity: bool,
     /// 并发上限，1 到 1000
     pub concurrency: Option<u32>,
+    /// 生成过慢时中断。null = 不中断
+    pub min_speed: Option<ImportMinSpeed>,
     /// 用量上限，按链接里的顺序
     pub limits: Vec<ImportLimit>,
     /// 余额从哪里读（只有「自定义」）

@@ -40,6 +40,7 @@ function proposal(patch: Partial<ImportProposal>): ImportProposal {
     headers: [],
     client_identity: false,
     concurrency: null,
+    min_speed: null,
     limits: [],
     balance: null,
     models: [],
@@ -60,6 +61,7 @@ const relay = proposal({
   headers: [{ name: "X-Group", value: "vip" }],
   client_identity: true,
   concurrency: 8,
+  min_speed: { tokens_per_sec: 12, window_secs: 30 },
   limits: [
     { per: "minute", every: 5, measure: "tokens", max: 10_000_000, cache_reads: false },
     { per: "day", every: 1, measure: "cost", max: 20_000_000, cache_reads: false },
@@ -103,6 +105,8 @@ describe("按导入链接预填新建对话框", () => {
     expect(f).toMatchObject({
       preset: "sub2api",
       maxConcurrent: "8",
+      minSpeed: "12",
+      minSpeedWindow: "30",
       forwardClientIdentity: true,
       manualModels: ["gpt-5", "gpt-5-mini"],
       scope: "some",
@@ -119,6 +123,7 @@ describe("按导入链接预填新建对话框", () => {
       headers: [{ name: "X-Group", value: "vip" }],
       forward_client_identity: true,
       max_concurrent: 8,
+      min_speed: { tokens_per_sec: 12, window_secs: 30 },
       limits: relay.limits,
       models: ["gpt-5", "gpt-5-mini"],
       models_only: ["gpt-5*"],

@@ -1871,6 +1871,7 @@ fn a_failed_request_is_an_in_app_notice_and_an_abort_is_not() {
             duration_ms: None,
             usage: None,
             answered_model: None,
+            tokens_per_sec: None,
         })
     };
     let s = failed(tw_api::FailureSource::Upstream);

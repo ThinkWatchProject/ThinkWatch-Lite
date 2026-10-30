@@ -46,6 +46,8 @@ import {
   authModeOf,
   concurrencyOf,
   describeModelList,
+  minSpeedBad,
+  minSpeedWindowBad,
   fieldRules,
   freeName,
   isBedrock,
@@ -344,6 +346,7 @@ function AdvancedSettings({
     rules.clientIdentity ? t.clientIdentity : null,
     t.onProxyFail,
     t.concurrency,
+    t.minSpeed,
     rules.balance ? t.balanceSource : null,
     t.limits,
   ].filter((x): x is string => x !== null);
@@ -362,8 +365,8 @@ function AdvancedSettings({
         {!open && <span className="truncate font-normal text-muted-foreground">{inside.join(t.listSep)}</span>}
       </Button>
       {/*
-        展开时一项接一项：请求头整行，转发客户端身份和它的说明，最后是几项短的（代理不可用时、
-        并发上限，自定义还有余额来源）两两并排，用量上限整行在最后
+        展开时一项接一项：请求头整行，转发客户端身份和它的说明，然后是几项短的（代理不可用时、
+        并发上限，自定义还有余额来源）两两并排，生成过慢时中断整行，用量上限整行在最后
       */}
       {open && (
         <div id="up-advanced" className="flex flex-col gap-4 motion-fade">
@@ -412,6 +415,7 @@ function AdvancedSettings({
               </FormItem>
             )}
           </div>
+          <MinSpeedField form={form} set={set} />
           {limits}
         </div>
       )}
@@ -500,6 +504,67 @@ export function ConcurrencyField({
         onChange={(e) => set({ maxConcurrent: e.target.value.trim() })}
       />
     </FormItem>
+  );
+}
+
+/**
+ * 生成过慢时中断：一句话里两个格子，「生成速度低于 [ ] token/秒持续 [20] 秒时中断」。速度空着
+ * 是不中断（格子里写着「关闭」）；判定时长缺省 20，显式填着。**写错了当场标红**，保存按不下去
+ * （`connectionMissing`）。账号上游的「账号」一节也用它
+ */
+export function MinSpeedField({
+  form,
+  set,
+}: {
+  form: UpstreamForm;
+  set: (patch: Partial<UpstreamForm>) => void;
+}) {
+  const t = useText(connectionSectionText);
+  const badRate = minSpeedBad(form);
+  const badWindow = minSpeedWindowBad(form);
+  const numeric = {
+    inputMode: "numeric",
+    autoComplete: "off",
+    autoCorrect: "off",
+    autoCapitalize: "off",
+    spellCheck: false,
+  } as const;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="flex flex-wrap items-center gap-x-2 gap-y-1.5 tw-body font-medium">
+        <span>{t.minSpeedBefore}</span>
+        <Input
+          id="up-min-speed"
+          {...numeric}
+          className="w-20 font-mono tabular-nums"
+          aria-label={t.minSpeedRate}
+          value={form.minSpeed}
+          placeholder={t.minSpeedOff}
+          aria-invalid={badRate || undefined}
+          onChange={(e) => set({ minSpeed: e.target.value.trim() })}
+        />
+        <span>{t.minSpeedMiddle}</span>
+        <Input
+          id="up-min-speed-window"
+          {...numeric}
+          className="w-16 font-mono tabular-nums"
+          aria-label={t.minSpeedWindow}
+          value={form.minSpeedWindow}
+          aria-invalid={badWindow || undefined}
+          onChange={(e) => set({ minSpeedWindow: e.target.value.trim() })}
+        />
+        <span>{t.minSpeedAfter}</span>
+      </div>
+      <p className="tw-label text-muted-foreground">
+        {badRate || badWindow ? (
+          <span className="text-destructive">
+            {[badRate && t.badMinSpeed, badWindow && t.badMinSpeedWindow].filter(Boolean).join(" ")}
+          </span>
+        ) : (
+          t.minSpeedDesc
+        )}
+      </p>
+    </div>
   );
 }
 
