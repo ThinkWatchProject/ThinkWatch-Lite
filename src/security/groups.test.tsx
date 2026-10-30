@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { setLang } from "@/i18n";
 import { TooltipRoot } from "@/ui/tip";
-import type { SecurityEventView, SecurityKindView, SecurityRuleView } from "@/types";
+import type { SecurityKindView, SecurityRuleHits, SecurityRuleView } from "@/types";
 import { RuleTable, type RuleActions } from "./GuardTab";
 import { disclosureNav } from "./rows";
 import {
@@ -47,8 +47,7 @@ const KINDS: SecurityKindView[] = [
   { slug: "custom", name: "Custom", name_zh: "自定义" },
 ];
 
-const event = (rule: string, custom = false): SecurityEventView =>
-  ({ id: 1, at_ms: 0, request_id: 1, guard: "redact", rule, custom }) as SecurityEventView;
+const hit = (rule: string, count: number, custom = false): SecurityRuleHits => ({ rule, custom, count });
 
 const actions: RuleActions = {
   mode: () => {},
@@ -91,24 +90,21 @@ const heads = (html: string) =>
 const ruleRows = (html: string) => (html.match(/data-row-nav=""/g)?.length ?? 0) - heads(html).length;
 
 describe("命中次数", () => {
-  it("按规则数安全日志的条数；内置和自定义同名分开算", () => {
-    const hits = countHits({
-      events: [event("anthropic-api-key"), event("anthropic-api-key"), event("客户编号", true), event("客户编号")],
-      more: false,
-    });
-    expect(hits).toEqual({ counts: { "b:anthropic-api-key": 2, "c:客户编号": 1, "b:客户编号": 1 }, complete: true });
+  it("按规则取 core 数好的次数；内置和自定义同名分开算", () => {
+    const hits = countHits([
+      hit("anthropic-api-key", 2),
+      hit("客户编号", 1, true),
+      hit("客户编号", 4),
+    ]);
+    expect(hits).toEqual({ "b:anthropic-api-key": 2, "c:客户编号": 1, "b:客户编号": 4 });
     expect(hitsOf(hits, RULES.slice(0, 2))).toBe(2);
     expect(hitsOf(hits, [RULES[4]!])).toBe(1);
     expect(hitsOf(hits, [RULES[2]!])).toBe(0);
     expect(hitsOf(undefined, RULES)).toBeUndefined();
   });
 
-  it("日志还有下一页：数的是下限", () => {
-    expect(countHits({ events: [event("passport")], more: true }).complete).toBe(false);
-  });
-
   it("组头写条数、启用条数和命中次数；没有命中的不写次数", () => {
-    const html = table("", countHits({ events: [event("github-token"), event("github-token")], more: false }));
+    const html = table("", countHits([hit("github-token", 2)]));
     expect(heads(html)).toEqual([
       "开发平台 · 1 条 · 已开 1 条 · 最近 7 天命中 2 次",
       "AI 服务 · 2 条 · 已开 1 条",
@@ -117,12 +113,12 @@ describe("命中次数", () => {
     ]);
   });
 
-  it("不全时写成「N+」；英文界面同一句", () => {
-    const hits = countHits({ events: [event("passport")], more: true });
-    expect(heads(table("", hits))[0]).toBe("证件 · 1 条 · 已开 1 条 · 最近 7 天命中 1+ 次");
+  it("英文界面同一句", () => {
     setLang("en");
-    expect(heads(table("", hits))[0]).toBe("ID documents · 1 rule · 1 on · 1+ matches in the last 7 days");
-    expect(heads(table("", countHits({ events: [event("passport")], more: false })))[0]).toBe(
+    expect(heads(table("", countHits([hit("passport", 3)])))[0]).toBe(
+      "ID documents · 1 rule · 1 on · 3 matches in the last 7 days",
+    );
+    expect(heads(table("", countHits([hit("passport", 1)])))[0]).toBe(
       "ID documents · 1 rule · 1 on · 1 match in the last 7 days",
     );
   });
@@ -150,7 +146,7 @@ describe("组的先后", () => {
 
   it("检索时照样有命中的排在前面", () => {
     // 「p」筛出 AI 服务的两条（api）和证件（passport）
-    const hits = countHits({ events: [event("passport")], more: false });
+    const hits = countHits([hit("passport", 1)]);
     expect(heads(table("p", hits)).map((h) => h.split(" · ")[0])).toEqual(["证件", "AI 服务"]);
     expect(heads(table("", hits)).map((h) => h.split(" · ")[0])).toEqual(["证件", "AI 服务", "开发平台", "自定义"]);
   });

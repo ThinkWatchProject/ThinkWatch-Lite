@@ -220,6 +220,22 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
     for (const e of window) by_outcome[e.action] += 1;
     return { events: clone(xs.slice(0, limit)), more: xs.length > limit, total: window.length, by_outcome };
   },
+  SecurityRuleCounts: (req) => {
+    // 各条记录的 count 加起来，按规则
+    const by = new Map<string, { rule: string; custom: boolean; count: number }>();
+    for (const e of SEC_EVENTS) {
+      if (e.guard !== req.guard || (req.since_ms != null && e.at_ms < req.since_ms)) continue;
+      const k = `${e.custom ? "c" : "b"}:${e.rule}`;
+      const x = by.get(k) ?? { rule: e.rule, custom: e.custom, count: 0 };
+      x.count += e.count;
+      by.set(k, x);
+    }
+    return [...by.values()];
+  },
+  RedactExceptions: () => ({ items: [], max: 500 }),
+  AddRedactException: refuse,
+  ExceptSecurityEvent: refuse,
+  RemoveRedactException: refuse,
   SetSecurityMode: refuse,
   ToggleBuiltinRule: refuse,
   SetBuiltinRuleAction: refuse,

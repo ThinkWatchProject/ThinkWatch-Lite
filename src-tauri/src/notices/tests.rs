@@ -960,6 +960,7 @@ fn secrets(provider: &str, items: &[(&str, bool)]) -> tw_api::Event {
                 count: 1,
                 replaced: !*recorded,
                 source: None,
+                value_sha256: None,
                 detail: hit_detail(
                     tw_api::SecurityDirection::Request,
                     rule,
@@ -1036,6 +1037,7 @@ fn a_saved_secret_hit_names_where_it_is_saved_and_nothing_of_the_value() {
             count: 2,
             replaced: false,
             source: Some(source),
+            value_sha256: None,
             detail: hit_detail(
                 tw_api::SecurityDirection::Request,
                 "thinkwatch-saved-secret",

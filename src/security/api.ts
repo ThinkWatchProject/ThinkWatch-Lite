@@ -44,6 +44,18 @@ export const api = {
   detail: () => call("Security", null),
   /** 安全日志的一页。`guard` 不给就是全部；`before` 翻页 */
   events: (q: SecurityEventsQuery) => call("SecurityEvents", q),
+  /** 一项防护从某个时刻起每条规则命中了几次（各条记录的 `count` 加起来） */
+  counts: (guard: Guard, sinceMs: number) => call("SecurityRuleCounts", { guard, since_ms: sinceMs }),
+  /** 密钥与隐私的例外值，和最多几个 */
+  exceptions: () => call("RedactExceptions", null),
+  /** 手动加入一个例外值。**原值只在这一个请求里**，不进任何日志、缓存 */
+  addException: (value: string, baseVersion: string) =>
+    call("AddRedactException", { value, base_version: baseVersion }),
+  /** 把安全日志的一条列为例外（按那一条的号） */
+  exceptEvent: (id: number, baseVersion: string) =>
+    call("ExceptSecurityEvent", { base_version: baseVersion }, String(id)),
+  removeException: (sha256: string, baseVersion: string) =>
+    call("RemoveRedactException", { base_version: baseVersion }, sha256),
   /**
    * 导出的文件：弹系统的「存储」对话框，`name` 是默认文件名，存到用户选的地方。返回存到的
    * 路径；用户取消了是 `null`。**对话框和写文件都在 Rust 这一侧**（`export::save_export`），

@@ -1,4 +1,4 @@
-import { Fragment, useMemo, useState } from "react";
+import { Fragment, useMemo, useState, type ReactNode } from "react";
 import { ChevronRightIcon, FlaskConicalIcon, PlusIcon, SearchIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
@@ -140,11 +140,14 @@ export function GuardTab({
   detail,
   modePending,
   actions,
+  below,
 }: {
   guard: Guard;
   detail: GuardDetail;
   modePending: boolean;
   actions: RuleActions;
+  /** 规则表下方的一节（密钥与隐私：例外） */
+  below?: ReactNode;
 }) {
   const t = useText(guardTabText);
   const [query, setQuery] = useState("");
@@ -196,6 +199,7 @@ export function GuardTab({
         hits={hits}
         actions={actions}
       />
+      {below}
     </div>
   );
 }
@@ -336,7 +340,6 @@ export function RuleTable({
                 title={title}
                 rules={live}
                 hits={hitsOf(hits, live)}
-                complete={hits?.complete ?? true}
                 open={expanded}
                 onToggle={() => toggle(g.key)}
               />
@@ -369,7 +372,6 @@ function GroupHead({
   title,
   rules,
   hits,
-  complete,
   open,
   onToggle,
 }: {
@@ -377,8 +379,6 @@ function GroupHead({
   title: string;
   rules: SecurityRuleView[];
   hits: number | undefined;
-  /** 次数是全部的；不是的话写成「N+」 */
-  complete: boolean;
   open: boolean;
   onToggle: () => void;
 }) {
@@ -400,7 +400,7 @@ function GroupHead({
           <span className="min-w-0 truncate">
             <span className="font-medium text-foreground/80">{title}</span>
             {` · ${t.groupCount(rules.length, on)}`}
-            {hits != null && hits > 0 && ` · ${t.groupHits(complete ? String(hits) : `${hits}+`)}`}
+            {hits != null && hits > 0 && ` · ${t.groupHits(hits)}`}
           </span>
         </span>
       </TableCell>

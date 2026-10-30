@@ -12,6 +12,8 @@ import { useRuleCatalog } from "./catalog";
 import { Code, matchingOf, partLabel, snapshotName } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { hitDetailText } from "./HitDetail.i18n";
+import { ExceptedTag } from "./Exceptions";
+import { exceptionsText } from "./Exceptions.i18n";
 
 /** 一开始列几处。其余的「展开全部」 */
 const FIRST = 3;
@@ -36,12 +38,16 @@ const LINK =
  *
  * `onOpenRequest` 不给就不画「请求」一行（请求详情里就是这一条请求）；会话那一行
  * 只在这次请求属于某次会话、`onOpenSession` 给了时才有。
+ *
+ * 密钥与隐私的命中：这个值此刻是例外时标「例外」；能列为例外（`exceptable`）、又给了
+ * `onExcept` 时，处置一行下面有「列为例外」。不能列的不给按钮，也不解释为什么。
  */
 export function HitDetail({
   e,
   stacked = false,
   onOpenRequest,
   onOpenSession,
+  onExcept,
   className,
   id,
 }: {
@@ -49,11 +55,14 @@ export function HitDetail({
   stacked?: boolean;
   onOpenRequest?: (requestId: number) => void;
   onOpenSession?: (session: string) => void;
+  /** 列为例外（打开确认对话框）。不给就没有这个按钮 */
+  onExcept?: () => void;
   className?: string;
   id?: string;
 }) {
   const t = useText(hitDetailText);
   const lt = useText(securityLabelsText);
+  const xt = useText(exceptionsText);
   // 规则的中文名按 id 到规则目录里查（快照里只有英文名）
   useRuleCatalog();
   const where = lt.directions[e.direction];
@@ -78,6 +87,18 @@ export function HitDetail({
       </Field>
       <Field label={t.outcome} stacked={stacked}>
         <OutcomeText d={e.outcome_detail} direction={e.direction} />
+        {e.excepted && (
+          <span>
+            <ExceptedTag />
+          </span>
+        )}
+        {onExcept && e.exceptable && (
+          <span>
+            <Button size="sm" variant="outline" onClick={onExcept}>
+              {xt.exceptTitle}
+            </Button>
+          </span>
+        )}
       </Field>
       {onOpenRequest && (
         <Field label={t.request} stacked={stacked}>

@@ -8,7 +8,7 @@ import type {
   Guard,
   OutcomeDetail,
   RuleAction,
-  SecurityEventsPage,
+  SecurityRuleHits,
   SecurityRuleView,
 } from "@/types";
 
@@ -52,30 +52,22 @@ export const ruleKey = (r: Pick<SecurityRuleView, "custom" | "id">) => `${r.cust
 
 // ------------------------------------------------------------------ 组头的命中次数
 
-/**
- * 一段时间里每条规则在安全日志里有几条（键见 `ruleKey`）。
- *
- * **core 不按规则数**：这是安全日志最新的一页里数出来的。`complete` 说这一页是不是
- * 这段时间的全部 —— 不是的话每个数都只是下限，界面写成「N+」。
- */
-export interface RuleHits {
-  counts: Record<string, number>;
-  complete: boolean;
-}
+/** 一段时间里每条规则命中了几次（键见 `ruleKey`），core 按规则数好的 */
+export type RuleHits = Record<string, number>;
 
-export function countHits(page: Pick<SecurityEventsPage, "events" | "more">): RuleHits {
-  const counts: Record<string, number> = {};
-  for (const e of page.events) {
-    const k = ruleKey({ custom: e.custom, id: e.rule });
-    counts[k] = (counts[k] ?? 0) + 1;
+export function countHits(rows: readonly Pick<SecurityRuleHits, "rule" | "custom" | "count">[]): RuleHits {
+  const counts: RuleHits = {};
+  for (const h of rows) {
+    const k = ruleKey({ custom: h.custom, id: h.rule });
+    counts[k] = (counts[k] ?? 0) + h.count;
   }
-  return { counts, complete: !page.more };
+  return counts;
 }
 
 /** 一组规则一共几条命中。还没读到是 `undefined` */
 export function hitsOf(hits: RuleHits | undefined, rules: readonly SecurityRuleView[]): number | undefined {
   if (!hits) return undefined;
-  return rules.reduce((n, r) => n + (hits.counts[ruleKey(r)] ?? 0), 0);
+  return rules.reduce((n, r) => n + (hits[ruleKey(r)] ?? 0), 0);
 }
 
 /**

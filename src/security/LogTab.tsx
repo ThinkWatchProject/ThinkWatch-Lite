@@ -30,6 +30,7 @@ import type { Guard, SecurityDetail, SecurityEventView } from "@/types";
 import { api } from "./api";
 import { fetchAll, fileName, toCsv, toJson, type ExportFormat } from "./export";
 import { HitDetail } from "./HitDetail";
+import { ExceptedTag } from "./Exceptions";
 import { ActionBadge, byCodepoints, clock, dayHead, dayKey, EventDetail, ruleName, whereOf } from "./labels";
 import { securityLabelsText } from "./labels.i18n";
 import { logTabText } from "./LogTab.i18n";
@@ -44,6 +45,8 @@ export interface LogActions {
   disableRule: (guard: Guard, id: string, custom: boolean) => void;
   /** 切到某一项防护的标签（空状态里的入口） */
   showGuard: (guard: Guard) => void;
+  /** 把这一条的值列为例外（打开确认对话框）。只给 `exceptable` 的那几条 */
+  except: (e: SecurityEventView) => void;
 }
 
 /**
@@ -400,6 +403,7 @@ function LogTable({
                             <div className="flex min-w-0 items-center gap-1.5">
                               <span className="truncate font-medium">{name}</span>
                               {e.custom && <Badge variant="outline">{lt.custom}</Badge>}
+                              {e.excepted && <ExceptedTag />}
                               {where && <span className="shrink-0 text-muted-foreground">· {where}</span>}
                             </div>
                             {/* 值只剩头尾：日志截一张图就能带出去 */}
@@ -454,6 +458,7 @@ function LogTable({
                               e={e}
                               onOpenRequest={onOpen}
                               onOpenSession={openSession}
+                              onExcept={() => actions.except(e)}
                               className="sticky left-4 w-[calc(100cqw-2rem)] max-w-[60rem] animate-in fade-in-0 duration-(--motion-fast)"
                             />
                           </TableCell>

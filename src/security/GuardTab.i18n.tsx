@@ -33,8 +33,7 @@ export const guardTabText = messages(
     action: "动作",
     /** 组标题：「隐藏字符 · 3 条 · 已开 2 条 · 最近 7 天命中 5 次」 */
     groupCount: (all: number, on: number) => `${all} 条 · 已开 ${on} 条`,
-    /** 7 天里的日志超过一页时数的是下限，`n` 写成「120+」 */
-    groupHits: (n: string) => `最近 7 天命中 ${n} 次`,
+    groupHits: (n: number) => `最近 7 天命中 ${n} 次`,
     /** 行内的动作选择，给读屏 */
     actionFor: (name: string) => `「${name}」的动作`,
     /** 动作为「替换」时，行内选项写出换成什么 */
@@ -68,7 +67,7 @@ export const guardTabText = messages(
     scope: "Checks",
     action: "Action",
     groupCount: (all: number, on: number) => `${plural(all, "rule", "rules")} · ${on} on`,
-    groupHits: (n: string) => `${n} ${n === "1" ? "match" : "matches"} in the last 7 days`,
+    groupHits: (n: number) => `${plural(n, "match", "matches")} in the last 7 days`,
     actionFor: (name: string) => `Action for “${name}”`,
     replaceWith: (text: string) => `Replace with ${text}`,
     turnOn: "Turn on",

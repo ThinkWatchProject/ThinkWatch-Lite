@@ -206,6 +206,8 @@ const hit = (x: Partial<SecurityEventView>): SecurityEventView => ({
   more_locations: 0,
   rule_snapshot: { builtin: true, id: "thinkwatch-saved-secret", name: "Credentials saved in ThinkWatch", core_version: "0.85.0" },
   outcome_detail: { action: "replaced", placeholders: ["<<TW_SECRET_1>>"] },
+  excepted: false,
+  exceptable: false,
   ...x,
 });
 
