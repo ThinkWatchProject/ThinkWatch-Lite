@@ -84,6 +84,7 @@ fn blank(base_url: &str) -> ImportProposal {
         headers: vec![],
         client_identity: false,
         concurrency: None,
+        min_speed: None,
         limits: vec![],
         balance: None,
         models: vec![],
@@ -683,6 +684,7 @@ fn account_links_carry_no_credentials_or_connection_fields() {
         ("headers", "X-A: 1"),
         ("protocol", "openai-chat"),
         ("concurrency", "4"),
+        ("min_speed", "15"),
         ("limits", "day|requests|100"),
         ("oauth_refresh", "r"),
     ] {
@@ -692,6 +694,7 @@ fn account_links_carry_no_credentials_or_connection_fields() {
             "headers" => Param::Headers,
             "protocol" => Param::Protocol,
             "concurrency" => Param::Concurrency,
+            "min_speed" => Param::MinSpeed,
             "limits" => Param::Limits,
             _ => Param::OauthRefresh,
         };
@@ -1240,6 +1243,75 @@ fn concurrency_is_a_plain_whole_number_up_to_a_thousand() {
             "{bad}"
         );
     }
+}
+
+/// 生成过慢时中断：速度 1 到 1000 token/秒，判定时长 5 到 120 秒、不写是 20
+#[test]
+fn min_speed_is_a_rate_with_an_optional_window() {
+    let got = |extra: &[(&str, &str)]| relay(extra).map(|x| x.min_speed);
+    assert_eq!(got(&[]), Ok(None));
+    assert_eq!(
+        got(&[("min_speed", "15")]),
+        Ok(Some(ImportMinSpeed {
+            tokens_per_sec: 15,
+            window_secs: 20
+        }))
+    );
+    for (v, n) in [("1", 1), ("1000", 1000)] {
+        assert_eq!(
+            got(&[("min_speed", v), ("min_speed_window", "60")]),
+            Ok(Some(ImportMinSpeed {
+                tokens_per_sec: n,
+                window_secs: 60
+            }))
+        );
+    }
+    for (w, n) in [("5", 5), ("120", 120)] {
+        assert_eq!(
+            got(&[("min_speed", "8"), ("min_speed_window", w)]),
+            Ok(Some(ImportMinSpeed {
+                tokens_per_sec: 8,
+                window_secs: n
+            }))
+        );
+    }
+    for bad in ["0", "1001", "01", "+1", "1.5", "八"] {
+        assert_eq!(
+            got(&[("min_speed", bad)]),
+            Err(Rejected::Invalid(Param::MinSpeed)),
+            "{bad}"
+        );
+    }
+    for bad in ["0", "4", "121", "020", "20s"] {
+        assert_eq!(
+            got(&[("min_speed", "15"), ("min_speed_window", bad)]),
+            Err(Rejected::Invalid(Param::MinSpeedWindow)),
+            "{bad}"
+        );
+    }
+    // 只给判定时长没有意思
+    assert_eq!(
+        got(&[("min_speed_window", "20")]),
+        Err(Rejected::NotOffered(Param::MinSpeedWindow))
+    );
+}
+
+#[test]
+fn min_speed_window_is_written_only_when_not_the_default() {
+    let at = |window_secs| ImportProposal {
+        min_speed: Some(ImportMinSpeed {
+            tokens_per_sec: 15,
+            window_secs,
+        }),
+        ..blank("https://relay.example")
+    };
+    assert_eq!(
+        generate(&at(20)),
+        "thinkwatch://import?service=custom&url=https%3A%2F%2Frelay.example&min_speed=15"
+    );
+    assert!(generate(&at(45)).ends_with("&min_speed=15&min_speed_window=45"));
+    round_trip(&at(20));
+    round_trip(&at(45));
 }
 
 /// 用量上限：`周期|计量|上限|N|缓存读取`，和 core 的配置校验同一套规矩
@@ -2005,6 +2077,8 @@ fn every_proposal_the_parser_accepts_round_trips() {
             ("key", "sk-a+b/c=="),
             ("client_identity", "on"),
             ("concurrency", "8"),
+            ("min_speed", "12"),
+            ("min_speed_window", "30"),
             ("limits", "minute|tokens|10000000|5;day|cost|20"),
             ("models", "claude-opus-5-5,claude-sonnet-5-5"),
             ("models_only", "claude-*,gpt-5?"),

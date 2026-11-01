@@ -291,6 +291,20 @@ cache_reads: boolean, };
 export type ImportLink = { "kind": "proposal", proposal: ImportProposal, } | { "kind": "unsupported", param: string | null, };
 
 /**
+ * 生成过慢时中断：最近 `window_secs` 秒的生成速度低于 `tokens_per_sec` token/秒时中断
+ * （配置里的 `min_speed`）
+ */
+export type ImportMinSpeed = { 
+/**
+ * 1 到 1000
+ */
+tokens_per_sec: number, 
+/**
+ * 判定时长，5 到 120 秒。链接没写是 20
+ */
+window_secs: number, };
+
+/**
  * OAuth 凭据（`auth=oauth`）
  */
 export type ImportOAuth = { 
@@ -336,6 +350,10 @@ client_identity: boolean,
  * 并发上限，1 到 1000
  */
 concurrency: number | null, 
+/**
+ * 生成过慢时中断。null = 不中断
+ */
+min_speed: ImportMinSpeed | null, 
 /**
  * 用量上限，按链接里的顺序
  */

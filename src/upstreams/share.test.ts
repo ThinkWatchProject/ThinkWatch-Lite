@@ -60,6 +60,7 @@ function shape(f: UpstreamForm) {
     aws: authModeOf(f) === "aws-keys" ? [f.awsKeyId, f.awsSecret, f.awsToken, f.awsRegion] : null,
     identity: f.forwardClientIdentity,
     concurrency: f.maxConcurrent,
+    minSpeed: [f.minSpeed, f.minSpeedWindow],
     limits: inputsOf(f.limits),
     manual: f.manualModels,
     scope: f.scope,
@@ -85,6 +86,8 @@ describe("分享上游：链接里的提议", () => {
     roundTrips(view({ name: "ollama", base_url: "http://127.0.0.1:11434", key: null, headers: [], protocol: null, protocol_explicit: false, billing: "free" }));
     roundTrips(view({ name: "lan-ollama", base_url: "http://192.168.1.20:11434", key: null, headers: [], protocol: null, protocol_explicit: false, billing: "per-token" }));
     roundTrips(view({ balance_setting: "newapi", protocol: "openai-chat" }));
+    roundTrips(view({ min_speed: { tokens_per_sec: 15, window_secs: 20 } }));
+    roundTrips(view({ min_speed: { tokens_per_sec: 3, window_secs: 90 } }));
     roundTrips(
       view({
         limits: [

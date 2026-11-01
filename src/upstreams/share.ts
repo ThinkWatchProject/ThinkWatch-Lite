@@ -217,6 +217,8 @@ export function shareProposal(p: ProviderView, extra: ShareExtra, secrets: boole
       headers: shareHeaders,
       client_identity: auth !== "account" && f.forwardClientIdentity && preset.clientIdentity === true,
       concurrency: auth === "account" ? null : (p.max_concurrent ?? null),
+      // 生成过慢时中断：和并发上限一样，登录账号的链接不带
+      min_speed: auth === "account" ? null : (p.min_speed ?? null),
       // 用量上限和并发上限一样：登录账号的链接不带（接收方登录时由 core 建上游）
       limits:
         auth === "account"
@@ -264,6 +266,9 @@ export function dropParam(p: ImportProposal, param: string): ImportProposal | nu
       return { ...p, client_identity: false };
     case "concurrency":
       return { ...p, concurrency: null };
+    case "min_speed":
+    case "min_speed_window":
+      return { ...p, min_speed: null };
     case "limits":
       return { ...p, limits: [] };
     case "balance":
@@ -300,6 +305,7 @@ export type Carried =
   | { kind: "billing" }
   | { kind: "balance" }
   | { kind: "concurrency" }
+  | { kind: "minSpeed" }
   | { kind: "limits"; n: number }
   | { kind: "identity" }
   | { kind: "login" };
@@ -323,6 +329,7 @@ export function carried(p: ImportProposal): Carried[] {
   if (p.billing) out.push({ kind: "billing" });
   if (p.balance || preset.balance) out.push({ kind: "balance" });
   if (p.concurrency != null) out.push({ kind: "concurrency" });
+  if (p.min_speed != null) out.push({ kind: "minSpeed" });
   if (p.limits.length > 0) out.push({ kind: "limits", n: p.limits.length });
   if (p.client_identity) out.push({ kind: "identity" });
   return out;

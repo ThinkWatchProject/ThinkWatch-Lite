@@ -391,6 +391,8 @@ export function applyEvent(rows: Map<number, RequestRow>, ev: CoreEvent): void {
         // 一跳都没发出去的失败没有（被规则拒绝、上游都满着……）
         if (ev.sent_bytes != null) r.sentBytes = ev.sent_bytes;
         if (ev.received_bytes != null) r.receivedBytes = ev.received_bytes;
+        // 生成太慢被切断的失败带着判定时的速度，别的失败没有
+        if (ev.tokens_per_sec != null) r.tokensPerSec = ev.tokens_per_sec;
         // 断在中间的失败，上游已经为这些 token 计了费
         if (ev.usage) {
           r.inputTokens = ev.usage.input;

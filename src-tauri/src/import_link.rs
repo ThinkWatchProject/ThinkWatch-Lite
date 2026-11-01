@@ -36,8 +36,8 @@ use serde::Serialize;
 use tw_api::{BalanceSetting, Billing, LimitMeasure, LimitPer, Protocol, ZaiFamily};
 
 use crate::wire::{
-    ImportAuth, ImportAwsKeys, ImportHeader, ImportLimit, ImportLink, ImportOAuth, ImportPrice,
-    ImportProposal, ImportService, ImportSheet, ImportSpec, ShareLink,
+    ImportAuth, ImportAwsKeys, ImportHeader, ImportLimit, ImportLink, ImportMinSpeed, ImportOAuth,
+    ImportPrice, ImportProposal, ImportService, ImportSheet, ImportSpec, ShareLink,
 };
 
 /// 链接的前缀。主机名那一段不分大小写
@@ -57,6 +57,11 @@ pub const MAX_HEADERS: usize = 16;
 pub const MAX_HEADER_NAME: usize = 64;
 pub const MAX_HEADER_VALUE: usize = 1024;
 pub const MAX_CONCURRENCY: u32 = 1000;
+/// 最低生成速度（token/秒）的上限；下限是 1
+pub const MAX_MIN_SPEED: u32 = 1000;
+/// 判定时长（秒）的范围和缺省值，和 core 的 `min_speed.window_secs` 一样
+pub const MIN_SPEED_WINDOW: std::ops::RangeInclusive<u32> = 5..=120;
+pub const MIN_SPEED_WINDOW_DEFAULT: u32 = 20;
 /// 用量上限最多几条
 pub const MAX_LIMITS: usize = 16;
 /// 请求数、token 数上限的上限（十五位数）
@@ -95,6 +100,8 @@ pub enum Param {
     Headers,
     ClientIdentity,
     Concurrency,
+    MinSpeed,
+    MinSpeedWindow,
     Limits,
     Balance,
     Models,
@@ -125,6 +132,8 @@ impl Param {
         Self::Headers,
         Self::ClientIdentity,
         Self::Concurrency,
+        Self::MinSpeed,
+        Self::MinSpeedWindow,
         Self::Limits,
         Self::Balance,
         Self::Models,
@@ -156,6 +165,8 @@ impl Param {
             Self::Headers => "headers",
             Self::ClientIdentity => "client_identity",
             Self::Concurrency => "concurrency",
+            Self::MinSpeed => "min_speed",
+            Self::MinSpeedWindow => "min_speed_window",
             Self::Limits => "limits",
             Self::Balance => "balance",
             Self::Models => "models",
@@ -855,6 +866,19 @@ fn build(
             Some(check_concurrency(c)?)
         }
     };
+    // 判定时长只跟着速度一起给：单给一个时长没有意思
+    let min_speed = match params.get(Param::MinSpeed) {
+        None => {
+            if params.get(Param::MinSpeedWindow).is_some() {
+                return Err(Rejected::NotOffered(Param::MinSpeedWindow));
+            }
+            None
+        }
+        Some(v) => {
+            offered(Param::MinSpeed, !account)?;
+            Some(check_min_speed(v, params.get(Param::MinSpeedWindow))?)
+        }
+    };
     let limits = match params.get(Param::Limits) {
         None => Vec::new(),
         Some(l) => {
@@ -928,6 +952,7 @@ fn build(
         headers,
         client_identity,
         concurrency,
+        min_speed,
         limits,
         balance,
         models,
@@ -1230,6 +1255,21 @@ fn whole(s: &str, max: u32) -> Option<u32> {
 
 fn check_concurrency(c: &str) -> Result<u32, Rejected> {
     whole(c, MAX_CONCURRENCY).ok_or(Rejected::Invalid(Param::Concurrency))
+}
+
+/// `min_speed=15`（token/秒，1 到 1000），可选 `min_speed_window=20`（秒，5 到 120，不写是 20）
+fn check_min_speed(speed: &str, window: Option<&str>) -> Result<ImportMinSpeed, Rejected> {
+    let tokens_per_sec = whole(speed, MAX_MIN_SPEED).ok_or(Rejected::Invalid(Param::MinSpeed))?;
+    let window_secs = match window {
+        None => MIN_SPEED_WINDOW_DEFAULT,
+        Some(w) => whole(w, *MIN_SPEED_WINDOW.end())
+            .filter(|n| MIN_SPEED_WINDOW.contains(n))
+            .ok_or(Rejected::Invalid(Param::MinSpeedWindow))?,
+    };
+    Ok(ImportMinSpeed {
+        tokens_per_sec,
+        window_secs,
+    })
 }
 
 /// 「每 N」最多写几：分钟 60、小时 24。天、周、月没有 N（core 的 `every` 规则）
@@ -1601,6 +1641,13 @@ pub fn query(p: &ImportProposal) -> String {
     }
     if let Some(c) = p.concurrency {
         put(Param::Concurrency, c.to_string());
+    }
+    // 判定时长和缺省一样就不写
+    if let Some(m) = p.min_speed {
+        put(Param::MinSpeed, m.tokens_per_sec.to_string());
+        if m.window_secs != MIN_SPEED_WINDOW_DEFAULT {
+            put(Param::MinSpeedWindow, m.window_secs.to_string());
+        }
     }
     if !p.limits.is_empty() {
         let s: Vec<String> = p.limits.iter().map(limit_text).collect();

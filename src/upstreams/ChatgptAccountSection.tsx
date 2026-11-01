@@ -25,7 +25,7 @@ import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { api } from "./api";
 import { chatgptAccountText } from "./ChatgptAccountSection.i18n";
-import { ConcurrencyField } from "./ConnectionSection";
+import { ConcurrencyField, MinSpeedField } from "./ConnectionSection";
 import { LimitsField } from "./LimitsField";
 import { coreText, errorText, planLabel, proxyKindLabel, quotaWindowBefore } from "./labels";
 import { DialogError, FormItem } from "./parts";
@@ -147,6 +147,8 @@ export function ChatgptAccountSection({
         {/* 账号一样限制同时进行的请求 */}
         <ConcurrencyField form={form} set={set} />
       </div>
+
+      <MinSpeedField form={form} set={set} />
 
       <LimitsField form={form} set={set} editing={editing} rowDays={ov.retention.row_days} />
 

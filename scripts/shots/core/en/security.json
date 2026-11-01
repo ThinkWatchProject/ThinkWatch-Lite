@@ -2854,6 +2854,78 @@
         "on_by_default": true
       },
       {
+        "about": "Literal private keys, seeds, mnemonic/recovery phrases, passphrases, recovery codes and MPC/backup shares in named fields, including `pk`, `privateKey`, `PRIVY_WALLET_PRIVATE_KEY` and Chinese labels; only the value is replaced, with no guessed key length",
+        "about_zh": "按字段识别私钥、种子、助记词、恢复短语、口令、恢复码和 MPC／备份份额，包括 `pk`、`privateKey`、`PRIVY_WALLET_PRIVATE_KEY` 和中文标签；只换值，不猜测密钥长度",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-secret-field",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-secret-field",
+          "kind": "builtin"
+        },
+        "name": "Wallet secret in a field",
+        "name_zh": "字段中的钱包机密",
+        "on_by_default": true
+      },
+      {
+        "about": "Literal API keys, secrets, passphrases, signing memos, OTPs and authentication signatures in SDK/config fields or trading headers; Binance, OKX, Bybit, Coinbase, Kraken, KuCoin, Bitget, Gate, MEXC, Gemini, Bitfinex, HTX, BitMart, Phemex, Bitstamp, Polymarket and predict.fun; only the value is replaced",
+        "about_zh": "SDK／配置字段或交易请求头中的 API key、secret、passphrase、签名 Memo、OTP 和鉴权签名；覆盖 Binance、OKX、Bybit、Coinbase、Kraken、KuCoin、Bitget、Gate、MEXC、Gemini、Bitfinex、HTX、BitMart、Phemex、Bitstamp、Polymarket 和 predict.fun；只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "exchange-credential",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "exchange-credential",
+          "kind": "builtin"
+        },
+        "name": "Trading API / signed authentication credential",
+        "name_zh": "交易 API／签名鉴权凭证",
+        "on_by_default": true
+      },
+      {
+        "about": "Literal `keystore` or `ciphertext` fields, including Ethereum V3 encrypted key material; pasted JSON objects are protected as text and only the value is replaced",
+        "about_zh": "字面量 `keystore` 或 `ciphertext` 字段，包括 Ethereum V3 加密密钥材料；作为文本粘贴的 JSON 对象也保护，只换值",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-keystore",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-keystore",
+          "kind": "builtin"
+        },
+        "name": "Wallet keystore / ciphertext",
+        "name_zh": "钱包密钥库／密文",
+        "on_by_default": true
+      },
+      {
+        "about": "API credentials in Infura `/v3/`, Alchemy `/v2/`, QuickNode token paths and Helius `api-key` URLs; only the credential part is replaced",
+        "about_zh": "Infura `/v3/`、Alchemy `/v2/`、QuickNode 令牌路径及 Helius `api-key` URL 中的 API 凭据；只换凭据部分",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-rpc-key",
+        "kind": "in-context",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-rpc-key",
+          "kind": "builtin"
+        },
+        "name": "Blockchain RPC URL credential",
+        "name_zh": "区块链 RPC 地址凭证",
+        "on_by_default": true
+      },
+      {
         "about": "12, 15, 18, 21 or 24 consecutive words from the BIP39 English or Simplified Chinese word list that pass the checksum; numbering allowed, replaced as a whole",
         "about_zh": "连续 12、15、18、21 或 24 个 BIP39 英文或简体中文词表中的词，并通过校验和；可带编号，整段",
         "action": "placeholder",
@@ -2890,8 +2962,8 @@
         "on_by_default": true
       },
       {
-        "about": "Starts with `xprv`, `tprv`, `yprv` or `zprv` and passes Base58Check",
-        "about_zh": "`xprv`、`tprv`、`yprv`、`zprv` 开头，Base58Check 校验通过",
+        "about": "BIP32 / SLIP-0132 extended private keys: `xprv`, `tprv`, `yprv`, `Yprv`, `zprv`, `Zprv`, `uprv`, `Uprv`, `vprv` or `Vprv`; valid Base58Check, private marker and secp256k1 scalar",
+        "about_zh": "BIP32 / SLIP-0132 扩展私钥：`xprv`、`tprv`、`yprv`、`Yprv`、`zprv`、`Zprv`、`uprv`、`Uprv`、`vprv`、`Vprv`；Base58Check、私钥标记及 secp256k1 标量均有效",
         "action": "placeholder",
         "custom": false,
         "default_action": "placeholder",
@@ -2905,6 +2977,96 @@
         },
         "name": "Extended private key",
         "name_zh": "扩展私钥",
+        "on_by_default": true
+      },
+      {
+        "about": "64 hexadecimal characters with an optional `0x` prefix; covers EVM and TRON private keys as well as indistinguishable transaction hashes and digests",
+        "about_zh": "64 位十六进制串，可带 `0x` 前缀；覆盖 EVM、TRON 裸私钥以及格式无法区分的交易哈希和摘要",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-hex-key",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-hex-key",
+          "kind": "builtin"
+        },
+        "name": "Raw wallet key / 32-byte hash",
+        "name_zh": "裸钱包私钥／32 字节哈希",
+        "on_by_default": true
+      },
+      {
+        "about": "64-byte Ed25519 seed and public key encoded as Base58 or a pasted JSON byte array; the public half must match the seed, excluding signatures of the same length",
+        "about_zh": "Base58 编码或作为文本粘贴的 JSON 字节数组，含 64 字节 Ed25519 种子与公钥；由种子派生的公钥须一致，排除同长度签名",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-solana-key",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-solana-key",
+          "kind": "builtin"
+        },
+        "name": "Solana keypair",
+        "name_zh": "Solana 密钥对",
+        "on_by_default": true
+      },
+      {
+        "about": "`suiprivkey1` Bech32 encoding with a valid checksum, a supported signature scheme and 32 key bytes",
+        "about_zh": "`suiprivkey1` Bech32 编码，校验和有效，含支持的签名方案和 32 字节密钥",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-sui-key",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-sui-key",
+          "kind": "builtin"
+        },
+        "name": "Sui private key",
+        "name_zh": "Sui 私钥",
+        "on_by_default": true
+      },
+      {
+        "about": "Stellar `S` StrKey seed with the correct version, 32-byte payload and CRC16-XModem checksum",
+        "about_zh": "Stellar `S` StrKey 种子，版本、32 字节载荷和 CRC16-XModem 校验均有效",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-stellar-key",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-stellar-key",
+          "kind": "builtin"
+        },
+        "name": "Stellar secret seed",
+        "name_zh": "Stellar 私密种子",
+        "on_by_default": true
+      },
+      {
+        "about": "XRP-alphabet Base58Check family seeds, including secp256k1 and Ed25519 version encodings",
+        "about_zh": "XRP 字母表的 Base58Check 账户种子，包括 secp256k1 和 Ed25519 版本",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-xrp-seed",
+        "kind": "crypto",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-xrp-seed",
+          "kind": "builtin"
+        },
+        "name": "XRP family seed",
+        "name_zh": "XRP 账户种子",
         "on_by_default": true
       },
       {
@@ -3273,6 +3435,24 @@
         "on_by_default": true
       },
       {
+        "about": "EVM hex addresses, checksummed Bitcoin/TRON/XRP/Stellar addresses, Bitcoin witness addresses and BIP32 / SLIP-0132 extended public keys; also 32-byte Base58 account shapes such as Solana, which lack a checksum",
+        "about_zh": "EVM 十六进制地址，经校验的 Bitcoin／TRON／XRP／Stellar 地址、Bitcoin 隔离见证地址和 BIP32／SLIP-0132 扩展公钥；也覆盖 Solana 等无校验和的 32 字节 Base58 账户格式",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "crypto-address",
+        "kind": "financial",
+        "label": "SECRET",
+        "matcher": {
+          "check": "crypto-address",
+          "kind": "builtin"
+        },
+        "name": "Blockchain account / extended public key",
+        "name_zh": "区块链账户／扩展公钥",
+        "on_by_default": true
+      },
+      {
         "about": "A country code, two check digits and the account number length set for that country, passing MOD 97-10; written in one run or in groups of four",
         "about_zh": "国家代码、两位校验码与该国规定位数的账号，MOD 97-10 校验通过；连写或四位一组",
         "action": "placeholder",
@@ -3431,6 +3611,24 @@
         "name": "Vehicle identification number (VIN)",
         "name_zh": "车辆识别代号（VIN）",
         "on_by_default": false
+      },
+      {
+        "about": "Hyphenated UUIDs and 32 hexadecimal characters, ignoring case and without version restrictions, including order and trace IDs; compact hashes of the same shape are also replaced",
+        "about_zh": "带连字符的 UUID 和 32 位十六进制串，不区分大小写、不限制版本，包括订单号和追踪 ID；同形状的紧凑哈希也替换",
+        "action": "placeholder",
+        "custom": false,
+        "default_action": "placeholder",
+        "enabled": true,
+        "id": "uuid",
+        "kind": "device",
+        "label": "SECRET",
+        "matcher": {
+          "check": "uuid",
+          "kind": "builtin"
+        },
+        "name": "UUID / compact identifier",
+        "name_zh": "UUID／紧凑标识符",
+        "on_by_default": true
       },
       {
         "about": "15 digits passing the Luhn check, with “IMEI” in the 20 characters before it",
