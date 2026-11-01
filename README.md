@@ -146,6 +146,14 @@ with an administrator's password, it restores the administrator's clients and
 deletes the administrator's data instead, so uninstall in the app first in that
 case.
 
+## Privacy
+
+ThinkWatch Lite sends no telemetry. AI requests go to the upstream services you
+configure; Secrets & privacy can redact matching sensitive content locally
+before it is sent, when enabled. The app and its bundled gateway are fully open
+source under MIT. See the [Privacy Policy](PRIVACY.md) for data storage, network
+connections, redaction defaults, and deletion controls.
+
 ## Documentation
 
 - [Features](https://thinkwat.ch/docs/lite/features): every page, in detail
