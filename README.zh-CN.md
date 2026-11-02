@@ -9,10 +9,7 @@
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri_2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white" />
   <img alt="React 19" src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-750014?style=for-the-badge" />
-  <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
-  <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
-  <img alt="Linux" src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" />
-  <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX_DO-Community-1A1A1A?style=for-the-badge" /></a>
+  <img alt="平台：macOS、Windows 与 Linux" src="https://img.shields.io/badge/%E5%B9%B3%E5%8F%B0-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-2F6F9F?style=for-the-badge" />
 </p>
 
 # ThinkWatch Lite
@@ -62,12 +59,12 @@ Claude Code、Codex 等 AI 客户端的本地网关，支持 macOS、Windows 与
 
 ## 安装
 
-| 平台 | 安装 |
-|---|---|
-| macOS 12 及以上，Apple 芯片 | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 及以上，x64 | 安装版 [`ThinkWatch-Lite-<版本>-windows-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)，或绿色版 [`ThinkWatch-Lite-<版本>-windows-x64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 及以上，ARM64 | 安装版 [`ThinkWatch-Lite-<版本>-windows-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)，或绿色版 [`ThinkWatch-Lite-<版本>-windows-arm64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Linux，x86_64 或 aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`，或 [`ThinkWatch-Lite-<版本>-linux-<架构>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| 平台 | 架构 | 安装 |
+|---|---|---|
+| macOS 12 及以上 | ARM64（Apple 芯片） | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 及以上 | x64 | 安装版 [`ThinkWatch-Lite-<版本>-windows-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)，或绿色版 [`ThinkWatch-Lite-<版本>-windows-x64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 及以上 | ARM64 | 安装版 [`ThinkWatch-Lite-<版本>-windows-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest)，或绿色版 [`ThinkWatch-Lite-<版本>-windows-arm64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Linux | x86_64 / aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`，或 [`ThinkWatch-Lite-<版本>-linux-<架构>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 网关 [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core) 随应用一同安装。应用未经 Apple 与 Microsoft 签名，首次打开需要多一步操作，见[安装与更新](https://thinkwat.ch/zh-CN/docs/lite/install)，其中也说明了各种安装方式如何更新。界面提供英文与简体中文，应用自动更新（通过 Homebrew 安装的随 Homebrew 更新）。
 
@@ -106,6 +103,11 @@ pnpm tauri dev
 ```
 
 `fetch-core.sh` 下载 `Cargo.lock` 钉住的 `twcore` 版本并放入 `src-tauri/resources/`。仓库结构与提交 PR 前要跑的检查见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 社区与项目链接
+
+- [AtomGit](https://gitcode.com/ThinkWatchProject/ThinkWatch-Lite) — 面向开发者的代码托管与协作平台，支持开源项目开发和社区协作。
+- [LINUX DO](https://linux.do) — 技术交流社区，分享开发经验、开源工具与 AI 技术，交流想法与实践。
 
 ## 许可证
 

@@ -9,10 +9,7 @@
   <img alt="Tauri 2" src="https://img.shields.io/badge/Tauri_2-24C8DB?style=for-the-badge&logo=tauri&logoColor=white" />
   <img alt="React 19" src="https://img.shields.io/badge/React_19-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img alt="License: MIT" src="https://img.shields.io/badge/License-MIT-750014?style=for-the-badge" />
-  <img alt="macOS" src="https://img.shields.io/badge/macOS-000000?style=for-the-badge&logo=apple&logoColor=white" />
-  <img alt="Windows" src="https://img.shields.io/badge/Windows-0078D4?style=for-the-badge" />
-  <img alt="Linux" src="https://img.shields.io/badge/Linux-FCC624?style=for-the-badge&logo=linux&logoColor=black" />
-  <a href="https://linux.do"><img alt="LINUX DO" src="https://img.shields.io/badge/LINUX_DO-Community-1A1A1A?style=for-the-badge" /></a>
+  <img alt="Platforms: macOS, Windows and Linux" src="https://img.shields.io/badge/Platforms-macOS%20%C2%B7%20Windows%20%C2%B7%20Linux-2F6F9F?style=for-the-badge" />
 </p>
 
 # ThinkWatch Lite
@@ -101,12 +98,12 @@ before the client runs them.
 
 ## Install
 
-| Platform | Install |
-|---|---|
-| macOS 12 or later, Apple silicon | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 or later, x64 | Installer [`ThinkWatch-Lite-<version>-windows-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest), or portable [`ThinkWatch-Lite-<version>-windows-x64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Windows 10 21H2 or later, ARM64 | Installer [`ThinkWatch-Lite-<version>-windows-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest), or portable [`ThinkWatch-Lite-<version>-windows-arm64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
-| Linux, x86_64 or aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`, or [`ThinkWatch-Lite-<version>-linux-<arch>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Platform | Architecture | Install |
+|---|---|---|
+| macOS 12 or later | ARM64 (Apple silicon) | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 or later | x64 | Installer [`ThinkWatch-Lite-<version>-windows-x64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest), or portable [`ThinkWatch-Lite-<version>-windows-x64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Windows 10 21H2 or later | ARM64 | Installer [`ThinkWatch-Lite-<version>-windows-arm64-setup.exe`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest), or portable [`ThinkWatch-Lite-<version>-windows-arm64-portable.zip`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
+| Linux | x86_64 / aarch64 | `curl -fsSL https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest/download/install.sh \| sh`, or [`ThinkWatch-Lite-<version>-linux-<arch>.AppImage`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
 
 The gateway, [ThinkWatch Core](https://github.com/ThinkWatchProject/ThinkWatch-Core),
 ships inside the app. The app is not signed by Apple or Microsoft, so the
@@ -174,6 +171,13 @@ pnpm tauri dev
 `fetch-core.sh` downloads the `twcore` release that `Cargo.lock` pins into
 `src-tauri/resources/`. See [CONTRIBUTING.md](CONTRIBUTING.md) for the layout
 of the repository and the checks to run before opening a pull request.
+
+## Community and project links
+
+- [AtomGit](https://gitcode.com/ThinkWatchProject/ThinkWatch-Lite) — A code
+  hosting and collaboration platform for developers and open-source communities.
+- [LINUX DO](https://linux.do) — A technology community for sharing development
+  experience, open-source tools, and AI ideas and practices.
 
 ## License
 
