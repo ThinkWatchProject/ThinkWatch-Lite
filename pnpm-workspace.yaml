@@ -1,3 +1,11 @@
 allowBuilds:
   esbuild: true
   sharp: false
+
+# Allow the security fix before the release-age window elapses.
+minimumReleaseAgeExclude:
+  - minimatch@11.0.4
+
+# ts-morph still requests minimatch 10; the glob amplification fix starts in 11.0.1.
+overrides:
+  minimatch@<11.0.1: ^11.0.4
