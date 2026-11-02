@@ -353,13 +353,17 @@ pub struct Package {
 /// 版的包 —— 写进去之后应用就起不来了，而那时已经没有一个在跑的旧版本能把它
 /// 改回来。
 pub fn unpack(zip: &[u8]) -> Result<Package, String> {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).map_err(|e| {
+    let unreadable = |e| {
         tr!(
             format!("无法打开更新包：{e}"),
             format!("The update package could not be opened: {e}")
         )
-    })?;
-    let mut names: Vec<&str> = archive.file_names().collect();
+    };
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).map_err(unreadable)?;
+    let mut names: Vec<_> = archive
+        .file_names()
+        .collect::<Result<_, _>>()
+        .map_err(unreadable)?;
     names.sort_unstable();
     let mut want = [APP_EXE, CORE_EXE];
     want.sort_unstable();
@@ -794,6 +798,18 @@ mod tests {
         let p = unpack(&zip).unwrap();
         assert_eq!(p.app, b"MZ app".repeat(1000));
         assert_eq!(p.core, b"MZ core");
+    }
+
+    #[test]
+    fn invalid_utf8_entry_names_are_refused() {
+        let mut zip = zip_of(&[(APP_EXE, b"MZ app"), (CORE_EXE, b"MZ core")]);
+        // Mark both copies of the first filename as UTF-8, then corrupt that name.
+        for (signature, flags, name) in [(b"PK\x03\x04", 6, 30), (b"PK\x01\x02", 8, 46)] {
+            let header = zip.windows(4).position(|s| s == signature).unwrap();
+            zip[header + flags + 1] |= 0x08;
+            zip[header + name] = 0xff;
+        }
+        assert!(unpack(&zip).is_err());
     }
 
     /// 多一个、少一个、放进了子目录、应用本体用的是安装版的名字、不是 zip、不是可执行
