@@ -1,6 +1,6 @@
 [package]
 name = "thinkwatch-lite"
-version = "2026.11.0"
+version = "2026.11.1"
 edition = "2024"
 # **这个数决定依赖能升到哪一版。**edition 2024 的解析器只挑声明的 Rust
 # 版本编得动的依赖：写 1.85 的时候，`cargo update` 一直停在旧的 time 和
@@ -26,12 +26,12 @@ license = "MIT"
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.88.0" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.88.0" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.88.0" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.88.0" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.88.0" }
-tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.88.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.89.0" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.89.0" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.89.0" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.89.0" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.89.0" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.89.0" }
 
 [lib]
 name = "thinkwatch_lite_lib"
@@ -97,7 +97,7 @@ chrono = { version = "0.4", default-features = false, features = ["clock"] }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tauri-plugin-notification = "2.4.0"
-tauri-plugin-updater = "2"
+tauri-plugin-updater = "2.14.1"
 # Homebrew 那一档要去读 tap 里的 cask。**和更新器插件同一套 HTTP 与 TLS**
 # —— 版本、特性都对齐它，所以这里不多编译任何东西；系统代理也跟着一起认。
 reqwest = { version = "0.13", default-features = false, features = ["rustls-no-provider", "system-proxy"] }
@@ -112,7 +112,7 @@ tauri-plugin-dialog = "2"
 # Windows 绿色版的更新包是 zip（见 `portable::unpack`）。版本是更新器插件在 Windows
 # 上本来就拉进来的那一份，只多开 Deflate（flate2 也是锁里本来就有的那一份）。不分
 # 平台：拆包和替换的测试在每个平台上都跑
-zip = { version = "4.6.1", default-features = false, features = ["deflate-flate2-zlib-rs"] }
+zip = { version = "9.2.2", default-features = false, features = ["deflate-flate2-zlib-rs"] }
 
 [profile.release]
 lto = "thin"
