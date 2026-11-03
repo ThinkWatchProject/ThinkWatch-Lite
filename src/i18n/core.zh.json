@@ -455,6 +455,7 @@
     "gw.request.body_over_limit": "请求体超过上限 {max} 字节。",
     "gw.request.decoded_body_over_limit": "请求体解码后超过上限 {max} 字节。",
     "gw.request.body_unreadable": "无法读取请求体：{detail}",
+    "gw.request.memory_busy": "网关正在处理其他大请求，请稍后重试。",
     "gw.request.bad_encoding": "请求体无法按 {encoding} 解码：{detail}",
     "gw.request.unsupported_encoding": "请求体以 {encoding} 编码，网关只解码 gzip、deflate 和 zstd。",
     "gw.upstream.timeout": "上游响应超时。",

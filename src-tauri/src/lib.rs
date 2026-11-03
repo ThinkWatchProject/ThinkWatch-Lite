@@ -64,6 +64,7 @@ pub mod portable;
 pub mod prefs;
 /// 建只有自己能读的数据目录，见模块头上
 pub mod private_dir;
+mod runtime;
 pub mod scan;
 pub mod settings;
 pub mod single;
@@ -153,6 +154,7 @@ pub fn run() {
     single::precheck();
     // 缺 WebView2 就开不了窗口（见 `webview2`）
     webview2::ensure();
+    runtime::install();
     // 本机 core 起之前要读的用户环境，现在就开始读（见 `user_env::read_ahead`）：要跑一次
     // 登录 shell，和下面 Tauri 起来的那一段叠在一起。**放在上面几步之后**：改环境变量的
     // 那几处都在前面，转交给另一个实例、做卸载清理的也用不着它。这次要连远程的不读
