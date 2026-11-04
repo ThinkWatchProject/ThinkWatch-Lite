@@ -512,6 +512,213 @@ fn a_stale_pi_or_omp_model_list_is_flagged_too() {
     }
 }
 
+/// 老接管缺档位声明时，模型名称、上下文和推理开关都一样也要提示更新；
+/// 更新后提示消失，还原仍然恢复到第一次接管之前的文件。
+#[test]
+fn an_old_pi_or_omp_takeover_gets_the_new_thinking_configuration() {
+    use tw_adopt::json::Val;
+    use tw_adopt::pi::Flavor;
+
+    for (id, flavor, before) in [
+        (
+            "pi",
+            Flavor::Pi,
+            "{\n  // keep my provider\n  \"providers\": {}\n}\n",
+        ),
+        (
+            "omp",
+            Flavor::Omp,
+            "# keep my provider\nproviders:\n  local:\n    auth: none\n",
+        ),
+    ] {
+        let home = tempfile::tempdir().unwrap();
+        let c = find(id, home.path()).unwrap();
+        let path = c.config_path(home.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, before).unwrap();
+        let keys = vec![key(id, "tw-p", Some(id), false)];
+        let models = vec![ModelCard {
+            reasoning: Some(true),
+            ..ModelCard::named("deepseek-v4.1-flash")
+        }];
+        let target = clients::Gateway::keyed("http://127.0.0.1:8788", "tw-p", models.clone());
+        let now = BTreeMap::from([(id.to_string(), models)]);
+        let stale = || {
+            list(home.path(), &backups(&home), &gw(keys.clone()), &now)
+                .clients
+                .into_iter()
+                .find(|c| c.id == id)
+                .unwrap()
+                .models_stale
+        };
+        // 先建一份真正的接管记录，再换成旧版写出的模型条目。
+        adopt(
+            home.path(),
+            &backups(&home),
+            id,
+            &target,
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        let fresh = std::fs::read_to_string(&path).unwrap();
+        let legacy_models = Val::Arr(vec![Val::Obj(vec![
+            ("id".into(), Val::s("deepseek-v4.1-flash")),
+            ("reasoning".into(), Val::Bool(true)),
+        ])]);
+        let old = match flavor {
+            Flavor::Pi => tw_adopt::json::set(
+                &fresh,
+                &["providers", "thinkwatch", "models"],
+                &legacy_models,
+            )
+            .unwrap(),
+            Flavor::Omp => tw_adopt::yaml::set(
+                &fresh,
+                &["providers", "thinkwatch", "models"],
+                &legacy_models,
+            )
+            .unwrap(),
+        };
+        std::fs::write(&path, &old).unwrap();
+        assert!(stale(), "{id}: {old}");
+        let preview = plan_adopt(
+            home.path(),
+            id,
+            &gw(keys.clone()),
+            target.models.clone(),
+            &Around::default(),
+        )
+        .unwrap();
+        assert!(!preview.after.contains("tw-p"));
+        adopt(
+            home.path(),
+            &backups(&home),
+            id,
+            &target,
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        let after = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            tw_adopt::pi::models_in(&after, flavor),
+            Some(target.models.clone())
+        );
+        assert!(!stale(), "{id}: {after}");
+        assert!(after.contains("keep my provider"));
+        restore(home.path(), &backups(&home), id, None).unwrap();
+        assert_eq!(std::fs::read_to_string(path).unwrap(), before);
+    }
+}
+
+#[test]
+fn old_opencode_takeovers_get_complete_gateway_efforts_in_both_shapes() {
+    use tw_adopt::json::Val;
+    for (root, before, legacy) in [
+        (
+            "provider",
+            "{}",
+            r#"{"relay/custom":{"name":"relay/custom","reasoning":true}}"#,
+        ),
+        (
+            "providers",
+            r#"{"providers":{"thinkwatch":{}}}"#,
+            r#"{"relay/custom":{"name":"relay/custom"}}"#,
+        ),
+    ] {
+        let home = tempfile::tempdir().unwrap();
+        let path = find("opencode", home.path())
+            .unwrap()
+            .config_path(home.path());
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, before).unwrap();
+        let keys = vec![key("opencode", "tw-p", Some("opencode"), false)];
+        let target = clients::Gateway::keyed(
+            "http://127.0.0.1:8788",
+            "tw-p",
+            vec![ModelCard {
+                reasoning: Some(true),
+                ..ModelCard::named("relay/custom")
+            }],
+        );
+        let now = BTreeMap::from([("opencode".to_string(), target.models.clone())]);
+        let stale = || {
+            list(home.path(), &backups(&home), &gw(keys.clone()), &now)
+                .clients
+                .into_iter()
+                .find(|c| c.id == "opencode")
+                .unwrap()
+                .models_stale
+        };
+        adopt(
+            home.path(),
+            &backups(&home),
+            "opencode",
+            &target,
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        let fresh = std::fs::read_to_string(&path).unwrap();
+        let old = tw_adopt::json::set(
+            &fresh,
+            &[root, "thinkwatch", "models"],
+            &tw_adopt::json::value(legacy).unwrap(),
+        )
+        .unwrap();
+        std::fs::write(&path, old).unwrap();
+        assert!(stale(), "{root}");
+        adopt(
+            home.path(),
+            &backups(&home),
+            "opencode",
+            &target,
+            None,
+            &Around::default(),
+        )
+        .unwrap();
+        assert!(!stale(), "{root}");
+        let after = std::fs::read_to_string(path).unwrap();
+        let effort_path: &[&str] = if root == "provider" {
+            &[
+                root,
+                "thinkwatch",
+                "models",
+                "relay/custom",
+                "variants",
+                "max",
+                "reasoningEffort",
+            ]
+        } else {
+            &[
+                root,
+                "thinkwatch",
+                "models",
+                "relay/custom",
+                "capabilities",
+                "reasoning",
+                "effort",
+            ]
+        };
+        let effort = tw_adopt::json::get(&after, effort_path).unwrap().unwrap();
+        assert!(
+            effort == Val::s("max")
+                || matches!(effort, Val::Arr(ref levels) if levels.contains(&Val::s("max")))
+        );
+        restore(home.path(), &backups(&home), "opencode", None).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(
+                find("opencode", home.path())
+                    .unwrap()
+                    .config_path(home.path())
+            )
+            .unwrap(),
+            before
+        );
+    }
+}
+
 /// 别处的 home（WSL 里的、测试的临时目录）不带用户指定的配置文件：那份设置只管
 /// 这台电脑上的
 #[test]

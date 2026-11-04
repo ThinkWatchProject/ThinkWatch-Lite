@@ -11,7 +11,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID, REASONING_EFFORTS};
 use crate::json::Val;
 use crate::plan::lookup;
 
@@ -86,7 +86,8 @@ pub fn models_val(models: &[ModelCard], shape: Shape) -> Val {
 ///   输出不知道时输出写 0 —— 就是它自己不知道时的那个值。上下文不知道时整项不写：v2 读 v1
 ///   写法时照搬 `limit`，写一个 0 进去会盖掉它自己的默认值 200000，压缩在 v2 上也不触发了。
 ///   请求里的输出上限是 `min(output, 32000)`，写得再大也不会照着发
-/// - `reasoning`：会不会推理，决定有没有推理档位（`variants`）
+/// - `reasoning`：会不会推理；会的显式写 `variants`，兼容协议默认只有 low/medium/high，
+///   v2 迁移 v1 时也不保留这个布尔开关，但会保留 variants。不写默认档
 /// - 收不收图看的是 `modalities.input` 里有没有 `image`：没有的话，贴进去的图在发出去之前
 ///   换成一句「这个模型不收图」（`transform.ts` 的 `unsupportedParts`）。`attachment` 只是
 ///   同一件事的标记，一起写。**写 `modalities` 时连 `tool_call: true` 和 `output: [text]` 一起
@@ -95,7 +96,8 @@ pub fn models_val(models: &[ModelCard], shape: Shape) -> Val {
 ///
 /// **原生**（v2 `schema/src/config/provider.ts`）：`limit.{context, output}` 两项各自可选；
 /// `capabilities.input` 单写，没写的 `tools`、`output` 照它自己的默认值补（`mergeCapabilities`）。
-/// 没有推理开关：推理档位按 `variants` 来，不写。
+/// 推理用 `capabilities.reasoning.{supported, effort}`；variants 也显式写，兼容还不认
+/// reasoning 能力字段的早期 v2。只写每档的设置，不写模型的默认档。
 pub fn specs(m: &ModelCard, shape: Shape) -> Vec<(String, Val)> {
     let num = |n: u64| Val::Num(n.to_string());
     let input = |image: bool| {
@@ -123,6 +125,9 @@ pub fn specs(m: &ModelCard, shape: Shape) -> Vec<(String, Val)> {
             }
             if let Some(b) = m.reasoning {
                 v.push(("reasoning".into(), Val::Bool(b)));
+                if b {
+                    v.push(("variants".into(), effort_variants(shape)));
+                }
             }
             if let Some(image) = m.image_input {
                 v.push(("attachment".into(), Val::Bool(image)));
@@ -144,15 +149,86 @@ pub fn specs(m: &ModelCard, shape: Shape) -> Vec<(String, Val)> {
             if !limit.is_empty() {
                 v.push(("limit".into(), Val::Obj(limit)));
             }
+            let mut capabilities = Vec::new();
             if let Some(image) = m.image_input {
-                v.push((
-                    "capabilities".into(),
-                    Val::Obj(vec![("input".into(), input(image))]),
-                ));
+                capabilities.push(("input".into(), input(image)));
+            }
+            if let Some(b) = m.reasoning {
+                let mut reasoning = vec![("supported".into(), Val::Bool(b))];
+                if b {
+                    reasoning.push((
+                        "effort".into(),
+                        Val::Arr(REASONING_EFFORTS.iter().map(|e| Val::s(*e)).collect()),
+                    ));
+                }
+                capabilities.push(("reasoning".into(), Val::Obj(reasoning)));
+                if b {
+                    v.push(("variants".into(), effort_variants(shape)));
+                }
+            }
+            if !capabilities.is_empty() {
+                v.push(("capabilities".into(), Val::Obj(capabilities)));
             }
         }
     }
     v
+}
+
+fn effort_variants(shape: Shape) -> Val {
+    let variants = REASONING_EFFORTS
+        .iter()
+        .map(|e| {
+            (
+                (*e).into(),
+                Val::Obj(vec![("reasoningEffort".into(), Val::s(*e))]),
+            )
+        })
+        .collect();
+    match shape {
+        Shape::V1 => Val::Obj(variants),
+        Shape::Native => Val::Arr(
+            variants
+                .into_iter()
+                .map(|(id, settings)| {
+                    Val::Obj(vec![
+                        ("id".into(), Val::s(id)),
+                        ("settings".into(), settings),
+                    ])
+                })
+                .collect(),
+        ),
+    }
+}
+
+/// 已有 reasoning 开关但缺少档位，基础规格比较不出这个差异。
+pub fn thinking_stale(text: &str) -> bool {
+    let shape = shape_in(text);
+    let Ok(Some(Val::Obj(models))) = crate::json::get(text, &[shape.root(), PROVIDER_ID, "models"])
+    else {
+        return false;
+    };
+    models.iter().any(|(_, model)| match shape {
+        Shape::V1 => {
+            crate::pi::flag_of(lookup(model, &["reasoning"])) == Some(true)
+                && REASONING_EFFORTS.iter().any(|effort| {
+                    lookup(model, &["variants", effort, "reasoningEffort"]) != Some(Val::s(*effort))
+                })
+        }
+        Shape::Native => {
+            crate::pi::flag_of(lookup(model, &["capabilities", "reasoning", "supported"]))
+                == Some(true)
+                && match lookup(model, &["variants"]) {
+                    Some(Val::Arr(variants)) => REASONING_EFFORTS.iter().any(|effort| {
+                        !variants.iter().any(|variant| {
+                            lookup(variant, &["id"]) == Some(Val::s(*effort))
+                                && lookup(variant, &["settings", "reasoningEffort"])
+                                    == Some(Val::s(*effort))
+                        })
+                    }),
+                    _ => true,
+                }
+        }
+    })
 }
 
 /// 接管要写的那几项。
@@ -225,7 +301,7 @@ pub fn models_in(text: &str) -> Option<Vec<ModelCard>> {
             max_output_tokens: count_of(lookup(m, &["limit", "output"])),
             reasoning: match s {
                 Shape::V1 => flag_of(lookup(m, &["reasoning"])),
-                Shape::Native => None,
+                Shape::Native => flag_of(lookup(m, &["capabilities", "reasoning", "supported"])),
             },
             image_input: image,
         }
@@ -250,14 +326,14 @@ pub fn overriding(text: &str) -> Vec<String> {
 ///
 /// 取的是两种写法都写得下的那几项（见 [`specs`]）：这里不知道文件是哪一种写法，而比的
 /// 两边（[`models_in`] 读回来的、网关答的）都要过一遍它，取交集两边就对得上。代价是原生
-/// 写法能单写的输出上限、v1 能写的推理开关单独变了不提示更新 —— 下一次接管照样写进去。
+/// 写法能单写的输出上限单独变了不提示更新 —— 下一次接管照样写进去。
 pub fn as_written(m: &ModelCard) -> ModelCard {
     let context_window = m.context_window.filter(|n| *n > 0);
     ModelCard {
         id: m.id.clone(),
         context_window,
         max_output_tokens: context_window.and(m.max_output_tokens.filter(|n| *n > 0)),
-        reasoning: None,
+        reasoning: m.reasoning,
         image_input: m.image_input,
     }
 }
@@ -680,6 +756,11 @@ mod tests {
             ms[0].1,
             crate::json::value(
                 r#"{"name": "m", "limit": {"context": 200000, "output": 64000}, "reasoning": true,
+                    "variants": {
+                        "minimal": {"reasoningEffort": "minimal"}, "low": {"reasoningEffort": "low"},
+                        "medium": {"reasoningEffort": "medium"}, "high": {"reasoningEffort": "high"},
+                        "xhigh": {"reasoningEffort": "xhigh"}, "max": {"reasoningEffort": "max"}
+                    },
                     "attachment": true, "tool_call": true,
                     "modalities": {"input": ["text", "image"], "output": ["text"]}}"#
             )
@@ -720,12 +801,21 @@ mod tests {
         ) else {
             unreachable!()
         };
-        // 没有推理开关
         assert_eq!(
             ms[0].1,
             crate::json::value(
                 r#"{"name": "m", "limit": {"context": 200000, "output": 64000},
-                    "capabilities": {"input": ["text"]}}"#
+                    "variants": [
+                        {"id": "minimal", "settings": {"reasoningEffort": "minimal"}},
+                        {"id": "low", "settings": {"reasoningEffort": "low"}},
+                        {"id": "medium", "settings": {"reasoningEffort": "medium"}},
+                        {"id": "high", "settings": {"reasoningEffort": "high"}},
+                        {"id": "xhigh", "settings": {"reasoningEffort": "xhigh"}},
+                        {"id": "max", "settings": {"reasoningEffort": "max"}}
+                    ],
+                    "capabilities": {"input": ["text"], "reasoning": {
+                        "supported": true, "effort": ["minimal", "low", "medium", "high", "xhigh", "max"]
+                    }}}"#
             )
             .unwrap()
         );
@@ -759,6 +849,9 @@ mod tests {
             let mut changed = now.clone();
             changed[1].image_input = Some(true);
             assert!(c.models_stale(&back, &changed), "{shape:?}");
+            let mut changed = now.clone();
+            changed[0].reasoning = Some(false);
+            assert!(c.models_stale(&back, &changed), "{shape:?}");
         }
         let back = models_in(&written(&now, Shape::V1)).unwrap();
         assert_eq!(back[0], now[0]);
@@ -766,7 +859,56 @@ mod tests {
         assert_eq!(back[1], now[1]);
         let back = models_in(&written(&now, Shape::Native)).unwrap();
         assert_eq!(back[2].max_output_tokens, Some(8_192));
-        assert_eq!(back[0].reasoning, None);
+        assert_eq!(back[0].reasoning, Some(true));
+    }
+
+    #[test]
+    fn an_old_reasoning_switch_without_variants_needs_an_update() {
+        let old = r#"{"provider":{"thinkwatch":{"models":{"relay/custom":{"reasoning":true}}}}}"#;
+        assert!(thinking_stale(old));
+        for shape in [Shape::V1, Shape::Native] {
+            let current = written(&[card("relay/custom", None, None, Some(true), None)], shape);
+            assert!(!thinking_stale(&current));
+            let path = &[
+                shape.root(),
+                PROVIDER_ID,
+                "models",
+                "relay/custom",
+                "variants",
+            ];
+            let variants = crate::json::get(&current, path).unwrap().unwrap();
+            let changed = match variants {
+                Val::Obj(_) => variants.with(&["max", "reasoningEffort"], &Val::s("high")),
+                Val::Arr(mut variants) => {
+                    let max = variants.last_mut().unwrap();
+                    *max = max.with(&["settings", "reasoningEffort"], &Val::s("high"));
+                    Val::Arr(variants)
+                }
+                _ => unreachable!(),
+            };
+            assert!(thinking_stale(
+                &crate::json::set(&current, path, &changed).unwrap()
+            ));
+            assert!(thinking_stale(
+                &crate::json::set(&current, path, &Val::Arr(vec![])).unwrap()
+            ));
+        }
+        for reasoning in [None, Some(false)] {
+            for shape in [Shape::V1, Shape::Native] {
+                let current = written(&[card("plain", None, None, reasoning, None)], shape);
+                assert!(!thinking_stale(&current));
+                let root = shape.root();
+                assert_eq!(
+                    crate::json::get(
+                        &current,
+                        &[root, PROVIDER_ID, "models", "plain", "variants"]
+                    )
+                    .unwrap(),
+                    None
+                );
+                assert_eq!(models_in(&current).unwrap()[0].reasoning, reasoning);
+            }
+        }
     }
 
     #[test]
