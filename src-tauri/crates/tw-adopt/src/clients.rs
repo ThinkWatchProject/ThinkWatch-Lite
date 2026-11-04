@@ -212,6 +212,11 @@ pub struct ModelCard {
     pub image_input: Option<bool>,
 }
 
+/// 网关接收的推理强度。上游方言的转换、拒收某一档后的重试由 core 统一处理，
+/// 这是客户端交给网关的选择，不是上游原生能力的名单。
+pub(crate) const REASONING_EFFORTS: [&str; 6] =
+    ["minimal", "low", "medium", "high", "xhigh", "max"];
+
 impl ModelCard {
     /// 只有名字、规格一项都不知道的
     pub fn named(id: impl Into<String>) -> ModelCard {
