@@ -48,6 +48,8 @@ pub struct Detected {
     pub costs: Vec<Msg>,
     /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）
     pub models: Option<Vec<crate::clients::ModelCard>>,
+    /// 模型基础规格以外的客户端配置过期了（缺少网关推理档位的声明）
+    pub model_config_stale: bool,
     /// 这台电脑上它由组织统一管理，接管不了：托管配置在哪。只有 Claude Desktop 会有
     pub managed: Option<String>,
 }
@@ -124,6 +126,13 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
             .as_deref()
             .filter(|_| c.writes_models)
             .and_then(|t| c.models_in(t)),
+        model_config_stale: text.as_deref().is_some_and(|t| {
+            if c.id == "opencode" {
+                crate::opencode::thinking_stale(t)
+            } else {
+                crate::pi::Flavor::of(c.id).is_some_and(|f| crate::pi::thinking_stale(t, f))
+            }
+        }),
         shadows: c.live_shadows(home),
         takes_effect: c.takes_effect,
         verified: c.verified,

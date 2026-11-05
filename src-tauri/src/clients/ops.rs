@@ -111,7 +111,8 @@ pub fn list(
             let stale = ours(&d, backups)
                 && matches!(
                     (&d.models, now),
-                    (Some(written), Some(now)) if c.models_stale(written, now)
+                    (Some(written), Some(now))
+                        if d.model_config_stale || c.models_stale(written, now)
                 );
             let mut v = detected_view(d, backups, key, last_seen_ms.flatten(), manual, |p| {
                 p.display().to_string()

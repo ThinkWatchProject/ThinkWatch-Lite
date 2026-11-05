@@ -33,7 +33,7 @@ export interface Shown {
  * 概览的数据。
  *
  * **每个区间各缓存一份**（`useResource`）：回到概览、切回刚看过的区间，立刻画上
- * 一次的数，后台再取。`tick` 一变（库里多了请求、手动刷新）就重取当前这一份。
+ * 一次的数，后台再取。`tick` 一变（库里多了请求、手动刷新）或后台读到额度，就重取当前这一份。
  *
  * **画出来的数和它的区间绑在一起。**切到一个还没取过的区间时，新数据到之前继续画
  * 旧区间的那一份（`switching`，页面把它压暗）—— 而不是拿旧数据套新区间的格宽和
@@ -53,7 +53,7 @@ export function useOverview(range: Range, tick: number) {
         untilMs: range.to ?? null,
         bucketMs: bucketOf(range),
       }),
-    { deps: [tick] },
+    { deps: [tick], events: ["quota_seen"] },
   );
   const last = useRef<Shown | null>(null);
   /** 上一份的序列化结果，和 `last` 一起换 */

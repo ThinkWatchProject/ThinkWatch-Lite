@@ -34,7 +34,7 @@ use std::path::Path;
 
 use tw_types::{Msg, msg};
 
-use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID};
+use crate::clients::{Edit, Gateway, ModelCard, PROVIDER_ID, REASONING_EFFORTS};
 use crate::cloud::Around;
 use crate::json::Val;
 use crate::plan::lookup;
@@ -127,7 +127,7 @@ pub fn api_for(model: &str) -> Api {
 ///
 /// 网关答了的规格也写上（见 [`specs`]）；没答的那一项不写，Pi 照它的默认值跑，omp 按模型名
 /// 从它自带的目录里补。同名的只写一次，先后照网关答的。
-pub fn models_val(gw: &Gateway) -> Val {
+pub fn models_val(gw: &Gateway, flavor: Flavor) -> Val {
     Val::Arr(
         crate::clients::unique(&gw.models)
             .into_iter()
@@ -140,15 +140,15 @@ pub fn models_val(gw: &Gateway) -> Val {
                         fields.push(("baseUrl".into(), Val::s(api.base(&gw.base))));
                     }
                 }
-                fields.extend(specs(m));
+                fields.extend(specs(m, flavor));
                 Val::Obj(fields)
             })
             .collect(),
     )
 }
 
-/// 一个模型的规格在两边的写法，两边的字段名一样（Pi 的 `model-config.ts`，omp 的
-/// `models-config-schema-bundle.ts`）：
+/// 一个模型的规格在两边的写法（Pi 的 `model-config.ts`，omp 的
+/// `models-config-schema-bundle.ts`）。基础规格字段相同，推理档位分开写：
 ///
 /// - `contextWindow`、`maxTokens`：不写时 Pi 按 128000、16384 跑，omp 先查自带的目录、查不到
 ///   也是这两个数。**`maxTokens` 是每次请求都带上的输出上限**，不只是一项能力说明：Pi 发出去
@@ -156,8 +156,9 @@ pub fn models_val(gw: &Gateway) -> Val {
 ///   网关答的这个模型真正的输出上限，上游收得下。两边都把 0 和负数当成写错了（Pi 直接报错），
 ///   网关答 0 当没答
 /// - `reasoning`：会不会推理。不写是不会，`/model` 里就没有推理档位可选
+/// - OpenAI 两种协议的推理档位见 [`thinking_field`]，声明网关收得下的档位
 /// - `input`：收图写 `[text, image]`，不收写 `[text]`。不写是只收文字，贴进去的图发不出去
-pub fn specs(m: &ModelCard) -> Vec<(String, Val)> {
+pub fn specs(m: &ModelCard, flavor: Flavor) -> Vec<(String, Val)> {
     let m = as_written(m);
     let mut v = Vec::new();
     if let Some(n) = m.context_window {
@@ -169,10 +170,74 @@ pub fn specs(m: &ModelCard) -> Vec<(String, Val)> {
     if let Some(b) = m.reasoning {
         v.push(("reasoning".into(), Val::Bool(b)));
     }
+    if let Some((key, value)) = thinking_field(&m.id, m.reasoning, flavor) {
+        v.push((key.into(), value));
+    }
     if let Some(image) = m.image_input {
         v.push(("input".into(), input_val(image)));
     }
     v
+}
+
+/// 客户端不能先把用户选的档位夹到 high，否则网关根本看不到原来的选择。
+/// Pi 的 xhigh/max 需要 `thinkingLevelMap` 显式开放；omp 18 使用 `thinking`，并会
+/// 按模型名从目录补 effortMap，所以连同恒等映射一起写，避免本地又把 max 改成别的档。
+/// 不写默认档，用户自己的设置说了算。
+///
+/// Anthropic、Google 的原生 API 有预算、自适应等不同旋钮，保留客户端自己的处理；
+/// 这里的恒等字符串映射只适用于 OpenAI 的两种协议。
+fn thinking_field(
+    id: &str,
+    reasoning: Option<bool>,
+    flavor: Flavor,
+) -> Option<(&'static str, Val)> {
+    if reasoning != Some(true) || !matches!(api_for(id), Api::Chat | Api::Responses) {
+        return None;
+    }
+    let identity =
+        |levels: &[&str]| Val::Obj(levels.iter().map(|l| ((*l).into(), Val::s(*l))).collect());
+    Some(match flavor {
+        Flavor::Pi => ("thinkingLevelMap", identity(&["xhigh", "max"])),
+        Flavor::Omp => (
+            "thinking",
+            Val::Obj(vec![
+                ("mode".into(), Val::s("effort")),
+                (
+                    "efforts".into(),
+                    Val::Arr(REASONING_EFFORTS.iter().map(|l| Val::s(*l)).collect()),
+                ),
+                ("effortMap".into(), identity(&REASONING_EFFORTS)),
+            ]),
+        ),
+    })
+}
+
+/// 旧接管写的基础规格可能一项都没变，但缺了档位声明仍然需要更新。读当前配置里的
+/// reasoning，和基础规格的变化分开判断；额外的用户字段不影响这次比较。
+pub fn thinking_stale(text: &str, flavor: Flavor) -> bool {
+    let Some(Val::Arr(models)) = provider_models(text, flavor) else {
+        return false;
+    };
+    models.iter().any(|model| {
+        let Some(Val::Str(id)) = lookup(model, &["id"]) else {
+            return false;
+        };
+        let Some((key, expected)) =
+            thinking_field(&id, flag_of(lookup(model, &["reasoning"])), flavor)
+        else {
+            return false;
+        };
+        !lookup(model, &[key]).is_some_and(|actual| contains_fields(&actual, &expected))
+    })
+}
+
+fn contains_fields(actual: &Val, expected: &Val) -> bool {
+    match expected {
+        Val::Obj(fields) => fields
+            .iter()
+            .all(|(key, value)| lookup(actual, &[key]).is_some_and(|a| contains_fields(&a, value))),
+        _ => actual == expected,
+    }
 }
 
 /// 收不收图的写法：文字总是收的
@@ -258,7 +323,7 @@ pub fn edits(gw: &Gateway, flavor: Flavor) -> Vec<Edit> {
         let auth = if gw.key.is_some() { "apiKey" } else { "none" };
         v.push(field("auth", Val::s(auth), false));
     }
-    v.push(field("models", models_val(gw), false));
+    v.push(field("models", models_val(gw, flavor), false));
     v
 }
 
@@ -276,12 +341,7 @@ pub fn as_written(m: &ModelCard) -> ModelCard {
 
 /// 配置里此刻写着的模型。没有那一条 provider 就是 `None`。
 pub fn models_in(text: &str, flavor: Flavor) -> Option<Vec<ModelCard>> {
-    let v = match flavor {
-        Flavor::Pi => crate::json::value(text).ok()?,
-        Flavor::Omp => crate::yamlval::value(text).ok()?,
-    };
-    let provider = lookup(&v, &["providers", PROVIDER_ID])?;
-    match lookup(&provider, &["models"]) {
+    match provider_models(text, flavor) {
         Some(Val::Arr(ms)) => Some(
             ms.iter()
                 .filter_map(|m| match lookup(m, &["id"]) {
@@ -296,8 +356,18 @@ pub fn models_in(text: &str, flavor: Flavor) -> Option<Vec<ModelCard>> {
                 })
                 .collect(),
         ),
-        _ => Some(Vec::new()),
+        Some(_) => Some(Vec::new()),
+        None => None,
     }
+}
+
+fn provider_models(text: &str, flavor: Flavor) -> Option<Val> {
+    let v = match flavor {
+        Flavor::Pi => crate::json::value(text).ok()?,
+        Flavor::Omp => crate::yamlval::value(text).ok()?,
+    };
+    let provider = lookup(&v, &["providers", PROVIDER_ID])?;
+    Some(lookup(&provider, &["models"]).unwrap_or(Val::Null))
 }
 
 // ---------------------------------------------------------------- 代理
@@ -508,13 +578,16 @@ mod tests {
     /// 写法不一样的再写上 `baseUrl`
     #[test]
     fn a_model_carries_only_what_differs_from_the_provider() {
-        let Val::Arr(ms) = models_val(&gw(&[
-            "deepseek-chat",
-            "claude-sonnet-5",
-            "gpt-5",
-            "gemini-3-pro",
-            "deepseek-chat",
-        ])) else {
+        let Val::Arr(ms) = models_val(
+            &gw(&[
+                "deepseek-chat",
+                "claude-sonnet-5",
+                "gpt-5",
+                "gemini-3-pro",
+                "deepseek-chat",
+            ]),
+            Flavor::Pi,
+        ) else {
             unreachable!()
         };
         let s = |k: &str, v: &str| (k.to_string(), Val::s(v));
@@ -656,7 +729,7 @@ mod tests {
             ],
             ..gw(&[])
         };
-        let Val::Arr(ms) = models_val(&g) else {
+        let Val::Arr(ms) = models_val(&g, Flavor::Pi) else {
             unreachable!()
         };
         let num = |k: &str, n: &str| (k.to_string(), Val::Num(n.into()));
@@ -689,6 +762,107 @@ mod tests {
                 Val::Obj(vec![s("id", "zero")]),
             ]
         );
+    }
+
+    /// 网关的档位不要先在客户端丢掉：包括目录查不到的中转模型，不按名字列白名单。
+    /// 非推理、能力未知、原生 Anthropic/Google 协议不套 OpenAI 的档位写法。
+    #[test]
+    fn gateway_efforts_are_explicit_in_each_clients_own_format() {
+        let g = Gateway {
+            models: vec![
+                card("deepseek-v4.1-flash", None, None, Some(true), None),
+                card("gpt-6.1-sol", None, None, Some(true), None),
+                card("relay/custom-thinking", None, None, Some(true), None),
+                card("plain", None, None, Some(false), None),
+                card("unknown", None, None, None, None),
+                card("claude-opus-4.7", None, None, Some(true), None),
+                card("gemini-3.1-pro", None, None, Some(true), None),
+            ],
+            ..gw(&[])
+        };
+        for flavor in [Flavor::Pi, Flavor::Omp] {
+            let Val::Arr(models) = models_val(&g, flavor) else {
+                unreachable!()
+            };
+            for (i, model) in models.iter().enumerate() {
+                assert_eq!(lookup(model, &["thinking", "defaultLevel"]), None);
+                if i >= 3 {
+                    assert_eq!(lookup(model, &["thinkingLevelMap"]), None);
+                    assert_eq!(lookup(model, &["thinking"]), None);
+                    continue;
+                }
+                match flavor {
+                    Flavor::Pi => {
+                        assert_eq!(lookup(model, &["thinking"]), None);
+                        for level in ["xhigh", "max"] {
+                            assert_eq!(
+                                lookup(model, &["thinkingLevelMap", level]),
+                                Some(Val::s(level))
+                            );
+                        }
+                    }
+                    Flavor::Omp => {
+                        assert_eq!(lookup(model, &["thinkingLevelMap"]), None);
+                        assert_eq!(lookup(model, &["thinking", "mode"]), Some(Val::s("effort")));
+                        let Some(Val::Arr(levels)) = lookup(model, &["thinking", "efforts"]) else {
+                            panic!("{model:?}")
+                        };
+                        assert_eq!(levels.last(), Some(&Val::s("max")));
+                        assert!(levels.contains(&Val::s("xhigh")));
+                        for level in ["low", "high", "xhigh", "max"] {
+                            assert_eq!(
+                                lookup(model, &["thinking", "effortMap", level]),
+                                Some(Val::s(level))
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_locally_downgraded_effort_needs_an_update_even_with_unchanged_specs() {
+        let model = card("gpt-6.1-sol", None, None, Some(true), None);
+        for flavor in [Flavor::Pi, Flavor::Omp] {
+            let g = Gateway {
+                models: vec![model.clone()],
+                ..gw(&[])
+            };
+            let mut value = Val::Null.with(
+                &["providers", PROVIDER_ID, "models"],
+                &models_val(&g, flavor),
+            );
+            let text = |value: &Val| match flavor {
+                Flavor::Pi => crate::json::set(
+                    "{}",
+                    &["providers"],
+                    &lookup(value, &["providers"]).unwrap(),
+                )
+                .unwrap(),
+                Flavor::Omp => crate::yaml::set(
+                    "providers: {}\n",
+                    &["providers"],
+                    &lookup(value, &["providers"]).unwrap(),
+                )
+                .unwrap(),
+            };
+            assert!(!thinking_stale(&text(&value), flavor));
+            let Val::Arr(mut models) =
+                lookup(&value, &["providers", PROVIDER_ID, "models"]).unwrap()
+            else {
+                unreachable!()
+            };
+            let path: &[&str] = match flavor {
+                Flavor::Pi => &["thinkingLevelMap", "max"],
+                Flavor::Omp => &["thinking", "effortMap", "max"],
+            };
+            models[0] = models[0].with(path, &Val::s("high"));
+            value = value.with(&["providers", PROVIDER_ID, "models"], &Val::Arr(models));
+            let broken = text(&value);
+            assert_eq!(models_in(&broken, flavor), Some(vec![model.clone()]));
+            assert!(thinking_stale(&broken, flavor), "{broken}");
+        }
     }
 
     /// 写进两种文件再读回来，和网关答的一样；规格变了就要更新
