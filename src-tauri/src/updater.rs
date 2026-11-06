@@ -179,9 +179,7 @@ pub(crate) const UPDATE_WIDTH: f64 = 480.0;
 /// 否则会先闪一下白窗，再跳一下尺寸。
 pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
     if let Some(w) = app.get_webview_window(UPDATE_WINDOW) {
-        w.show()?;
-        w.set_focus()?;
-        return Ok(());
+        return crate::window::reveal(app, &w);
     }
     let b = WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
         .title(tr!("软件更新", "Software Update"))

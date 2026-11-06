@@ -51,7 +51,6 @@ tauri = { version = "2.12.1", default-features = false, features = [
     "dynamic-acl",
     "x11",
     "macos-private-api",
-    "tray-icon",
 ] }
 # 在默认浏览器里打开授权页
 tauri-plugin-opener = "2"
@@ -162,10 +161,15 @@ tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 gtk = "0.18"
+# AppIndicator 不传 Wayland 的激活令牌。Linux 托盘直接用 SNI / DBusMenu，和窗口一起
+# 传递这次点击的令牌（lite#404）。用 Tokio 后端，回调等迟到的令牌时可以让出工作线程。
+ksni = "0.3.7"
 
 # 开机自启。**Linux 上不用它**：它在那边写的 `Exec=` 不加引号不转义，路径带空格
 # 就静默失效，所以那边的自启项自己写（见 `autostart/linux.rs`）
 [target.'cfg(not(target_os = "linux"))'.dependencies]
+# Linux 托盘由 ksni 提供，不再编译 Tauri 的 AppIndicator 托盘后端。
+tauri = { version = "2.12.1", default-features = false, features = ["tray-icon"] }
 tauri-plugin-autostart = "2"
 
 # 强杀 core 那一步：Windows 上没有 SIGKILL，用 TerminateProcess
@@ -209,6 +213,9 @@ windows = { version = "0.61", features = [
 ] }
 
 [dev-dependencies]
+# SNI 的菜单和令牌回归在各平台都能跑；GTK 窗口操作仍只在 Linux 编译。
+ksni = "0.3.7"
+zbus = { version = "5", default-features = false, features = ["async-io", "blocking-api"] }
 # 去抖和限流要按时间测。**暂停时钟**，不是真的等一分钟
 tokio = { version = "1", features = ["test-util", "macros", "rt-multi-thread"] }
 # 接管、扫描的测试在一台假机器（临时目录）上做
