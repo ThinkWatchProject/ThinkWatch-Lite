@@ -302,9 +302,6 @@ fn pressed(app: &tauri::AppHandle) {
                 let _ = w.close();
                 return;
             }
-            if w.is_minimized().unwrap_or(false) {
-                let _ = w.unminimize();
-            }
         }
         if let Err(e) = crate::window::show_main_window(&a) {
             tracing::warn!("呼出快捷键打不开主窗口：{e}");

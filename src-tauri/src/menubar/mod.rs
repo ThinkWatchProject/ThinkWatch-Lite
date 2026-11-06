@@ -9,9 +9,11 @@
 
 pub mod model;
 
+#[cfg(any(target_os = "linux", test))]
+mod linux;
 #[cfg(target_os = "macos")]
 pub mod macos;
-#[cfg(not(target_os = "macos"))]
+#[cfg(not(any(target_os = "macos", target_os = "linux")))]
 mod tray;
 
 use std::sync::Arc;
@@ -126,7 +128,9 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
         let (bar, rows) = model::build(&Snapshot::default(), drawn_style());
         macos::apply(mtm, &bar, &rows);
     }
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    linux::install(app)?;
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     tray::install(app)?;
 
     let h = app.clone();
@@ -257,7 +261,9 @@ fn present(snap: &Snapshot) {
     let (bar, rows) = model::build(snap, drawn_style());
     #[cfg(target_os = "macos")]
     macos::on_main(move |mtm| macos::apply(mtm, &bar, &rows));
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    linux::apply(&bar, &rows);
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     tray::apply(&bar, &rows);
 }
 
