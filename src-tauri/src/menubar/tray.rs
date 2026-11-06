@@ -1,4 +1,4 @@
-//! 不是 macOS 的平台：仍用 Tauri 的托盘，按同一份模型出一份纯文字菜单。
+//! Windows 等平台的 Tauri 托盘，按同一份模型出一份纯文字菜单。
 //!
 //! 画不出「今日」那一块和额度条，那几行写成文字（写法也在模型里：`Dash::line`、
 //! `WindowRow::line`）。**判定都在模型里**，这里只是另一种画法 —— 以后给 Windows 做一套
@@ -20,9 +20,6 @@ static ACTIONS: Mutex<(u64, Vec<Action>)> = Mutex::new((0, Vec::new()));
 /// 菜单建到第几版了
 static GENERATION: AtomicU64 = AtomicU64::new(0);
 /// 上一次画的那一份：没变就不重建（开着的菜单会被收起来）。
-///
-/// Linux 上更要紧：tray-icon 的 `set_menu` 每次都把一份新的 GtkMenu 交给
-/// AppIndicator，整份菜单经 D-Bus 重新导出一遍，面板那边开着的菜单跟着重画
 static LAST: Mutex<Option<(Bar, Vec<Row>)>> = Mutex::new(None);
 
 pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
@@ -32,12 +29,6 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
         // 那边「点一下就出菜单」故意不一致 —— 各随各的。
         //
         // Tauri 默认把菜单挂在左键上，所以这一行必须写出来。
-        //
-        // **Linux 上这一行和下面的点击回调都不起作用。**那边的托盘是 AppIndicator
-        // （StatusNotifierItem），点击由面板处理、一律弹菜单，tray-icon 一个点击
-        // 事件也收不到（它的 `TrayIconEvent` 文档写明 Linux 不支持，gtk 那份实现里
-        // 也没有发事件的地方）。菜单是那边唯一的入口 —— 模型把「打开主界面」排在
-        // 每一种状态的第一项，那边第一眼看到的就是它。
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|app, event| {
             // **认「松开」不认「按下」**：按下就动作的话，用户按住想拖一下

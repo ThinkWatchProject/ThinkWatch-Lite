@@ -287,6 +287,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Prepare verified Windows bundler tools
+        shell: pwsh
+        run: ./scripts/prepare-windows-bundler.ps1
+
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:

@@ -211,13 +211,38 @@ pub fn reveal_main_window(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 pub(crate) fn reveal(app: &tauri::AppHandle, w: &tauri::WebviewWindow) -> tauri::Result<()> {
-    // 有窗口了就该出现在 Dock 和 ⌘Tab 里
-    #[cfg(target_os = "macos")]
-    let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
-    #[cfg(not(target_os = "macos"))]
-    let _ = app;
-    w.show()?;
-    w.set_focus()
+    #[cfg(target_os = "linux")]
+    {
+        // GTK 的 present 自己负责恢复、显示和激活。不能串联 Tauri 的 unminimize /
+        // set_focus：tao 把前一步排进 GTK 队列，却在排后一步之前同步查最小化状态，
+        // 那个状态还没变，焦点请求就被丢了。Wayland 也不能靠 is_minimized 判断。
+        let w = w.clone();
+        app.run_on_main_thread(move || {
+            use gtk::prelude::*;
+            match w.gtk_window() {
+                Ok(g) => {
+                    g.deiconify();
+                    g.show_all();
+                    g.present();
+                }
+                Err(e) => tracing::warn!("窗口无法呈现：{e}"),
+            }
+        })
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        // 有窗口了就该出现在 Dock 和 ⌘Tab 里
+        #[cfg(target_os = "macos")]
+        let _ = app.set_activation_policy(tauri::ActivationPolicy::Regular);
+        #[cfg(not(target_os = "macos"))]
+        let _ = app;
+        w.show()?;
+        // Windows 的 restore 也会取消最大化，只在确实最小化时恢复。
+        if w.is_minimized()? {
+            w.unminimize()?;
+        }
+        w.set_focus()
+    }
 }
 
 /// 把一扇小窗调成网页量出来的那么大（更新窗口、连接选择）。

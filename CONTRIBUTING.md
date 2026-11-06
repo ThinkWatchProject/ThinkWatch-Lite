@@ -94,16 +94,26 @@ saves the next person from re-deriving it or "fixing" it back.
 
 ## Linux prerequisites
 
-Building on Linux needs the WebKitGTK, AppIndicator and D-Bus development
+Building on Linux needs the WebKitGTK, GTK and D-Bus development
 packages. On Ubuntu or Debian, the same set CI installs:
 
 ```bash
 sudo apt install libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev \
-  libssl-dev libayatana-appindicator3-dev librsvg2-dev dbus
+  libssl-dev librsvg2-dev dbus
 ```
 
 The notification tests talk to a session bus; without a desktop session, run
 them under `dbus-run-session -- cargo test --manifest-path src-tauri/Cargo.toml`.
+
+The Linux tray uses SNI/DBusMenu directly so desktop activation tokens reach
+existing windows. Its protocol regression tests also run on other platforms
+when a session bus is available. For manual window activation checks, cover
+both X11 and KDE Wayland: restore a minimized window, raise an unfocused one,
+and open a closed window from the tray and each navigation menu item. Keep
+an unsaved form open to verify the existing webview survives. Check update
+notices separately because they open the update window. Plasma must provide
+`ProvideXdgActivationToken` for menu actions (present in the Plasma 6.6
+branch); older desktops may only provide it for a click on the tray icon.
 
 ## Before you open the PR
 
