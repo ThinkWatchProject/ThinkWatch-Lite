@@ -2,7 +2,6 @@ import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type 
 import { ChevronRightIcon } from "lucide-react";
 import { size } from "@/format";
 import { useText } from "@/i18n";
-import { commonText } from "@/i18n/common.i18n";
 import { cn } from "@/lib/utils";
 import { useMarker, useScrollToFirstHit } from "@/security/Highlight";
 import { prettyJson } from "@/prettyJson";
@@ -25,7 +24,7 @@ const RECENT_EVENTS = 200;
 const BLOCK = 48;
 
 /**
- * 「内容 › 原始报文」：一段报文原样 —— 请求行、头、正文；回答的状态行、头，和流里的每一个事件
+ * 「内容 › 报文记录」：已脱敏的请求行、头、正文；回答的状态行、头，和流里的每一个事件
  * 往下追加。等宽，和请求详情原来的正文同一个样子（`BodyText`）。
  *
  * **跟随最新**（`follow`）：回答在长时，回答那一框停在最底下；往上翻就停下（`onUserScroll`），
@@ -85,10 +84,10 @@ function plain(head: HeadView | null, body: string | null): string {
 }
 
 function CopyAll({ text }: { text: () => string }) {
-  const common = useText(commonText);
+  const t = useText(contentText);
   return (
     <Button variant="ghost" size="xs" className="ml-auto text-muted-foreground" onClick={() => void copyText(text())}>
-      {common.copy}
+      {t.copyRecord}
     </Button>
   );
 }

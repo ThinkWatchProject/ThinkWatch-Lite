@@ -11,7 +11,8 @@ import { StatusDot } from "@/ui/status-dot";
 import { TableCell, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
 import { copyText } from "@/ui/notify";
-import { KeyCell, ROW } from "./cells";
+import { numericColumn } from "./columns";
+import { KeyCell, ROW, TimeStamp } from "./cells";
 import { costCell } from "./costCell";
 import { SessionCost } from "./SessionCost";
 import { sessionsText } from "./Sessions.i18n";
@@ -47,8 +48,7 @@ type Text = (typeof sessionsText)["zh"];
 export const SessionRow = memo(function SessionRow({
   g,
   open,
-  showClient,
-  hints,
+  columns,
   selected,
   fresh,
   onToggle,
@@ -57,9 +57,7 @@ export const SessionRow = memo(function SessionRow({
 }: {
   g: Group;
   open: boolean;
-  showClient: boolean;
-  /** 同请求行：密钥那一格要不要给应用的标志留位置 */
-  hints: boolean;
+  columns: Col[];
   selected: boolean;
   /** 刚出现的会话，滑进来 */
   fresh: boolean;
@@ -70,7 +68,7 @@ export const SessionRow = memo(function SessionRow({
 }) {
   const t = useText(sessionsText);
   const f = sessionFacts(g);
-  const c: CellCtx = { t, open, selected, hints, onToggle };
+  const c: CellCtx = { t, open, selected, onToggle };
   const openIt = () => {
     // 点组头和点请求行一样，键盘接着从这一行往下走
     onCursor({ kind: "session", id: f.id });
@@ -86,14 +84,11 @@ export const SessionRow = memo(function SessionRow({
       onClick={openIt}
       className={cn(ROW, "bg-foreground/[0.025] font-medium", fresh && "motion-row-in")}
     >
-      <TableCell>{sessionCell("status", f, c)}</TableCell>
-      <TableCell>{sessionCell("time", f, c)}</TableCell>
-      {showClient && <TableCell>{sessionCell("client", f, c)}</TableCell>}
-      <TableCell>{sessionCell("model", f, c)}</TableCell>
-      <TableCell>{sessionCell("upstream", f, c)}</TableCell>
-      <TableCell className="text-right">{sessionCell("latency", f, c)}</TableCell>
-      <TableCell className="text-right">{sessionCell("tokens", f, c)}</TableCell>
-      <TableCell className="text-right">{sessionCell("cost", f, c)}</TableCell>
+      {columns.map((col) => (
+        <TableCell key={col} className={cn(numericColumn(col) && "text-right")}>
+          {sessionCell(col, f, c)}
+        </TableCell>
+      ))}
       <TableCell className="w-6 px-0! py-0 text-center font-normal" onClick={(e) => e.stopPropagation()}>
         <RowActions target={{ kind: "session", id: f.id }} label={t.sessionActions} selected={selected} />
       </TableCell>
@@ -148,10 +143,10 @@ function sessionFacts(g: Group): Facts {
   };
 }
 
-type CellCtx = { t: Text; open: boolean; selected: boolean; hints: boolean; onToggle: (id: string) => void };
+type CellCtx = { t: Text; open: boolean; selected: boolean; onToggle: (id: string) => void };
 
 /** 组头的一格。组头自己和表头量列宽的那一块（`SessionSizerCell`）都用它 */
-function sessionCell(col: Col, f: Facts, { t, open, selected, hints, onToggle }: CellCtx): ReactNode {
+function sessionCell(col: Col, f: Facts, { t, open, selected, onToggle }: CellCtx): ReactNode {
   const { id, s, first, n, providers } = f;
   switch (col) {
     case "status":
@@ -202,12 +197,12 @@ function sessionCell(col: Col, f: Facts, { t, open, selected, hints, onToggle }:
         <Tip lazy text={t.runningTip(n.running)}>
           <span className="flex items-center gap-1.5">
             <StatusDot tone="pending" />
-            {when(n.started)}
+            <TimeStamp text={when(n.started)} />
             <span className="sr-only">{t.runningTip(n.running)}</span>
           </span>
         </Tip>
       ) : (
-        when(n.started)
+        <TimeStamp text={when(n.started)} />
       );
     case "client":
       return (
@@ -216,7 +211,6 @@ function sessionCell(col: Col, f: Facts, { t, open, selected, hints, onToggle }:
           masked={first?.keyMasked}
           hint={first?.hint}
           peer={first?.peer}
-          hints={hints}
         />
       );
     case "model":
@@ -246,9 +240,9 @@ function sessionCell(col: Col, f: Facts, { t, open, selected, hints, onToggle }:
 }
 
 /** 表头里量列宽用的组头的一格：和组头里的那一格画得一模一样，只是没人点得到它 */
-export function SessionSizerCell({ col, g, hints }: { col: Col; g: Group; hints: boolean }) {
+export function SessionSizerCell({ col, g }: { col: Col; g: Group }) {
   const t = useText(sessionsText);
-  return sessionCell(col, sessionFacts(g), { t, open: false, selected: false, hints, onToggle: () => {} });
+  return sessionCell(col, sessionFacts(g), { t, open: false, selected: false, onToggle: () => {} });
 }
 
 /**
@@ -262,7 +256,7 @@ export function sessionWidths(g: Group, t: Text): Widths {
   const upstream = capped(names(providers), NAME_PX.upstream, 22) + 3;
   return {
     status: 3 + textWidth(t.turnCount(n.turns)) + (n.failed > 0 ? 2 + String(n.failed).length : 0),
-    time: textWidth(when(n.started)) + (n.running > 0 ? 2 : 0),
+    time: Math.max(...when(n.started).split(" ").map(textWidth)) + (n.running > 0 ? 2 : 0),
     client: capped(textWidth(s?.client ?? first?.client ?? ""), NAME_PX.client, first?.peer ? 18 : 0) + (first?.peer ? 3 : 0),
     model: capped(names(n.models), NAME_PX.model),
     upstream,

@@ -31,11 +31,10 @@ export const SCENES: Scene[] = [
   {
     id: "traffic",
     page: "requests",
-    // **等表格真的画出来。**表体走 `useDeferredValue`：机器忙的时候，取数和两次相同的
-    // 快照都过去了，延后的那一次渲染还没提交 —— 拍下来只有进行中的那一行，而流水线照样
-    // 算它成功
+    // 等历史请求画出来。虚拟表只画可见的一段，不再等上百行；tbody 上的
+    // data-slot 可能被右键菜单触发器覆盖，按请求行自己的标记找。
     setup: async () => {
-      await waitFor(() => (document.querySelectorAll("[data-slot=table-body] > tr").length > 100 ? document.body : null), 30_000);
+      await waitFor(() => (document.querySelectorAll("tbody > tr[data-row]").length > 10 ? document.body : null), 30_000);
     },
   },
   { id: "clients", page: "clients" },

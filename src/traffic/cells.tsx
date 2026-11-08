@@ -39,8 +39,7 @@ export const MENU_REVEAL =
  * 默认窗口下整张表被撑宽，被挤出视野的是最后一列费用。名字够认出是哪一把；打码
  * 的值、推测的应用、来源一项一行写在悬停里，请求详情里也都有。
  *
- * `hints`：表里有哪一行带着推测出的应用。有的话没有应用的行也留出标志的位置，
- * 名字才对得齐。
+ * 名字始终在最前面与表头对齐，识别到的应用标志跟在名字后；未知应用不占位。
  *
  * **整块封顶**（`NAME_PX`）：名字再长也只截断名字，标志和来源记号留着；悬停第一行就是
  * 完整的名字（连同打码的值）。
@@ -50,13 +49,11 @@ export function KeyCell({
   masked,
   hint,
   peer,
-  hints,
 }: {
   client: string;
   masked?: string;
   hint?: string;
   peer?: string;
-  hints: boolean;
 }) {
   const t = useText(trafficText);
   const tip = [
@@ -67,13 +64,8 @@ export function KeyCell({
   return (
     <Tip lazy text={<Lines lines={tip} />}>
       <span className="flex items-center gap-1.5" style={{ maxWidth: NAME_PX.client }}>
-        {hints &&
-          (hint ? (
-            <ClientLogo id={hint} name={appLabel(hint)} className="opacity-70" />
-          ) : (
-            <span aria-hidden className="size-4 shrink-0" />
-          ))}
         <span className="min-w-0 truncate">{client}</span>
+        {hint && <ClientLogo id={hint} name={appLabel(hint)} className="opacity-70" />}
         {/*
           非本机来的，名字后面挂一个记号：这台网关对局域网开着，这一条不是本机发的。
           **地址进悬停**，不写在格子里 —— 一串 IP 有一百像素，整列跟着它变宽，
@@ -91,8 +83,17 @@ export function KeyCell({
 }
 
 /** 一条请求的密钥那一格 */
-export function RowKeyCell({ r, hints }: { r: RequestRow; hints: boolean }) {
-  return <KeyCell client={r.client} masked={r.keyMasked} hint={r.hint} peer={r.peer} hints={hints} />;
+export function RowKeyCell({ r }: { r: RequestRow }) {
+  return <KeyCell client={r.client} masked={r.keyMasked} hint={r.hint} peer={r.peer} />;
+}
+
+/** 历史记录的日期与时间分行，今天的时间保持一行。 */
+export function TimeStamp({ text }: { text: string }) {
+  return (
+    <span className="inline-flex flex-col leading-tight">
+      {text.split(" ").map((part, i) => <span key={i}>{part}</span>)}
+    </span>
+  );
 }
 
 /** 每一种在上游标志的位置上画的图形和颜色 */
