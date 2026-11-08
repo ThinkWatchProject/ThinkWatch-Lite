@@ -196,7 +196,7 @@ export const requestDrawerText = messages(
     replayIntro: (em: (x: ReactNode) => ReactNode) => (
       <>将{em("记录中的请求")}发送至另一个上游，并排对比结果</>
     ),
-    asIsTip: "使用保存时已脱敏的请求体，其中的占位符和打码值也会一并发送。",
+    asIsTip: "使用保存时已脱敏的请求体，其中的占位符和遮蔽后的值也会一并发送。",
     asIs: "记录的内容",
     /** 选重放目标的那个下拉框，上游列表没取到 */
     upstreamsFailed: "上游列表读取失败",
