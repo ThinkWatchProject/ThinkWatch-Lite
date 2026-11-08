@@ -28,6 +28,8 @@ import { useArrivals } from "./arrivals";
 import { copyText } from "@/ui/notify";
 import { groupAt, groupBySession, isAt, lines, step, visible, type Cursor, type Group } from "./grouping";
 import { mergeFound, useHistorySearch, type HistorySearch } from "./historySearch";
+import { ColumnSettings } from "./ColumnSettings";
+import { useTrafficColumns } from "./columns";
 import { RequestTable, type RequestTableHandle } from "./RequestTable";
 import { SessionSheet } from "./SessionPanel";
 import { AbortSessionDialog, abortable } from "./abort";
@@ -141,8 +143,8 @@ export default function TrafficPage({
     new Set(universe.flatMap((r) => (r.client ? [r.client] : []))).size > 1 ||
     new Set(universe.map((r) => r.hint ?? "")).size > 1 ||
     universe.some((r) => r.peer);
-  /** 有哪一行带着推测出的应用。按全集算：筛选一变，密钥那一格的缩进不该跟着跳 */
-  const hints = useMemo(() => universe.some((r) => r.hint), [universe]);
+  /** 列的显隐和顺序是本机偏好，不随筛选变化。 */
+  const { settings: columnSettings, setSettings: setColumnSettings, columns } = useTrafficColumns(showClient);
 
   /*
     刚到的请求和刚出现的会话，滑进来。**按全集算**，见 `useArrivals`。
@@ -298,16 +300,19 @@ export default function TrafficPage({
               不和筛选放在一起，放在页头右边，两个里选一个：逐条看请求，或者看会话（收起
               来就是会话列表，展开是那次任务的每一轮）。
             */
-            <Segmented
-              label={t.viewLabel}
-              value={grouped ? "sessions" : "requests"}
-              options={[
-                { id: "requests", label: t.viewRequests },
-                { id: "sessions", label: t.viewSessions },
-              ]}
-              onChange={(v) => setGrouped(v === "sessions")}
-              disabled={none}
-            />
+            <div className="flex flex-wrap items-center gap-2">
+              <ColumnSettings settings={columnSettings} columns={columns} onChange={setColumnSettings} />
+              <Segmented
+                label={t.viewLabel}
+                value={grouped ? "sessions" : "requests"}
+                options={[
+                  { id: "requests", label: t.viewRequests },
+                  { id: "sessions", label: t.viewSessions },
+                ]}
+                onChange={(v) => setGrouped(v === "sessions")}
+                disabled={none}
+              />
+            </div>
           }
           summary={
             // 历史读完之前，「0 条请求」不是真的；读失败时也说不出一共几条
@@ -555,8 +560,7 @@ export default function TrafficPage({
             scroller={listRef}
             rows={rows}
             hits={found?.hits}
-            showClient={showClient}
-            hints={hints}
+            columns={columns}
             cursor={cursor}
             fresh={fresh}
             freshGroups={freshGroups}

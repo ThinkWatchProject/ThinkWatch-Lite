@@ -9,9 +9,12 @@ const count = (n: number, one: string, many: string) => (n === 1 ? `1 ${one}` : 
  */
 export const contentText = messages(
   {
-    /** 看法：按对话读出来，或者报文原样 */
-    views: { parsed: "解析", raw: "原始报文" },
+    /** 看法：按对话读出来，或者查看已脱敏的报文记录 */
+    views: { parsed: "解析", raw: "报文记录" },
     viewsLabel: "内容的显示方式",
+    redactedRecord:
+      "请求头和正文在记录时会再次脱敏，此处的占位符不一定发给了上游。发送前实际替换的位置见安全记录。",
+    copyRecord: "复制记录",
     /** 原始报文看哪一边：客户端收发的，或者网关和上游之间的 */
     sides: { client: "客户端一侧", upstream: "上游一侧" },
     sidesLabel: "报文的一侧",
@@ -38,10 +41,10 @@ export const contentText = messages(
     showEarlierEvents: "显示全部事件",
 
     // 解析不出来的时候
-    unknownFormat: "无法识别此请求的格式，原文见「原始报文」",
-    requestCut: "请求过大，仅保存了开头部分，无法解析，原文见「原始报文」",
-    requestUnreadable: "请求正文无法解析，原文见「原始报文」",
-    responseUnreadable: "回答的格式无法识别，原文见「原始报文」",
+    unknownFormat: "无法识别此请求的格式，内容见「报文记录」",
+    requestCut: "请求过大，仅保存了开头部分，无法解析，内容见「报文记录」",
+    requestUnreadable: "请求正文无法解析，内容见「报文记录」",
+    responseUnreadable: "回答的格式无法识别，内容见「报文记录」",
     /** 认得出格式，但里面没有文字、思考或工具调用 */
     noAnswer: "回答中没有可显示的内容",
 
@@ -55,8 +58,11 @@ export const contentText = messages(
     liveFailed: (why: string) => `无法显示实时内容：${why}`,
   },
   {
-    views: { parsed: "Parsed", raw: "Raw" },
+    views: { parsed: "Parsed", raw: "Recorded HTTP" },
     viewsLabel: "How the content is shown",
+    redactedRecord:
+      "Headers and bodies are redacted again for the record. A placeholder here may not have been sent upstream. See the security records for what was replaced before sending.",
+    copyRecord: "Copy record",
     sides: { client: "Client side", upstream: "Upstream side" },
     sidesLabel: "Side of the exchange",
     attemptsLabel: "Attempt",
@@ -75,10 +81,10 @@ export const contentText = messages(
     earlierEvents: (n: number) => (n === 1 ? "1 earlier event" : `${n.toLocaleString()} earlier events`),
     showEarlierEvents: "Show all events",
 
-    unknownFormat: "The format of this request is not recognized; see Raw for the original",
-    requestCut: "The request was too large to save in full and cannot be parsed; see Raw for the beginning",
-    requestUnreadable: "The request body cannot be parsed; see Raw for the original",
-    responseUnreadable: "The response format is not recognized; see Raw for the original",
+    unknownFormat: "The format of this request is not recognized; see Recorded HTTP",
+    requestCut: "The request was too large to save in full and cannot be parsed; see Recorded HTTP for the beginning",
+    requestUnreadable: "The request body cannot be parsed; see Recorded HTTP",
+    responseUnreadable: "The response format is not recognized; see Recorded HTTP",
     noAnswer: "The response has nothing to show",
 
     sameAsClient: "The body is the same as on the client side",

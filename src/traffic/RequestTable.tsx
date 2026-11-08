@@ -33,7 +33,9 @@ import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
 import { copyText } from "@/ui/notify";
-import { DIM, Elapsed, Lines, NotSentIcon, ROW, RowKeyCell } from "./cells";
+import { ALL_COLUMNS, numericColumn } from "./columns";
+import { ModelCell } from "./ModelCell";
+import { DIM, Elapsed, Lines, NotSentIcon, ROW, RowKeyCell, TimeStamp } from "./cells";
 import type { Cursor, Group } from "./grouping";
 import { rowMark, type ViaConfig } from "./modelVia";
 import { SessionRow, SessionSizerCell, sessionItems, sessionWidths } from "./SessionRow";
@@ -103,8 +105,7 @@ export function RequestTable({
   onToggleGroup,
   onOpenSession,
   onAbortSession,
-  showClient,
-  hints,
+  columns,
   cursor,
   fresh,
   freshGroups,
@@ -131,9 +132,7 @@ export function RequestTable({
   onOpenSession: (id: string) => void;
   /** 中止一次会话里在跑的请求：交给页面弹确认 */
   onAbortSession: (id: string) => void;
-  showClient: boolean;
-  /** 有哪一行带着推测出的应用：有的话密钥那一格给标志留出位置，名字才对得齐 */
-  hints: boolean;
+  columns: Col[];
   /** 键盘选中的那一行：一条请求，或者一个组头 */
   cursor: Cursor | null;
   /** 刚到的那几行，滑进来 */
@@ -155,7 +154,7 @@ export function RequestTable({
   const via = useViaConfig();
   const items = useMemo(() => itemsOf(rows, groups, openGroups), [rows, groups, openGroups]);
   const sizers = useSizers(items, t, ts, today, via);
-  const sizer = (col: Col) => <Sizer col={col} items={sizers[col]} hints={hints} via={via} today={today} />;
+  const sizer = (col: Col) => <Sizer col={col} items={sizers[col]} via={via} today={today} />;
   return (
     <Table
       /*
@@ -192,37 +191,19 @@ export function RequestTable({
       */}
       <TableHeader className="sticky top-0 z-10 bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)] [&_tr]:border-b-0">
         <TableRow className="hover:bg-transparent">
-          <Th k="status" label={t.status} sort={sortKey} dir={sortDir} on={onSort} className="py-1.5">
-            {sizer("status")}
-          </Th>
-          <Th k="time" label={t.time} sort={sortKey} dir={sortDir} on={onSort}>
-            {sizer("time")}
-          </Th>
-          {/* 只有一把密钥时这一列每行都一样 —— 那是零信息 */}
-          {showClient && (
-            <TableHead>
-              {t.client}
-              {sizer("client")}
-            </TableHead>
-          )}
-          <TableHead>
-            {t.model}
-            {sizer("model")}
-          </TableHead>
-          <TableHead>
-            {t.upstream}
-            {sizer("upstream")}
-          </TableHead>
-          {/* 首 token 和总耗时合成一列，生成速度在它的悬停里 —— 非流式请求没有首 token */}
-          <Th k="duration" label={t.latency} sort={sortKey} dir={sortDir} on={onSort} className="text-right">
-            {sizer("latency")}
-          </Th>
-          <Th k="tokens" label={t.tokens} sort={sortKey} dir={sortDir} on={onSort} className="text-right">
-            {sizer("tokens")}
-          </Th>
-          <Th k="cost" label={t.cost} sort={sortKey} dir={sortDir} on={onSort} className="text-right">
-            {sizer("cost")}
-          </Th>
+          {columns.map((col) => {
+            const sort = SORT_COLUMN[col];
+            const className = cn(col === "status" && "py-1.5", numericColumn(col) && "text-right");
+            return sort ? (
+              <Th key={col} k={sort} label={t[col]} sort={sortKey} dir={sortDir} on={onSort} className={className}>
+                {sizer(col)}
+              </Th>
+            ) : (
+              <TableHead key={col} className={className}>
+                {t[col]}{sizer(col)}
+              </TableHead>
+            );
+          })}
           {/* 行尾的「…」：和右键是同一份菜单 */}
           <TableHead className="w-6 px-0!" />
         </TableRow>
@@ -234,16 +215,10 @@ export function RequestTable({
       */}
       {rows.length === 0 ? (
         <BodySkeleton
-          widths={[
-            "w-10",
-            "w-14",
-            ...(showClient ? ["w-20"] : []),
-            "w-28",
-            "w-20",
-            "w-20 ml-auto",
-            "w-14 ml-auto",
-            "w-12 ml-auto",
-          ]}
+          widths={columns.map((col) => ({
+            status: "w-10", time: "w-14", client: "w-20", model: "w-28", upstream: "w-20",
+            latency: "w-20 ml-auto", tokens: "w-14 ml-auto", cost: "w-12 ml-auto",
+          })[col])}
         />
       ) : (
         <Body
@@ -254,8 +229,7 @@ export function RequestTable({
           groups={groups}
           hits={hits}
           openGroups={openGroups}
-          showClient={showClient}
-          hints={hints}
+          columns={columns}
           via={via}
           today={today}
           cursor={cursor}
@@ -322,13 +296,11 @@ function Th({
 function Sizer({
   col,
   items,
-  hints,
   via,
   today,
 }: {
   col: Col;
   items: Item[];
-  hints: boolean;
   via: ViaConfig | null;
   today: number;
 }) {
@@ -338,7 +310,7 @@ function Sizer({
       {items.map((it) =>
         it.kind === "session" ? (
           <div key={it.key} className="font-medium">
-            <SessionSizerCell col={col} g={it.g} hints={hints} />
+            <SessionSizerCell col={col} g={it.g} />
           </div>
         ) : (
           <div
@@ -349,7 +321,7 @@ function Sizer({
               col === "status" && it.inGroup !== null && "pl-[22px]",
             )}
           >
-            {requestCell(col, it.r, { hints, via, today })}
+            {requestCell(col, it.r, { via, today })}
           </div>
         ),
       )}
@@ -357,7 +329,10 @@ function Sizer({
   );
 }
 
-const COLS: Col[] = ["status", "time", "client", "model", "upstream", "latency", "tokens", "cost"];
+const COLS = ALL_COLUMNS;
+const SORT_COLUMN: Partial<Record<Col, SortKey>> = {
+  status: "status", time: "time", latency: "duration", tokens: "tokens", cost: "cost",
+};
 
 /**
  * 每一列垫哪几项：按 `requestWidths` / `sessionWidths` 估出的宽度取前几名。上游那一列
@@ -442,10 +417,13 @@ function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | n
   ];
   return {
     status: 2 + textWidth(statusText(r, t)),
-    time: textWidth(when(r.atMs, today)),
+    time: Math.max(...when(r.atMs, today).split(" ").map(textWidth)),
     // 来源的记号在同一个限宽的块里（见 `KeyCell`）
     client: capped(textWidth(r.client), NAME_PX.client, r.peer ? 18 : 0) + (r.peer ? 3 : 0),
-    model: capped(textWidth(r.model ?? "—"), NAME_PX.model),
+    model: capped(Math.max(
+      textWidth(r.sentModel ?? r.model ?? "—"),
+      r.sentModel && r.sentModel !== r.model ? textWidth(t.requestedModel(r.model ?? "—")) : 0,
+    ), NAME_PX.model),
     upstream: badges.reduce((a, b) => a + b + 1, name),
     upstreamMin: Math.max(nameMin, ...badges),
     // 在跑的：首 token 加上一个时钟（「0:42」）
@@ -528,8 +506,7 @@ function Body({
   groups,
   hits,
   openGroups,
-  showClient,
-  hints,
+  columns,
   via,
   today,
   cursor,
@@ -550,8 +527,7 @@ function Body({
   groups?: Group[];
   hits?: ReadonlyMap<number, ContentHit>;
   openGroups: ReadonlySet<string>;
-  showClient: boolean;
-  hints: boolean;
+  columns: Col[];
   via: ViaConfig | null;
   today: number;
   cursor: Cursor | null;
@@ -575,6 +551,11 @@ function Body({
   const guess = useRef({ ...GUESS, learned: new Set<keyof typeof GUESS>() });
   /** 量到的高度变了：重算每一项的位置 */
   const [measured, setMeasured] = useState(0);
+  useLayoutEffect(() => {
+    sizes.current.clear();
+    guess.current = { ...GUESS, learned: new Set<keyof typeof GUESS>() };
+    setMeasured((n) => n + 1);
+  }, [columns]);
   const [region, setRegion] = useState({ top: 0, bottom: 1200 + OVERSCAN_PX });
 
   const estimate = useCallback(
@@ -751,7 +732,7 @@ function Body({
   const itemsFor = (m: MenuTarget): MenuItems | null => {
     if (m.kind === "request") {
       const r = rows.find((x) => x.id === m.id);
-      return r ? requestItems(r, t, showClient, onOpen, onFilter) : null;
+      return r ? requestItems(r, t, onOpen, onFilter) : null;
     }
     const g = groups?.find((x) => x.id === m.id);
     if (!g) return null;
@@ -769,7 +750,7 @@ function Body({
   const opened = useJustOpened(openGroups);
   const atRow = cursor?.kind === "request" ? cursor.id : null;
   const atHead = cursor?.kind === "session" ? cursor.id : null;
-  const cols = showClient ? 9 : 8;
+  const cols = columns.length + 1;
   const above = offsets[start] ?? 0;
   const below = (offsets[items.length] ?? 0) - (offsets[end] ?? 0);
   return (
@@ -792,10 +773,9 @@ function Body({
               r={it.r}
               hit={hits?.get(it.r.id)}
               sameClient={it.prev !== undefined && clientKey(it.prev) === clientKey(it.r)}
-              sameModel={it.prev !== undefined && (it.prev.model ?? "") === (it.r.model ?? "")}
+              sameModel={it.prev !== undefined && it.prev.model === it.r.model && it.prev.sentModel === it.r.sentModel}
               sameProvider={it.prev !== undefined && upstreamText(it.prev) === upstreamText(it.r)}
-              showClient={showClient}
-              hints={hints}
+              columns={columns}
               via={via}
               today={today}
               selected={atRow === it.r.id}
@@ -810,8 +790,7 @@ function Body({
               key={it.key}
               g={it.g}
               open={it.open}
-              showClient={showClient}
-              hints={hints}
+              columns={columns}
               // 右边开着的那次会话，或者键盘停在这个组头上
               selected={selectedSession === it.g.id || atHead === it.g.id}
               fresh={it.g.id !== null && freshGroups.has(it.g.id)}
@@ -877,7 +856,6 @@ const TONE: Record<ReturnType<typeof statusTone>, StatusTone> = {
 function requestItems(
   r: RequestRow,
   t: Text,
-  showClient: boolean,
   onOpen: (id: number) => void,
   onFilter: (f: (prev: Filter) => Filter) => void,
 ): MenuItems {
@@ -897,7 +875,7 @@ function requestItems(
           },
         ] as const)
       : []),
-    ...(showClient
+    ...(r.client
       ? ([
           {
             kind: "item",
@@ -917,7 +895,7 @@ function requestItems(
           [
             new Date(r.atMs).toLocaleString(),
             r.client,
-            r.model ?? "",
+            r.sentModel && r.sentModel !== r.model ? `${r.model ?? "—"} → ${r.sentModel}` : r.model ?? "",
             upstreamText(r),
             r.path,
             r.status ?? r.state,
@@ -941,27 +919,20 @@ function requestItems(
 }
 
 /** 一行的一格里画什么。行自己和表头量列宽的那一块（`Sizer`）都用它 */
-function requestCell(col: Col, r: RequestRow, c: { hints: boolean; via: ViaConfig | null; today: number }): ReactNode {
+function requestCell(col: Col, r: RequestRow, c: { via: ViaConfig | null; today: number }): ReactNode {
   switch (col) {
     case "status":
       return <StatusCell r={r} />;
     case "time":
       return (
         <Tip lazy text={new Date(r.atMs).toLocaleString()}>
-          <span>{when(r.atMs, c.today)}</span>
+          <TimeStamp text={when(r.atMs, c.today)} />
         </Tip>
       );
     case "client":
-      return <RowKeyCell r={r} hints={c.hints} />;
+      return <RowKeyCell r={r} />;
     case "model":
-      return (
-        // 截断要套在里面一层：`max-width` 加在 td 上会被表格自己的列宽算法吃掉，长名字照样把这一列撑开
-        <Tip clip text={r.model}>
-          <div className="truncate" style={{ maxWidth: NAME_PX.model }}>
-            {r.model ?? "—"}
-          </div>
-        </Tip>
-      );
+      return <ModelCell r={r} />;
     case "upstream":
       return <UpstreamCell r={r} via={c.via} />;
     case "latency":
@@ -982,8 +953,7 @@ const Row = memo(function Row({
   sameClient,
   sameModel,
   sameProvider,
-  showClient,
-  hints,
+  columns,
   via,
   today,
   selected,
@@ -999,8 +969,7 @@ const Row = memo(function Row({
   sameClient: boolean;
   sameModel: boolean;
   sameProvider: boolean;
-  showClient: boolean;
-  hints: boolean;
+  columns: Col[];
   /** 对「别名」「指定」用的配置（见 `modelVia.ts`）。换了一版配置每一行重画一次 */
   via: ViaConfig | null;
   today: number;
@@ -1014,7 +983,7 @@ const Row = memo(function Row({
   onCursor: (c: Cursor) => void;
 }) {
   const t = useText(trafficText);
-  const c = { hints, via, today };
+  const c = { via, today };
   // 点一行和键盘选中一行是同一件事：之后的方向键从这一行接着走
   const activate = () => {
     onCursor({ kind: "request", id: r.id });
@@ -1034,32 +1003,19 @@ const Row = memo(function Row({
         hit && "border-b-0 [&:has(+tr:hover)]:bg-foreground/[0.035]",
       )}
     >
-      {/*
-        状态用色点编码。**25 个灰色 200 排成一列是零信息** ——
-        眼睛要能一眼扫到那个 5xx，而不是逐行读数字。
-      */}
-      <TableCell>{requestCell("status", r, c)}</TableCell>
-      {/*
-        时间用绝对值。**相对时间在这一列会塌掉** —— 打开应用
-        看昨天那次时，整列全是「1d」，而这一列的用途就是把
-        某一行对上号。完整的日期和时间留给悬停。
-      */}
-      <TableCell className="text-muted-foreground">{requestCell("time", r, c)}</TableCell>
-      {showClient && <TableCell className={cn(sameClient && DIM)}>{requestCell("client", r, c)}</TableCell>}
-      {/*
-        模型。**这一列决定了这次多贵、多慢** —— 同一个客户端
-        连着发的两次请求，差别往往只在这里。
-      */}
-      <TableCell className={cn(sameModel && DIM)}>{requestCell("model", r, c)}</TableCell>
-      <TableCell className={cn("whitespace-normal", sameProvider && DIM)}>{requestCell("upstream", r, c)}</TableCell>
-      {/*
-        数字右对齐。左对齐时 253ms 和 1486ms 的个位对不齐，
-        扫一列找最慢的那条要逐行读 —— 而这一列存在的意义就是
-        扫出极值。
-      */}
-      <TableCell className="text-right">{requestCell("latency", r, c)}</TableCell>
-      <TableCell className="text-right text-muted-foreground">{requestCell("tokens", r, c)}</TableCell>
-      <TableCell className="text-right">{requestCell("cost", r, c)}</TableCell>
+      {columns.map((col) => (
+        <TableCell
+          key={col}
+          className={cn(
+            numericColumn(col) && "text-right",
+            (col === "time" || col === "tokens") && "text-muted-foreground",
+            col === "client" && sameClient && DIM,
+            col === "model" && sameModel && DIM,
+            col === "upstream" && "whitespace-normal",
+            col === "upstream" && sameProvider && DIM,
+          )}
+        >{requestCell(col, r, c)}</TableCell>
+      ))}
       {/*
         **点「…」不能连带打开这一行。**按钮上的点击会冒泡到行上，行一收到
         就去开详情，菜单和抽屉会一起出来。只在悬停、选中、菜单开着时出现：
@@ -1091,7 +1047,7 @@ const Row = memo(function Row({
         )}
       >
         <TableCell className="pt-0" />
-        <TableCell colSpan={showClient ? 8 : 7} className="pt-0 pb-2">
+        <TableCell colSpan={columns.length} className="pt-0 pb-2">
           <HitText hit={hit} />
         </TableCell>
       </TableRow>

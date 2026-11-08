@@ -94,6 +94,14 @@ export const trafficText = messages(
     /** 读历史失败了，但之后事件流上来了几条：表照常画，上面挂这一句 */
     historyPartial: "请求记录读取失败，以下仅为此后收到的请求。",
 
+    columns: "列设置",
+    compactColumns: "紧凑视图",
+    resetColumns: "恢复默认",
+    moveColumnUp: (name: string) => `将${name}列前移`,
+    moveColumnDown: (name: string) => `将${name}列后移`,
+    requestedModel: (name: string) => `请求：${name}`,
+    sentModel: (name: string) => `发往上游：${name}`,
+
     // 表头
     status: "状态",
     time: "时间",
@@ -152,7 +160,7 @@ export const trafficText = messages(
     retryingTip: (names: string[], at: string) => `等待重试上游：${names.join("、")}。最晚等到 ${at}。`,
 
     // 上游一列的徽标和它们的悬浮说明
-    /** 客户端写的是别名，按这家上游换成了它的模型名。模型那一列照旧是客户端写的名称 */
+    /** 客户端写的是别名，按这家上游换成了它的模型名。模型列同时显示发出的模型名与请求名 */
     aliasTip: (model: string, upstream: string, sent: string) => `${model} 是别名，发往 ${upstream} 的模型名是 ${sent}。`,
     /** 决定去向的规则用了「指定模型」：上游和模型都是规则列出的 */
     pinned: "指定",
@@ -260,6 +268,14 @@ export const trafficText = messages(
 
     historyFailed: "Could not load the request log",
     historyPartial: "The request log could not be loaded. Only requests received since then are shown below.",
+
+    columns: "Columns",
+    compactColumns: "Compact view",
+    resetColumns: "Reset columns",
+    moveColumnUp: (name: string) => `Move ${name} column earlier`,
+    moveColumnDown: (name: string) => `Move ${name} column later`,
+    requestedModel: (name: string) => `Requested: ${name}`,
+    sentModel: (name: string) => `Sent upstream: ${name}`,
 
     status: "Status",
     time: "Time",
