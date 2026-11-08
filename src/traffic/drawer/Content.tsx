@@ -159,6 +159,8 @@ export function Content({
           )}
         </div>
 
+        <p className="tw-label text-muted-foreground">{t.redactedRecord}</p>
+
         {liveError && (
           <div>
             <Pill tone="error">{t.liveFailed(liveError)}</Pill>

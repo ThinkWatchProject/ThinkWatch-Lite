@@ -194,10 +194,10 @@ export const requestDrawerText = messages(
 
     // 重放
     replayIntro: (em: (x: ReactNode) => ReactNode) => (
-      <>将此请求{em("原样")}发送至另一个上游，并排对比结果</>
+      <>将{em("记录中的请求")}发送至另一个上游，并排对比结果</>
     ),
-    asIsTip: "使用记录中保存的原始请求体，内容与原请求完全一致。",
-    asIs: "「原样」的含义",
+    asIsTip: "使用保存时已脱敏的请求体，其中的占位符和打码值也会一并发送。",
+    asIs: "记录的内容",
     /** 选重放目标的那个下拉框，上游列表没取到 */
     upstreamsFailed: "上游列表读取失败",
     /** 下拉框里原来那个上游名后面的标记 */
@@ -384,12 +384,12 @@ export const requestDrawerText = messages(
 
     replayIntro: (em: (x: ReactNode) => ReactNode) => (
       <>
-        Send this request {em("as is")} to another upstream and compare the results side by side
+        Send {em("the recorded request")} to another upstream and compare the results side by side
       </>
     ),
     asIsTip:
-      "Uses the original request body saved in the record; the content is identical to the original request.",
-    asIs: "What “as is” means",
+      "Uses the body redacted for storage, including any placeholders and masked values.",
+    asIs: "About the stored request",
     upstreamsFailed: "Could not load the upstreams",
     originalUpstream: " (original)",
     estimateCost: "Estimate cost",
