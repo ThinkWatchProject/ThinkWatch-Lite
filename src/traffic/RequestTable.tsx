@@ -1,6 +1,7 @@
 import {
   memo,
   useCallback,
+  useContext,
   useEffect,
   useImperativeHandle,
   useLayoutEffect,
@@ -33,7 +34,8 @@ import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tip } from "@/ui/tip";
 import { copyText } from "@/ui/notify";
-import { ALL_COLUMNS, numericColumn } from "./columns";
+import { ALL_COLUMNS, numericColumn, type Columns } from "./columns";
+import { ACTION_WIDTH, TrafficCell, TrafficLayout, columnProps, useColumnLayout } from "./tableLayout";
 import { ModelCell } from "./ModelCell";
 import { DIM, Elapsed, Lines, NotSentIcon, ROW, RowKeyCell, TimeStamp } from "./cells";
 import type { Cursor, Group } from "./grouping";
@@ -86,7 +88,7 @@ export type RequestTableHandle = { reveal: (c: Cursor) => void };
  * 平铺和按会话归组是同一张表的两个形态（`groups` 给了就是归组）。
  *
  * **只画看得见的那一段**，上下各多画一截，其余的用两行等高的空行垫着（见 `Body`）。
- * 列宽靠表头里垫着的每一列最宽的那几格撑住，不随滚动跳（见 `Sizer`）。
+ * 列宽取表头里稳定的样本：数字留足，名字按窗口收缩，不随虚拟滚动跳（见 `Sizer`）。
  *
  * 行是 `memo` 的：键盘挪一格只重画离开和到达的两行，一条请求落地只重画那一行；在跑的
  * 请求每秒走一格的已跑时长不经过渲染（见 `Elapsed`）。这要求行对象不被原地修改 ——
@@ -106,6 +108,7 @@ export function RequestTable({
   onOpenSession,
   onAbortSession,
   columns,
+  pinned = NO_PINS,
   cursor,
   fresh,
   freshGroups,
@@ -133,6 +136,7 @@ export function RequestTable({
   /** 中止一次会话里在跑的请求：交给页面弹确认 */
   onAbortSession: (id: string) => void;
   columns: Col[];
+  pinned?: Columns["pinned"];
   /** 键盘选中的那一行：一条请求，或者一个组头 */
   cursor: Cursor | null;
   /** 刚到的那几行，滑进来 */
@@ -154,9 +158,12 @@ export function RequestTable({
   const via = useViaConfig();
   const items = useMemo(() => itemsOf(rows, groups, openGroups), [rows, groups, openGroups]);
   const sizers = useSizers(items, t, ts, today, via);
+  const table = useRef<HTMLTableElement>(null);
+  const layout = useColumnLayout(table, scroller, columns, pinned, sizers);
   const sizer = (col: Col) => <Sizer col={col} items={sizers[col]} via={via} today={today} />;
   return (
-    <Table
+    <TrafficLayout value={layout}>
+    <Table ref={table} style={{ width: layout.width }}
       /*
         表体的每一行都可能被键盘选中、`scrollIntoView` 进视野（见流量页的键盘
         导航）：请求行，和归组时的组头。
@@ -173,9 +180,13 @@ export function RequestTable({
         **格子左右各 6px，比别的表紧一档。**这张表九列，默认窗口下每一列省下 4px，
         英文界面的费用那一列才留在视野里；行尾「…」那一格自己是 0。
       */
-      className="tw-num [&_tbody_tr]:scroll-mt-9 [&_tbody_tr]:scroll-mx-[100vw] [&_td]:px-1.5 [&_th]:px-1.5"
+      className="traffic-table tw-num [&_tbody_tr]:scroll-mt-9 [&_tbody_tr]:scroll-mx-[100vw] [&_td]:px-1.5 [&_th]:px-1.5"
       scroll={false}
     >
+      <colgroup>
+        {columns.map((col) => <col key={col} style={{ width: layout.widths[col] }} />)}
+        <col style={{ width: ACTION_WIDTH }} />
+      </colgroup>
       {/*
         **表头必须钉住。**这张表滚两屏之后就没有列名了，而并排的
         两列毫秒数，不看列名根本分不出哪个是首 token 哪个是总耗时 ——
@@ -185,8 +196,8 @@ export function RequestTable({
         那层一旦能横着滚，表头就钉在它身上，不会吸顶。底色要和窗口底
         同色，吸顶之后行从它下面滚过，差一档灰就是一条色带。
 
-        **底线画在格子里，不用行的边框。**表格是合并边框，那条边框归
-        表格画，表头钉住之后它留在原处跟着行滚走，表头和第一行之间就
+        **底线画在格子里，不用行的边框。**行的边框不会跟着固定表头走，
+        表头钉住之后边框留在原处跟着行滚走，表头和第一行之间就
         没有线了。格子内侧的阴影跟着格子走。
       */}
       <TableHeader className="sticky top-0 z-10 bg-background [&_th]:shadow-[inset_0_-1px_0_var(--color-border)] [&_tr]:border-b-0">
@@ -195,17 +206,17 @@ export function RequestTable({
             const sort = SORT_COLUMN[col];
             const className = cn(col === "status" && "py-1.5", numericColumn(col) && "text-right");
             return sort ? (
-              <Th key={col} k={sort} label={t[col]} sort={sortKey} dir={sortDir} on={onSort} className={className}>
+              <Th key={col} col={col} k={sort} label={t[col]} sort={sortKey} dir={sortDir} on={onSort} className={className}>
                 {sizer(col)}
               </Th>
             ) : (
-              <TableHead key={col} className={className}>
-                {t[col]}{sizer(col)}
+              <TableHead key={col} className={className} {...columnProps(layout, col)}>
+                <span data-column-label>{t[col]}</span>{sizer(col)}
               </TableHead>
             );
           })}
           {/* 行尾的「…」：和右键是同一份菜单 */}
-          <TableHead className="w-6 px-0!" />
+          <TableHead className="w-6 px-0!" {...columnProps(layout, "actions")} />
         </TableRow>
       </TableHeader>
       {/*
@@ -215,6 +226,7 @@ export function RequestTable({
       */}
       {rows.length === 0 ? (
         <BodySkeleton
+          columns={columns}
           widths={columns.map((col) => ({
             status: "w-10", time: "w-14", client: "w-20", model: "w-28", upstream: "w-20",
             latency: "w-20 ml-auto", tokens: "w-14 ml-auto", cost: "w-12 ml-auto",
@@ -245,10 +257,12 @@ export function RequestTable({
         />
       )}
     </Table>
+    </TrafficLayout>
   );
 }
 
 function Th({
+  col,
   k,
   label,
   sort,
@@ -257,6 +271,7 @@ function Th({
   className = "",
   children,
 }: {
+  col: Col;
   k: SortKey;
   label: string;
   sort: SortKey;
@@ -267,14 +282,17 @@ function Th({
   children?: ReactNode;
 }) {
   const active = sort === k;
+  const layout = useContext(TrafficLayout);
   return (
-    <TableHead className={className} aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+    <TableHead className={className} {...columnProps(layout, col)} aria-sort={active ? (dir === "asc" ? "ascending" : "descending") : "none"}>
+      <span data-column-label>
       <Button variant="ghost" size="xs" className="-mx-1 px-1 font-medium" onClick={() => on(k)}>
         <span className={cn(active && "text-foreground")}>{label}</span>
         <span aria-hidden className="ml-0.5 inline-block w-2 tw-label">
           {active ? (dir === "asc" ? "↑" : "↓") : ""}
         </span>
       </Button>
+      </span>
       {children}
     </TableHead>
   );
@@ -283,15 +301,13 @@ function Th({
 /**
  * 表头里垫的一块：这一列最宽的那几格，原样画出来，看不见、零高、点不到。
  *
- * **为什么要垫。**表格按内容定列宽，而只画一段的表只有画出来的那几十行在算：往下一滚，
- * 进来一个长一点的模型名，整张表的列就往右一跳。表头一直都在，垫在它里面的格子一直
- * 参与列宽 —— 每一列最宽的那几格都在，列宽就和整张表都画出来时一样，滚到哪都不动。
+ * 样本按内容的自然宽度渲染，交给 `useColumnLayout` 测量。表体换一批虚拟行时不重定
+ * 列宽；数字保留测出的宽度，名字则可在最小宽度与偏好宽度之间收缩。
  *
  * 哪几格最宽是按字数估的（`useSizers`），每列取前三名，估差一点也落在里面；画的是和
  * 行里一样的那一格（同一个组件），量出来的宽度就是真的。组头的字是中粗，请求行是常规；
- * 组里的请求行第一格往里缩了 22px（`pl-7`），这里照样缩。上游那一格会折行，量它最窄
- * 能收到多窄时也要能折。名字类的几格自己封了顶（`NAME_PX`），垫在这里也一样：一个
- * 长名字撑开的最多是上限那么宽。
+ * 组里的请求行第一格往里缩了 22px（`pl-7`），这里照样缩。名字类的几格自己封了顶
+ * （`NAME_PX`），样本也一样，超长名字不会把表撑开。
  */
 function Sizer({
   col,
@@ -306,17 +322,17 @@ function Sizer({
 }) {
   if (items.length === 0) return null;
   return (
-    <div aria-hidden inert className="invisible h-0 overflow-hidden">
+    <div aria-hidden inert data-column-measure className="invisible h-0 overflow-hidden">
       {items.map((it) =>
         it.kind === "session" ? (
-          <div key={it.key} className="font-medium">
+          <div key={it.key} className="w-max font-medium">
             <SessionSizerCell col={col} g={it.g} />
           </div>
         ) : (
           <div
             key={it.key}
             className={cn(
-              "font-normal",
+              "w-max font-normal",
               col === "upstream" && "whitespace-normal",
               col === "status" && it.inGroup !== null && "pl-[22px]",
             )}
@@ -447,22 +463,22 @@ function requestWidths(r: RequestRow, t: Text, today: number, via: ViaConfig | n
  * 八行，越往下越淡：够说明这里将要出现一张表，又不至于在真的没有记录时
  * 留下一屏假内容 —— 那种情况下接上的是空状态，不是骨架。
  */
-function BodySkeleton({ widths }: { widths: string[] }) {
+function BodySkeleton({ columns, widths }: { columns: Col[]; widths: string[] }) {
   return (
     <TableBody aria-busy="true">
       {Array.from({ length: 8 }, (_, row) => (
         <TableRow key={row} className="border-b border-border/60 hover:bg-transparent" style={{ opacity: 1 - row * 0.09 }}>
           {widths.map((w, col) => (
-            <TableCell key={col}>
+            <TrafficCell key={col} col={columns[col]!}>
               <div className="flex items-center">
                 <span aria-hidden className="invisible w-0 overflow-hidden">
                   0
                 </span>
                 <Skeleton className={cn("h-3 rounded-sm", w)} />
               </div>
-            </TableCell>
+            </TrafficCell>
           ))}
-          <TableCell />
+          <TrafficCell col="actions" />
         </TableRow>
       ))}
     </TableBody>
@@ -839,6 +855,7 @@ function useJustOpened(open: ReadonlySet<string>): ReadonlySet<string> {
   return Date.now() - fresh.current.at < OPENED_MS ? fresh.current.ids : NONE;
 }
 const NONE: ReadonlySet<string> = new Set();
+const NO_PINS: Columns["pinned"] = {};
 
 /** 密钥那一格比的是这几样：密钥、推测的应用、来源 */
 const clientKey = (x: RequestRow) => `${x.client}|${x.keyMasked ?? ""}|${x.hint ?? ""}|${x.peer ?? ""}`;
@@ -1004,7 +1021,7 @@ const Row = memo(function Row({
       )}
     >
       {columns.map((col) => (
-        <TableCell
+        <TrafficCell col={col}
           key={col}
           className={cn(
             numericColumn(col) && "text-right",
@@ -1014,16 +1031,16 @@ const Row = memo(function Row({
             col === "upstream" && "whitespace-normal",
             col === "upstream" && sameProvider && DIM,
           )}
-        >{requestCell(col, r, c)}</TableCell>
+        >{requestCell(col, r, c)}</TrafficCell>
       ))}
       {/*
         **点「…」不能连带打开这一行。**按钮上的点击会冒泡到行上，行一收到
         就去开详情，菜单和抽屉会一起出来。只在悬停、选中、菜单开着时出现：
         两千行各带一个常亮的「…」，整列就是一道噪点。
       */}
-      <TableCell className="w-6 px-0! py-0 text-center" onClick={(e) => e.stopPropagation()}>
+      <TrafficCell col="actions" className="w-6 px-0! py-0 text-center" onClick={(e) => e.stopPropagation()}>
         <RowActions target={{ kind: "request", id: r.id }} label={t.rowActions(r.id)} selected={selected} />
-      </TableCell>
+      </TrafficCell>
     </TableRow>
   );
   if (!hit) return row;
