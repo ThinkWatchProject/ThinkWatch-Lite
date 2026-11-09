@@ -20,6 +20,9 @@ def prepare(arch, directory, cli_version):
         ("tauri-apps/binary-releases", "apprun-old", f"AppRun-{arch}", f"AppRun-{arch}"),
         ("tauri-apps/binary-releases", "linuxdeploy-07333c6",
          f"linuxdeploy-{arch}.AppImage", f"linuxdeploy-07333c6-{arch}.AppImage"),
+        # appimagetool otherwise downloads this during its final packaging
+        # stage, after the complete application has already been compiled.
+        ("AppImage/type2-runtime", "continuous", f"runtime-{arch}", f"runtime-{arch}"),
         ("linuxdeploy/linuxdeploy-plugin-appimage", "continuous",
          f"linuxdeploy-plugin-appimage-{arch}.AppImage", "linuxdeploy-plugin-appimage.AppImage"),
     ]
