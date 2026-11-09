@@ -8,7 +8,8 @@ import { Button } from "@/ui/button";
 import { UpstreamLogo } from "@/ui/logos";
 import type { MenuItems } from "@/ui/row-menu";
 import { StatusDot } from "@/ui/status-dot";
-import { TableCell, TableRow } from "@/ui/table";
+import { TableRow } from "@/ui/table";
+import { TrafficCell } from "./tableLayout";
 import { Tip } from "@/ui/tip";
 import { copyText } from "@/ui/notify";
 import { numericColumn } from "./columns";
@@ -85,13 +86,13 @@ export const SessionRow = memo(function SessionRow({
       className={cn(ROW, "bg-foreground/[0.025] font-medium", fresh && "motion-row-in")}
     >
       {columns.map((col) => (
-        <TableCell key={col} className={cn(numericColumn(col) && "text-right")}>
+        <TrafficCell col={col} key={col} className={cn(numericColumn(col) && "text-right")}>
           {sessionCell(col, f, c)}
-        </TableCell>
+        </TrafficCell>
       ))}
-      <TableCell className="w-6 px-0! py-0 text-center font-normal" onClick={(e) => e.stopPropagation()}>
+      <TrafficCell col="actions" className="w-6 px-0! py-0 text-center font-normal" onClick={(e) => e.stopPropagation()}>
         <RowActions target={{ kind: "session", id: f.id }} label={t.sessionActions} selected={selected} />
-      </TableCell>
+      </TrafficCell>
     </TableRow>
   );
 });

@@ -287,8 +287,8 @@ export default function TrafficPage({
       那层自己横着滚的话，表头就钉在它身上、不再吸顶（见 `Table` 的 `scroll`）。
 
       所以分成三块：上面的页头和过滤条、下面的脚注钉在左边（`sticky left-0`），表横
-      着滚时它们不跟着走；中间那块跟着表变宽（`w-fit`），滚到最右，表的右边距才露得
-      出来。这一页不套 `Page`：`Page` 的宽度和边距是给整页一起滚的页面的，这里三块
+      着滚时它们不跟着走；中间容器保持视口宽度，表格在需要时超出它，固定列也看同一个
+      滚动层。这一页不套 `Page`：`Page` 的宽度和边距是给整页一起滚的页面的，这里三块
       各自带 `px-5`，底部留白和 `Page` 一样是 32px。
     */
     <div ref={listRef} className="min-h-0 flex-1 overflow-auto">
@@ -481,7 +481,7 @@ export default function TrafficPage({
         {/* 有请求了：说一句点开能看到什么 */}
         <OpenRowHint when={allRows.length > 0} className="mb-3" />
       </div>
-      <div className="w-fit min-w-full px-5">
+      <div className="w-full px-5">
         {failedEmpty ? (
           <ErrorState title={t.historyFailed} error={seedError} onRetry={() => void retry(onRetry)} retrying={retrying} />
         ) : seeded && rows.length === 0 && !searching ? (
@@ -561,6 +561,7 @@ export default function TrafficPage({
             rows={rows}
             hits={found?.hits}
             columns={columns}
+            pinned={columnSettings.pinned}
             cursor={cursor}
             fresh={fresh}
             freshGroups={freshGroups}
