@@ -7,11 +7,16 @@ if (-not $IsWindows) { throw 'This script prepares the Windows NSIS toolchain' }
 
 function Get-CheckedTool {
     param([string]$Url, [string]$Destination, [string]$Sha256)
-    # Use the official release URL. The query prevents reuse of an expired
-    # cached redirect; the pinned digest still authenticates the bytes.
-    $downloadUrl = "${Url}?download=1&sha256=$Sha256"
-    & curl.exe --fail --location --retry 5 --retry-all-errors --retry-delay 2 `
-        --connect-timeout 15 --max-time 120 --output $Destination $downloadUrl
+    $assetUrl = [uri]$Url
+    if ($assetUrl.Host -ne 'github.com' -or
+        $assetUrl.AbsolutePath -notmatch '^/([^/]+/[^/]+)/releases/download/([^/]+)/([^/]+)$') {
+        throw 'Expected an official GitHub release asset URL'
+    }
+    $releaseRepo = $Matches[1]
+    $releaseTag = [uri]::UnescapeDataString($Matches[2])
+    $releaseAsset = [uri]::UnescapeDataString($Matches[3])
+    & python (Join-Path $PSScriptRoot 'github_download.py') `
+        $releaseRepo $releaseTag $releaseAsset $Destination
     if ($LASTEXITCODE -ne 0) { throw "Cannot download $Url" }
     $actual = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $Sha256) { throw "SHA-256 mismatch for $Url" }

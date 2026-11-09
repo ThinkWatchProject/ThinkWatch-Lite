@@ -41,9 +41,18 @@ jobs:
       # 演练也不会触发。lite#169 就这样把一行重复的 `- name:` 带进了 dev。
       # 在改它的那个 PR 上拦。脚本里的 shell 不在这里查，只查工作流本身
       - name: Workflow files are valid
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -color -shellcheck=
+          TOOLS="$RUNNER_TEMP/actionlint"
+          mkdir -p "$TOOLS"
+          python3 scripts/github_download.py rhysd/actionlint v1.7.12 \
+            actionlint_1.7.12_linux_amd64.tar.gz "$TOOLS/actionlint_1.7.12_linux_amd64.tar.gz"
+          python3 scripts/github_download.py rhysd/actionlint v1.7.12 \
+            actionlint_1.7.12_checksums.txt "$TOOLS/checksums.txt"
+          ( cd "$TOOLS" && sha256sum --ignore-missing -c checksums.txt )
+          tar -xzf "$TOOLS/actionlint_1.7.12_linux_amd64.tar.gz" -C "$TOOLS" actionlint
+          "$TOOLS/actionlint" -color -shellcheck=
       # Linux 用户的一行安装脚本在别人的机器上、用别人的 sh 跑（Ubuntu 上是
       # dash），写出 bash 的语法就是装不上。runner 自带 shellcheck
       - name: The install script is POSIX sh
@@ -53,6 +62,8 @@ jobs:
       # 发出去的文件、说明里有没有混进中文
       - name: Release page text
         run: python3 scripts/release_notes_test.py
+      - name: Release downloads recover from transient failures
+        run: python3 scripts/github_download_test.py
       - uses: pnpm/action-setup@v4
       - uses: actions/setup-node@v4
         with:
@@ -110,6 +121,8 @@ jobs:
       # 的包」又能被悄悄造出来 —— 那正是引入这套东西要修的 bug。宁可
       # 让 CI 多下十四兆。校验和对得上就不会重复下载。
       - name: Fetch the core binary the bundle declares
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash src-tauri/scripts/fetch-core.sh
       # Warnings are errors. Relaxing this on CI is the same as removing
       # it — a warning nobody is forced to read is a warning nobody
@@ -119,9 +132,10 @@ jobs:
       # **测试用 nextest 跑**，和 core 一样：测试程序同时跑、每条测试各占一个进程，改环境
       # 变量的那几条互不干扰。版本钉死，和 core 的是同一版。没有文档测试（只有一个 yaml
       # 代码块，rustdoc 不当测试跑），nextest 不跑它们不丢东西
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.146
+      - name: Install checksum-verified nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/install_nextest.py universal-apple-darwin "$RUNNER_TEMP/nextest"
       - name: Test
         run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
 
@@ -160,6 +174,8 @@ jobs:
       #
       # 取回来的是 Windows 那一份，名字带 `.exe` —— 见 `CORE_EXE`。
       - name: Fetch the core binary the bundle declares
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: bash src-tauri/scripts/fetch-core.sh
 
@@ -170,9 +186,10 @@ jobs:
       # 的客户端在回环端口上真连上去。那条路在这个平台上没有替代品，而它是否
       # 成立，只有这台机器答得出来。
       # 见 macOS 那一档
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.146
+      - name: Install checksum-verified nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/install_nextest.py x86_64-pc-windows-msvc "$env:RUNNER_TEMP/nextest"
       - name: Test
         run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
 
@@ -265,6 +282,8 @@ jobs:
       # 的 build script 在**编译期**就校验那个文件在不在；接缝测试还要真的
       # 起它。
       - name: Fetch the core binary the bundle declares
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: bash src-tauri/scripts/fetch-core.sh
 
       - name: Clippy
@@ -274,8 +293,9 @@ jobs:
       # （系统通知的往返、深浅色的 portal）；不套的话通知那条会悄悄跳过自己。
       # `dbus-run-session` 起一个只活到命令结束的总线，把地址交给它
       # 见 macOS 那一档
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.146
+      - name: Install checksum-verified nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/install_nextest.py x86_64-unknown-linux-gnu "$RUNNER_TEMP/nextest"
       - name: Test
         run: dbus-run-session -- cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
