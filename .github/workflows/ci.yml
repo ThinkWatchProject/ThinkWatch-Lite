@@ -41,9 +41,18 @@ jobs:
       # 演练也不会触发。lite#169 就这样把一行重复的 `- name:` 带进了 dev。
       # 在改它的那个 PR 上拦。脚本里的 shell 不在这里查，只查工作流本身
       - name: Workflow files are valid
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
-          bash <(curl -sSfL https://raw.githubusercontent.com/rhysd/actionlint/v1.7.12/scripts/download-actionlint.bash) 1.7.12
-          ./actionlint -color -shellcheck=
+          TOOLS="$RUNNER_TEMP/actionlint"
+          mkdir -p "$TOOLS"
+          python3 scripts/github_download.py rhysd/actionlint v1.7.12 \
+            actionlint_1.7.12_linux_amd64.tar.gz "$TOOLS/actionlint_1.7.12_linux_amd64.tar.gz"
+          python3 scripts/github_download.py rhysd/actionlint v1.7.12 \
+            actionlint_1.7.12_checksums.txt "$TOOLS/checksums.txt"
+          ( cd "$TOOLS" && sha256sum --ignore-missing -c checksums.txt )
+          tar -xzf "$TOOLS/actionlint_1.7.12_linux_amd64.tar.gz" -C "$TOOLS" actionlint
+          "$TOOLS/actionlint" -color -shellcheck=
       # Linux 用户的一行安装脚本在别人的机器上、用别人的 sh 跑（Ubuntu 上是
       # dash），写出 bash 的语法就是装不上。runner 自带 shellcheck
       - name: The install script is POSIX sh

@@ -288,7 +288,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: Prepare verified Windows bundler tools
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: ./scripts/prepare-windows-bundler.ps1
 
@@ -306,12 +312,6 @@ jobs:
           key: ${{ matrix.target }}
           # 见 macOS 那一档
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
-      # 取版本号、取 twcore 的两个脚本要 Python。Windows 的机器上不一定有，
-      # 有也不一定叫 `python3` —— 脚本两个名字都认，这里保证至少有一个
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
 
       - name: The tag is the version in the tree
         run: |
