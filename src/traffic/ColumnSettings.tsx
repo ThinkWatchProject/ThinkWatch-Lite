@@ -3,8 +3,9 @@ import { ArrowDownIcon, ArrowUpIcon, Columns3Icon } from "lucide-react";
 import { useText } from "@/i18n";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/ui/popover";
-import { COMPACT_COLUMNS, DEFAULT_COLUMNS, moveColumn, toggleColumn, type Columns } from "./columns";
+import { COMPACT_COLUMNS, DEFAULT_COLUMNS, moveColumn, orderedColumns, pinColumn, toggleColumn, type Columns, type Pin } from "./columns";
 import { trafficText } from "./Traffic.i18n";
 import type { Col } from "./virtual";
 
@@ -22,7 +23,7 @@ export function ColumnSettings({ settings, columns, onChange }: {
           {t.columns}
         </Button>
       </PopoverTrigger>
-      <PopoverContent align="end" className="w-64">
+      <PopoverContent align="end" className="w-80 max-w-[calc(100vw-2rem)]">
         <PopoverTitle>{t.columns}</PopoverTitle>
         <div className="flex gap-1">
           <Button variant="outline" size="xs" onClick={() => onChange(COMPACT_COLUMNS)}>
@@ -33,7 +34,7 @@ export function ColumnSettings({ settings, columns, onChange }: {
           </Button>
         </div>
         <div>
-          {settings.order.map((col, i) => (
+          {orderedColumns(settings).map((col) => (
             <div key={col} className="flex items-center gap-2 py-1">
               <label className="flex min-w-0 flex-1 items-center gap-2">
                 <Checkbox
@@ -43,17 +44,26 @@ export function ColumnSettings({ settings, columns, onChange }: {
                 />
                 {t[col]}
               </label>
+              <NativeSelect size="inline" className="w-24 shrink-0"
+                aria-label={t.pinColumn(t[col])}
+                value={settings.pinned[col] ?? "none"}
+                onChange={(e) => onChange((prev) => pinColumn(prev, col, e.target.value === "none" ? null : e.target.value as Pin))}
+              >
+                <NativeSelectOption value="none" disabled={col === "status" && Object.entries(settings.pinned).some(([c, p]) => c !== "status" && p === "left")}>{t.unpinnedColumn}</NativeSelectOption>
+                <NativeSelectOption value="left">{t.pinColumnLeft}</NativeSelectOption>
+                {col !== "status" && <NativeSelectOption value="right">{t.pinColumnRight}</NativeSelectOption>}
+              </NativeSelect>
               <Button
                 variant="ghost"
                 size="icon-xs"
-                disabled={i <= 1}
+                disabled={moveColumn(settings, col, -1) === settings}
                 aria-label={t.moveColumnUp(t[col])}
                 onClick={() => onChange((prev) => moveColumn(prev, col, -1))}
               ><ArrowUpIcon /></Button>
               <Button
                 variant="ghost"
                 size="icon-xs"
-                disabled={i === 0 || i === settings.order.length - 1}
+                disabled={moveColumn(settings, col, 1) === settings}
                 aria-label={t.moveColumnDown(t[col])}
                 onClick={() => onChange((prev) => moveColumn(prev, col, 1))}
               ><ArrowDownIcon /></Button>
