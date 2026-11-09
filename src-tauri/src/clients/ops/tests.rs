@@ -92,6 +92,22 @@ fn every_client_says_how_to_connect_it_by_hand_without_the_key() {
     );
     let json = serde_json::to_string(&r).unwrap();
     assert!(!json.contains("tw-d"), "{json}");
+    let codex = r.clients.iter().find(|c| c.id == "codex").unwrap();
+    let local = codex
+        .manual
+        .fields
+        .iter()
+        .find(|f| f.path == "model_catalog_json")
+        .unwrap();
+    assert!(matches!(local.op, wire::FieldOp::Remove));
+    assert!(local.value.is_none());
+    assert!(
+        codex
+            .manual
+            .fields
+            .iter()
+            .any(|f| f.path == "model_providers.thinkwatch.model_catalog_url")
+    );
 }
 
 #[test]

@@ -324,7 +324,145 @@ fn adopting_codex_keeps_every_project_trust_and_mcp_server() {
     assert!(after.contains(r#"wire_api = "responses""#), "{after}");
     assert!(after.contains("X-ThinkWatch-Client"), "{after}");
     // 实测：不配 env_key 它也照发请求；env_key 指向没 export 的变量反而起不来
-    assert!(!after.contains("env_key"), "不该写 env_key：{after}");
+    assert_eq!(
+        tw_adopt::toml::get(&after, &["model_providers", "thinkwatch", "env_key"]).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn codex_uses_a_remote_catalog_without_persisting_the_model_list() {
+    let b = bed("codex", CODEX);
+    let c = client("codex");
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let path = c.config_path(&b.home);
+    let after = read(&path);
+    let get = |p: &[&str]| tw_adopt::toml::get(&after, p).unwrap();
+    assert_eq!(
+        get(&["model_providers", "thinkwatch", "model_catalog_url"]),
+        Some(tw_adopt::json::Val::s("http://127.0.0.1:8080/codex/models"))
+    );
+    assert_eq!(
+        get(&["features", "api_key_model_discovery"]),
+        Some(tw_adopt::json::Val::Bool(true))
+    );
+    assert_eq!(get(&["model"]), Some(tw_adopt::json::Val::s("gpt-5.6-sol")));
+
+    let mut changed = gw();
+    changed.models = vec!["brand-new-model".into()];
+    let again = plan_adopt(&c, &b.home, &changed, &Around::default()).unwrap();
+    assert!(again.is_noop(), "Model changes must not rewrite config");
+    assert!(!after.contains("brand-new-model"));
+}
+
+#[test]
+fn codex_local_catalog_and_active_profile_are_reversibly_overridden() {
+    use tw_adopt::json::Val;
+    let seed = format!(
+        r#"profile = "work"
+model_provider = "my-provider"
+model_catalog_json = "/private/catalog.json"
+{CODEX}
+[features]
+api_key_model_discovery = false
+other_feature = true
+
+[profiles.work]
+model_provider = "work-provider"
+model_catalog_json = "/private/work-catalog.json"
+model_reasoning_effort = "high"
+[profiles.work.features]
+api_key_model_discovery = false
+
+[profiles.personal]
+model_provider = "personal-provider"
+model_catalog_json = "/private/personal-catalog.json"
+"#
+    );
+    let b = bed("codex", &seed);
+    let c = client("codex");
+    let path = c.config_path(&b.home);
+    let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    apply(&c, &p, &b.backups).unwrap();
+    let after = read(&path);
+    let get = |p: &[&str]| tw_adopt::toml::get(&after, p).unwrap();
+    assert_eq!(get(&["model_catalog_json"]), None);
+    assert_eq!(get(&["profiles", "work", "model_catalog_json"]), None);
+    assert_eq!(
+        get(&["profiles", "work", "model_provider"]),
+        Some(Val::s("thinkwatch"))
+    );
+    assert_eq!(
+        get(&["profiles", "work", "features", "api_key_model_discovery"]),
+        Some(Val::Bool(true))
+    );
+    assert_eq!(
+        get(&["profiles", "work", "model_reasoning_effort"]),
+        Some(Val::s("high"))
+    );
+    assert_eq!(
+        get(&["profiles", "personal", "model_catalog_json"]),
+        Some(Val::s("/private/personal-catalog.json"))
+    );
+    let again = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+    assert!(again.is_noop());
+    apply(&c, &again, &b.backups).unwrap();
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    assert_eq!(
+        tw_adopt::toml::value(&read(&path)).unwrap().normalized(),
+        tw_adopt::toml::value(&restored_codex(&seed))
+            .unwrap()
+            .normalized()
+    );
+}
+
+#[test]
+fn codex_without_a_gateway_key_uses_a_non_secret_discovery_sentinel() {
+    let seed = format!(
+        "{CODEX}\n[model_providers.thinkwatch]\nenv_key = \"UNSET_ORIGINAL_PROVIDER_KEY\"\nexperimental_bearer_token = \"original-provider-credential\"\n"
+    );
+    let b = bed("codex", &seed);
+    let c = client("codex");
+    let mut gateway = gw();
+    gateway.key = None;
+    let p = plan_adopt(&c, &b.home, &gateway, &Around::default()).unwrap();
+    assert!(!p.carries_secret);
+    apply(&c, &p, &b.backups).unwrap();
+    let sidecar = tw_adopt::sentinel::sidecar_path(&c.config_path(&b.home));
+    assert!(!read(&sidecar).contains("original-provider-credential"));
+    assert_eq!(
+        tw_adopt::toml::get(
+            &read(&c.config_path(&b.home)),
+            &["model_providers", "thinkwatch", "env_key"]
+        )
+        .unwrap(),
+        None
+    );
+    assert_eq!(
+        tw_adopt::toml::get(
+            &read(&c.config_path(&b.home)),
+            &["model_providers", "thinkwatch", "experimental_bearer_token"]
+        )
+        .unwrap(),
+        Some(tw_adopt::json::Val::s("no-key"))
+    );
+    let r = plan_restore(&c, &b.home).unwrap();
+    apply_restore(&c, &r, &b.backups).unwrap();
+    let restored = read(&c.config_path(&b.home));
+    assert_eq!(
+        tw_adopt::toml::get(&restored, &["model_providers", "thinkwatch", "env_key"]).unwrap(),
+        Some(tw_adopt::json::Val::s("UNSET_ORIGINAL_PROVIDER_KEY"))
+    );
+    assert_eq!(
+        tw_adopt::toml::get(
+            &restored,
+            &["model_providers", "thinkwatch", "experimental_bearer_token"]
+        )
+        .unwrap(),
+        Some(tw_adopt::json::Val::s("original-provider-credential"))
+    );
 }
 
 #[test]

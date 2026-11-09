@@ -592,7 +592,12 @@ pub(crate) fn adopt_file(
             },
         };
         originals.push(Original::new(p, was));
-        carries_secret |= secret;
+        carries_secret |= *secret && *value != Val::s(crate::clients::NO_KEY);
+        if fmt == Format::Toml && *value == Val::Null {
+            text = drop_(fmt, &text, &r, client)?;
+            targets.push(Target::Remove(p.clone()));
+            continue;
+        }
         // 已经是这个值了就不碰那一段字节：JSON 的数组和对象是重新排出来的，
         // 重排一遍会换掉原来的排版 —— 重复接管也就不再是空操作
         let same = fmt == Format::Json
