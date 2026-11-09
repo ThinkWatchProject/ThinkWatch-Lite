@@ -1,0 +1,18 @@
+/* 固定单元格必须有不透明底色，和整行的悬停、选中状态一起变化。 */
+.traffic-table { --traffic-row-bg: var(--background); table-layout: fixed; border-collapse: separate; border-spacing: 0; }
+.traffic-table tbody tr { --traffic-row-bg: var(--background); }
+.traffic-table tr[data-session] { --traffic-row-bg: color-mix(in srgb, var(--foreground) 2.5%, var(--background)); }
+.traffic-table tbody tr:hover,
+.traffic-table tbody tr:has(+tr[data-hit]:hover),
+.traffic-table tbody tr:hover + tr[data-hit] { --traffic-row-bg: color-mix(in srgb, var(--foreground) 3.5%, var(--background)); }
+.traffic-table tbody tr[data-state=selected] { --traffic-row-bg: color-mix(in srgb, var(--foreground) 7%, var(--background)); }
+.traffic-table [data-pinned] { background: var(--traffic-row-bg); }
+.traffic-table thead [data-pinned] { background: var(--background); }
+.traffic-table tbody tr:not([data-spacer]) > td { border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.traffic-table tbody tr:last-child > td,
+.traffic-table tbody tr:has(+tr[data-hit]) > td { border-bottom: 0; }
+.traffic-table [data-pin-edge]::after { content: ""; position: absolute; top: 0; bottom: 0; width: 1px; background: var(--border); pointer-events: none; }
+.traffic-table [data-pin-edge=left]::after { right: 0; }
+.traffic-table [data-pin-edge=right]::after { left: 0; }
+.traffic-table [data-column=upstream] > div > span { min-width: 0; max-width: 100%; }
+.traffic-table [data-column-label] { display: inline-block; width: max-content; }
