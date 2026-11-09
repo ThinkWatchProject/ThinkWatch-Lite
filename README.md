@@ -52,7 +52,9 @@ before the client runs them.
   DeepSeek Harness are pointed at the gateway in one step, with the change
   previewed, the original file backed up and a restore always available;
   Cursor, Continue and Antigravity CLI come with instructions. Switching
-  upstreams then happens in the gateway alone.
+  upstreams then happens in the gateway alone. Codex uses a remote native model
+  catalog: model and alias changes appear on its next catalog refresh without
+  rewriting client configuration. Codex may cache the picker list.
 - **Protection against relays.** A relay sees every request in full and can
   rewrite every answer. Secrets & privacy swaps API keys, private keys, JWTs,
   connection-string passwords, Chinese resident ID numbers and bank card numbers

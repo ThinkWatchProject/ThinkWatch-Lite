@@ -240,7 +240,13 @@ fn setup_of(c: &Client, steps: Vec<Msg>, gw: &clients::Gateway) -> wire::ManualS
         fields: clients::edits(c, gw)
             .iter()
             .chain(&clients::also_edits(c, gw))
-            .map(|e| field(wire::FieldOp::Set, &e.path, Some(&e.value), e.secret))
+            .map(|e| {
+                if c.format == clients::Format::Toml && e.value == tw_adopt::json::Val::Null {
+                    field(wire::FieldOp::Remove, &e.path, None, e.secret)
+                } else {
+                    field(wire::FieldOp::Set, &e.path, Some(&e.value), e.secret)
+                }
+            })
             .collect(),
         endpoint: c.endpoint(gw),
     }

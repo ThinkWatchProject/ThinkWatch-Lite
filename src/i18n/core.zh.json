@@ -399,6 +399,8 @@
     "gw.chatgpt.token_status": "令牌端点返回 {status}：{body}",
     "gw.chatgpt.token_not_json": "令牌端点的响应不是 JSON。",
     "gw.chatgpt.token_missing": "令牌端点的响应中没有 {field}。",
+    "gw.codex_catalog.client_version": "Codex 模型目录需要且只能指定一个 major.minor.patch 格式的 client_version。",
+    "gw.codex_catalog.too_large": "Codex 模型目录超过 1 MiB，请减少此网关密钥可用的模型。",
     "// ── gw.models / gw.probe：获取模型清单、检查上游 ───────────────────": "",
     "gw.models.check_failed": "检查未通过。",
     "gw.models.no_endpoint": "上游没有提供模型清单的接口（HTTP {status}）。",
