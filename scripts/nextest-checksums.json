@@ -1,0 +1,9 @@
+{
+  "version": "0.9.146",
+  "source_manifest_blob": "3893fbd7fb1ff3d4b537883e1c718ce653751e8b",
+  "sha256": {
+    "universal-apple-darwin": "39785160b3c2f6ed9a765049cf4fa79f3b39aa02eb7598a5a0e2a1a0b9ffb9a8",
+    "x86_64-pc-windows-msvc": "809b01f2c94d031ab6cf5f4d4a4f477c8f51b69c96ab3cb2fe4db7ecb222d0d3",
+    "x86_64-unknown-linux-gnu": "682c21b777c333e96fd532e114d3a5a894e0729ab88d94c0a9f20f8419695428"
+  }
+}

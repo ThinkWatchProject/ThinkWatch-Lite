@@ -165,6 +165,9 @@ Every build needs that file, including `pnpm tauri dev`, `cargo clippy`
 and `cargo test`, because Tauri checks at compile time that the
 resources `tauri.conf.json` declares exist. In a fresh checkout, run
 `bash src-tauri/scripts/fetch-core.sh` once before the first build.
+Release asset downloads retry transient failures. When `GH_TOKEN` or
+`GITHUB_TOKEN` is set, GitHub CLI (`gh`) uses the authenticated asset API;
+local builds without a token use `curl`. Core checksums are verified in both cases.
 `pnpm tauri dev` then runs the copy the build places beside the debug
 binary, and the control-plane tests start it and complete a handshake
 with it, so it has to be the version `Cargo.lock` pins.
