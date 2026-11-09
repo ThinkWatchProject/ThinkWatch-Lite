@@ -161,6 +161,7 @@ jobs:
       # 编译前 `beforeBuildCommand` 会把 twcore 取回来并核对校验和。
       - name: Build
         env:
+          GH_TOKEN: ${{ github.token }}
           # 覆盖 tauri.conf.json 里的 `-`。配置里留着临时签名，是为了没有这张
           # 证书的机器上本地构建照样能打出一个能跑的包
           APPLE_SIGNING_IDENTITY: ${{ env.SIGNING_IDENTITY }}
@@ -287,7 +288,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
       - name: Prepare verified Windows bundler tools
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: ./scripts/prepare-windows-bundler.ps1
 
@@ -305,12 +312,6 @@ jobs:
           key: ${{ matrix.target }}
           # 见 macOS 那一档
           save-if: ${{ !startsWith(github.ref, 'refs/tags/') }}
-
-      # 取版本号、取 twcore 的两个脚本要 Python。Windows 的机器上不一定有，
-      # 有也不一定叫 `python3` —— 脚本两个名字都认，这里保证至少有一个
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.x"
 
       - name: The tag is the version in the tree
         run: |
@@ -336,6 +337,7 @@ jobs:
       # 同一个 exe，旁边有卸载程序，照样是安装版
       - name: Build
         env:
+          GH_TOKEN: ${{ github.token }}
           TW_OFFICIAL_BUILD: "1"
         run: pnpm tauri build --target ${{ matrix.target }}
 
@@ -621,11 +623,19 @@ jobs:
 
       # 只打 AppImage，写在 `tauri.linux.conf.json` 里。取哪一份 twcore 跟着
       # `--target` 走，见 `fetch-core.sh`
+      - name: Prepare Linux packaging tools through the asset API
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/fetch_linux_bundle_tools.py "${{ matrix.arch }}" \
+            "${XDG_CACHE_HOME:-$HOME/.cache}/tauri" --cli-version "$(pnpm exec tauri --version)"
+
       - name: Build
         # **Wayland 的库一个都不放。**Tauri 2.12 换的新 linuxdeploy 按 AppImage
         # 的排除名单去掉了 libwayland-client，但同一套库里的 egl、cursor、server
         # 还会进包；新旧混用的风险和白屏是同一类，交给用户系统上的那一套
         env:
+          GH_TOKEN: ${{ github.token }}
           LINUXDEPLOY_EXCLUDED_LIBRARIES: "libwayland-*"
         run: pnpm tauri build --target ${{ matrix.target }}
 
