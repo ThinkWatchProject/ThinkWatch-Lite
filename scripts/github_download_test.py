@@ -2,16 +2,19 @@
 """Release download regressions; no network or real credentials required."""
 
 import contextlib
+import hashlib
 import io
 import os
 import pathlib
 import subprocess
+import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
 
 import fetch_linux_bundle_tools
 import github_download
+import install_nextest
 
 
 def downloaded(command, **_kwargs):
@@ -157,6 +160,60 @@ class LinuxToolTests(unittest.TestCase):
                     contextlib.redirect_stdout(io.StringIO()):
                 fetch_linux_bundle_tools.prepare("aarch64", temporary, "tauri-cli 2.12.1")
             self.assertEqual(len(list(pathlib.Path(temporary).iterdir())), 2)
+
+
+class NextestTests(unittest.TestCase):
+    @staticmethod
+    def archive(symlink=False):
+        output = io.BytesIO()
+        with tarfile.open(fileobj=output, mode="w:gz") as archive:
+            binary = tarfile.TarInfo("cargo-nextest")
+            if symlink:
+                binary.type = tarfile.SYMTYPE
+                binary.linkname = "../outside"
+                archive.addfile(binary)
+            else:
+                binary.size = 4
+                archive.addfile(binary, io.BytesIO(b"tool"))
+            unrelated = tarfile.TarInfo("../outside")
+            unrelated.size = 3
+            archive.addfile(unrelated, io.BytesIO(b"bad"))
+        return output.getvalue()
+
+    def run_install(self, root, data, digest=None):
+        pins = {"version": "0.9.146", "sha256": {"test": digest or hashlib.sha256(data).hexdigest()}}
+
+        def fake_download(_repo, _tag, _asset, output):
+            output.write_bytes(data)
+
+        with patch("install_nextest.download", side_effect=fake_download), \
+                patch("install_nextest.json.loads", return_value=pins):
+            return install_nextest.install("test", root)
+
+    def test_verified_archive_extracts_only_named_regular_executable(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "nextest"
+            self.run_install(root, self.archive())
+            self.assertEqual(list(root.iterdir()), [root / "cargo-nextest"])
+            self.assertEqual((root / "cargo-nextest").read_bytes(), b"tool")
+            self.assertFalse((pathlib.Path(temporary) / "outside").exists())
+
+    def test_checksum_failure_preserves_existing_test_runner(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary)
+            (root / "cargo-nextest").write_bytes(b"old")
+            with self.assertRaisesRegex(RuntimeError, "SHA-256 mismatch"):
+                self.run_install(root, self.archive(), "0" * 64)
+            self.assertEqual((root / "cargo-nextest").read_bytes(), b"old")
+            self.assertEqual(list(root.iterdir()), [root / "cargo-nextest"])
+
+    def test_executable_symlink_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = pathlib.Path(temporary) / "nextest"
+            with self.assertRaisesRegex(RuntimeError, "regular executable"):
+                self.run_install(root, self.archive(symlink=True))
+            self.assertEqual(list(root.iterdir()), [])
+            self.assertFalse((pathlib.Path(temporary) / "outside").exists())
 
 
 if __name__ == "__main__":

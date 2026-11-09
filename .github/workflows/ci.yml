@@ -132,9 +132,10 @@ jobs:
       # **测试用 nextest 跑**，和 core 一样：测试程序同时跑、每条测试各占一个进程，改环境
       # 变量的那几条互不干扰。版本钉死，和 core 的是同一版。没有文档测试（只有一个 yaml
       # 代码块，rustdoc 不当测试跑），nextest 不跑它们不丢东西
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.146
+      - name: Install checksum-verified nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/install_nextest.py universal-apple-darwin "$RUNNER_TEMP/nextest"
       - name: Test
         run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
 
@@ -185,9 +186,10 @@ jobs:
       # 的客户端在回环端口上真连上去。那条路在这个平台上没有替代品，而它是否
       # 成立，只有这台机器答得出来。
       # 见 macOS 那一档
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.146
+      - name: Install checksum-verified nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python scripts/install_nextest.py x86_64-pc-windows-msvc "$env:RUNNER_TEMP/nextest"
       - name: Test
         run: cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
 
@@ -291,8 +293,9 @@ jobs:
       # （系统通知的往返、深浅色的 portal）；不套的话通知那条会悄悄跳过自己。
       # `dbus-run-session` 起一个只活到命令结束的总线，把地址交给它
       # 见 macOS 那一档
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: cargo-nextest@0.9.146
+      - name: Install checksum-verified nextest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/install_nextest.py x86_64-unknown-linux-gnu "$RUNNER_TEMP/nextest"
       - name: Test
         run: dbus-run-session -- cargo nextest run --manifest-path src-tauri/Cargo.toml --profile ci
