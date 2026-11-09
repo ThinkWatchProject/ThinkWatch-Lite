@@ -279,6 +279,8 @@ pub(crate) const NO_KEY: &str = "no-key";
 #[derive(Debug, Clone)]
 pub struct Edit {
     pub path: Vec<String>,
+    /// TOML has no null: a null edit removes this field while retaining its
+    /// original value for restoration. JSON/YAML nulls remain literal values.
     pub value: Val,
     /// 这个值是密钥。决定它进不进旁文件、要不要提示权限。
     pub secret: bool,
@@ -1028,16 +1030,9 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
         // `POST /v1/responses`，`http_headers` 原样送达，
         // `experimental_bearer_token` 变成 `Authorization: Bearer`。
         //
-        // **这里曾经有一条「Codex 不从网关取模型列表」的接管代价，删了。**
-        // 0.139.0 确实一个 GET 都没有，0.153.4 开始会先来一个
-        // `GET /v1/models?client_version=…` —— 但它要的是 Codex 自己的目录
-        // 格式（顶层 `models`），网关答的是 OpenAI 的 `data` 形状，它解码
-        // 失败，只记一行日志。**而这不影响任何人用**：codex 的
-        // `models-manager/models.json` 是 `include_str!` 编进二进制的，远端
-        // 目录只是补充；模型名在内置表里就没有任何提示，不在就按兜底的
-        // 272k 上下文跑。openai/codex 今天的 main 上还加了闸 —— 设了自定义
-        // base_url 又没设 `model_catalog_url` 的 provider 直接跳过这次请求。
-        // 一条不拦人、还在自己消失的事，不值得占接管对话框的一行。
+        // The native remote catalog uses a separate endpoint: /v1/models keeps
+        // its standard OpenAI shape. Configure discovery once; later model and
+        // alias changes come from the live gateway, not config rewrites.
         "codex" => {
             let p = |k: &str| {
                 vec![
@@ -1062,6 +1057,14 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
                     value: Val::s(gw.v1()),
                     secret: false,
                 },
+                Edit {
+                    path: p("model_catalog_url"),
+                    value: Val::s(format!("{}/codex/models", gw.base.trim_end_matches('/'))),
+                    secret: false,
+                },
+                e(&["features", "api_key_model_discovery"], Val::Bool(true)),
+                e(&["model_catalog_json"], Val::Null),
+                e(&["model_providers", PROVIDER_ID, "env_key"], Val::Null),
                 // `wire_api = "chat"` 已经被上游移除，只剩 responses
                 Edit {
                     path: p("wire_api"),
@@ -1091,15 +1094,16 @@ pub fn edits(client: &Client, gw: &Gateway) -> Vec<Edit> {
                     secret: false,
                 },
             ];
-            if let Some(k) = &gw.key {
-                // 名字带 experimental_，上游可能改。**改了也只是丢掉鉴权，
-                // 上面那个 http_headers 仍然认得出是谁发的。**
-                v.push(Edit {
-                    path: p("experimental_bearer_token"),
-                    value: Val::s(k),
-                    secret: true,
-                });
-            }
+            // API-key discovery needs an API key, even on a gateway that does
+            // not require authentication. A sentinel avoids falling back to
+            // the user's OpenAI credentials and enables remote discovery.
+            v.push(Edit {
+                path: p("experimental_bearer_token"),
+                value: Val::s(gw.key.as_deref().unwrap_or(NO_KEY)),
+                // The field's original value can still be a real credential.
+                // Keep it out of sidecars even when writing the sentinel.
+                secret: true,
+            });
             v
         }
         // 写 v1 的写法：v1 和 v2 都认。已经有原生那一条的见 [`edits_for`]
@@ -1208,6 +1212,31 @@ pub fn edits_for(client: &Client, gw: &Gateway, current: &str) -> Vec<Edit> {
         "hermes-agent" => crate::hermes::edits(gw, current),
         "codex" => {
             let mut v = edits(client, gw);
+            // The selected default profile overrides root fields. Keep inactive
+            // profiles intact and restore these few fields on disconnect.
+            if let Ok(Some(Val::Str(profile))) = crate::toml::get(current, &["profile"]) {
+                let p = |field: &str| vec!["profiles".into(), profile.clone(), field.into()];
+                v.push(Edit {
+                    path: p("model_provider"),
+                    value: Val::s(PROVIDER_ID),
+                    secret: false,
+                });
+                v.push(Edit {
+                    path: p("model_catalog_json"),
+                    value: Val::Null,
+                    secret: false,
+                });
+                v.push(Edit {
+                    path: vec![
+                        "profiles".into(),
+                        profile,
+                        "features".into(),
+                        "api_key_model_discovery".into(),
+                    ],
+                    value: Val::Bool(true),
+                    secret: false,
+                });
+            }
             v.extend(codex_detail_mode(current));
             v
         }
