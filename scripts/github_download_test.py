@@ -137,9 +137,9 @@ class LinuxToolTests(unittest.TestCase):
                 root = pathlib.Path(temporary)
                 self.assertEqual({p.name for p in root.iterdir()}, {
                     f"AppRun-{arch}", f"linuxdeploy-07333c6-{arch}.AppImage",
-                    "linuxdeploy-plugin-appimage.AppImage",
+                    f"runtime-{arch}", "linuxdeploy-plugin-appimage.AppImage",
                 })
-                self.assertEqual(download.call_count, 3)
+                self.assertEqual(download.call_count, 4)
                 self.assertTrue(all(p.stat().st_mode & 0o100 for p in root.iterdir()))
 
     @patch("fetch_linux_bundle_tools.download")
@@ -159,7 +159,7 @@ class LinuxToolTests(unittest.TestCase):
             with patch("fetch_linux_bundle_tools.download", side_effect=fake_download), \
                     contextlib.redirect_stdout(io.StringIO()):
                 fetch_linux_bundle_tools.prepare("aarch64", temporary, "tauri-cli 2.12.1")
-            self.assertEqual(len(list(pathlib.Path(temporary).iterdir())), 2)
+            self.assertEqual(len(list(pathlib.Path(temporary).iterdir())), 3)
 
 
 class NextestTests(unittest.TestCase):

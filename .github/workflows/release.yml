@@ -627,8 +627,11 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          TOOLS="${XDG_CACHE_HOME:-$HOME/.cache}/tauri"
           python3 scripts/fetch_linux_bundle_tools.py "${{ matrix.arch }}" \
-            "${XDG_CACHE_HOME:-$HOME/.cache}/tauri" --cli-version "$(pnpm exec tauri --version)"
+            "$TOOLS" --cli-version "$(pnpm exec tauri --version)"
+          echo "LDAI_RUNTIME_FILE=$TOOLS/runtime-${{ matrix.arch }}" >> "$GITHUB_ENV"
+          echo "APPIMAGETOOL_RUNTIME_FILE=$TOOLS/runtime-${{ matrix.arch }}" >> "$GITHUB_ENV"
 
       - name: Build
         # **Wayland 的库一个都不放。**Tauri 2.12 换的新 linuxdeploy 按 AppImage
@@ -637,7 +640,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           LINUXDEPLOY_EXCLUDED_LIBRARIES: "libwayland-*"
-        run: pnpm tauri build --target ${{ matrix.target }}
+        run: pnpm tauri build --verbose --target ${{ matrix.target }}
 
       # 发出去的名字**不带空格**，理由和 Windows 那边一样。
       - name: Name the package
