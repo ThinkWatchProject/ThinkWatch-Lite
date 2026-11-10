@@ -56,8 +56,8 @@ describe("可见模型：别名", () => {
     expect(model).not.toContain(">别名<");
     expect(model).not.toMatch(/disabled=""|data-disabled/);
     // 表格下面说明这条规矩
-    expect(html).toContain("范围里有某个上游模型，指向它的别名也一起可见；只选别名，原来的名称不可见。");
-    expect(html).toContain("可见 2 / 共 3");
+    expect(html).toContain("范围里有某个上游模型，指向它的别名也一起放行；只选别名，不会放行原名。");
+    expect(html).toContain("已允许 2 / 共 3");
   });
 
   it("只选别名，它的模型不勾", () => {
@@ -67,7 +67,7 @@ describe("可见模型：别名", () => {
     );
     expect(rowOf(html, "deepseek-v4.1")).toContain("单独选中");
     expect(rowOf(html, "DeepSeek-v4.1-flash")).toMatch(/aria-checked="false"/);
-    expect(html).toContain("可见 1 / 共 3");
+    expect(html).toContain("已允许 1 / 共 3");
   });
 
   it("目录里没有别名时不写那句说明", () => {
@@ -83,4 +83,15 @@ describe("可见模型：别名", () => {
     );
     expect(html).not.toContain("指向它的别名");
   });
+});
+
+it("keeps hidden originals selectable and counted as allowed", () => {
+  const catalog = ALIASED.map((m) => m.id === "DeepSeek-v4.1-flash" ? { ...m, hidden_by: ["deepseek-v4.1"] } : m);
+  setLang("zh");
+  const html = renderToStaticMarkup(<ModelScope scope="some" entries={["DeepSeek-v4.1-flash"]} catalog={catalog} onScope={noop} onEntries={noop} />);
+  const raw = rowOf(html, "DeepSeek-v4.1-flash");
+  expect(raw).toContain("客户端列表已隐藏");
+  expect(raw).toContain('aria-checked="true"');
+  expect(raw).not.toMatch(/disabled=""|data-disabled/);
+  expect(html).toContain("已允许 2 / 共 3");
 });

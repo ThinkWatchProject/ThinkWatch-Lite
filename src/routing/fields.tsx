@@ -60,7 +60,7 @@ export function ModelInput({
   className?: string;
 }) {
   const t = useText(fieldsText);
-  const items = useMemo(() => models.map((m) => (typeof m === "string" ? m : m.id)), [models]);
+  const items = useMemo(() => suggestedModels(models, value), [models, value]);
   const options = useMemo(() => {
     const byId = new Map<string, ModelOption>();
     for (const m of models) if (typeof m !== "string") byId.set(m.id, m);
@@ -134,6 +134,7 @@ export function ModelInput({
  */
 export type ModelOption = {
   id: string;
+  hidden_by?: readonly string[];
   /** 提供它的上游 */
   providers?: readonly string[];
   /** 是别名时它的模型列表 */
@@ -148,7 +149,7 @@ export function modelNote(m: ModelOption | undefined): string | null {
   const t = textOf(fieldsText);
   const providers = m.providers?.length ? t.providers(m.providers) : "";
   if (m.alias) return providers ? `${t.alias} · ${providers}` : t.alias;
-  return providers || null;
+  return [providers, m.hidden_by?.length ? t.hiddenFromClients : ""].filter(Boolean).join(" · ") || null;
 }
 
 /**
@@ -219,4 +220,11 @@ export function ToggleChips({
       })}
     </div>
   );
+}
+
+/** A typed/search value always keeps access to the full inventory. */
+export function suggestedModels(models: readonly (string | ModelOption)[], value: string): string[] {
+  const searching = value.trim() !== "";
+  return models.filter((m) => searching || typeof m === "string" || m.alias || !m.hidden_by?.length)
+    .map((m) => typeof m === "string" ? m : m.id);
 }

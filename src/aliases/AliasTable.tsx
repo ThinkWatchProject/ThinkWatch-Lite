@@ -67,6 +67,7 @@ export function AliasTable({
               <TableRow data-row={a.name} {...openRow(() => actions.edit(a.name), rowMotion(presence))}>
                 <TableCell className="max-w-52 py-2 align-top @max-3xl/page:max-w-40">
                   <span className="block truncate font-mono font-medium leading-5">{a.name}</span>
+                  {a.hide_originals && <span className="tw-label text-muted-foreground">{t.aliasOnly}</span>}
                 </TableCell>
                 <TableCell className="w-full max-w-0 py-2 whitespace-normal">
                   <Lines lines={modelLines(a)} providers={providers} />
