@@ -448,6 +448,7 @@
     "gw.route.all_selected_disabled": "路由选中的上游均已停用：{detail}",
     "gw.route.protocol_mismatch": "{path} 只能由 {wanted} 格式的上游处理，而上游「{upstream}」是 {got} 格式。",
     "gw.count_tokens.bedrock_upstream": "无法通过 AWS Bedrock 上游「{upstream}」计算 token 数。",
+    "gw.convert.reasoning_history_incompatible": "带签名的思考历史无法发送给上游「{upstream}」：来源或请求格式不兼容。",
     "gw.convert.failed": "无法转换为上游「{upstream}」的格式：{detail}",
     "gw.convert.tool_unsendable": "请求要求使用工具 {tool}，但无法按上游「{upstream}」的格式发送。网页搜索这类服务端工具只能由所属的服务商执行。",
     "gw.convert.tools_unsendable": "请求要求调用工具，但其中的工具都无法按上游「{upstream}」的格式发送。网页搜索这类服务端工具只能由所属的服务商执行。",
