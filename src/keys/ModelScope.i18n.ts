@@ -2,12 +2,12 @@ import { messages } from "@/i18n";
 
 export const modelScopeText = messages(
   {
-    scope: "可见模型",
+    scope: "可用模型",
     all: "全部",
     some: "指定范围",
     none: "无",
-    allNote: (n: number) => `客户端能看到网关暴露的全部模型，共 ${n} 个。`,
-    allNoteEmpty: "客户端能看到网关暴露的全部模型。",
+    allNote: (n: number) => `允许请求全部 ${n} 个模型。客户端列表可按别名设置隐藏原名。`,
+    allNoteEmpty: "允许请求网关提供的全部模型。",
     noneNote: "客户端的模型列表为空。多数客户端据此选择模型，实际等同于停用这把密钥。",
     patterns: "通配规则",
     patternsHint: "一条规则覆盖一组模型，上游新增同族模型时自动包含",
@@ -19,8 +19,9 @@ export const modelScopeText = messages(
     /** 尚未取到任何上游的模型清单时，只能手填 */
     noCatalog: "尚未获取到任何上游的模型清单，因此只能手填规则。在上游页获取清单后，此处可直接勾选。",
     search: "搜索模型",
-    counts: (visible: number, total: number) => `可见 ${visible} / 共 ${total}`,
+    counts: (visible: number, total: number) => `已允许 ${visible} / 共 ${total}`,
     model: "模型",
+    hiddenFromClients: "客户端列表已隐藏",
     provider: "上游",
     providers: (ps: string[]) => ps.join("、"),
     source: "来源",
@@ -30,7 +31,7 @@ export const modelScopeText = messages(
     inherited: (m: string) => `随 ${m} 放行`,
     aliasOf: (models: string[]) => `别名，指向 ${models.join("、")}`,
     /** 表格下面一句：继承只从上游模型名到别名 */
-    aliasRule: "范围里有某个上游模型，指向它的别名也一起可见；只选别名，原来的名称不可见。",
+    aliasRule: "范围里有某个上游模型，指向它的别名也一起放行；只选别名，不会放行原名。",
     rest: (n: number) => `其余 ${n} 个`,
     noMatch: "没有匹配的模型",
     /** 规则命中的行点不动，说明为什么 */
@@ -38,15 +39,15 @@ export const modelScopeText = messages(
     inheritedHint: (m: string) => `随 ${m} 放行，${m} 不在范围里时才可单独取消`,
   },
   {
-    scope: "Visible models",
+    scope: "Allowed models",
     all: "All",
     some: "Specific",
     none: "None",
     allNote: (n: number) =>
       n === 1
-        ? "The client sees every model the gateway exposes: 1 in total."
-        : `The client sees every model the gateway exposes: ${n} in total.`,
-    allNoteEmpty: "The client sees every model the gateway exposes.",
+        ? "All models are allowed: 1 in total. Alias settings may hide original names from client lists."
+        : `All ${n} models are allowed. Alias settings may hide original names from client lists.`,
+    allNoteEmpty: "All models offered by the gateway are allowed.",
     noneNote:
       "The client's model list is empty. Most clients choose a model from it, so this amounts to disabling the key.",
     patterns: "Patterns",
@@ -59,8 +60,9 @@ export const modelScopeText = messages(
     noCatalog:
       "No upstream has reported a model catalogue yet, so patterns have to be typed by hand. Once one is fetched on the Upstreams page, models can be ticked here.",
     search: "Search models",
-    counts: (visible: number, total: number) => `${visible} of ${total} visible`,
+    counts: (visible: number, total: number) => `${visible} of ${total} allowed`,
     model: "Model",
+    hiddenFromClients: "Hidden from client lists",
     provider: "Upstream",
     providers: (ps: string[]) => ps.join(", "),
     source: "From",
@@ -69,7 +71,7 @@ export const modelScopeText = messages(
     inherited: (m: string) => `allowed with ${m}`,
     aliasOf: (models: string[]) => `Alias for ${models.join(", ")}`,
     aliasRule:
-      "An alias is visible whenever a model it points to is in scope. Picking only the alias leaves the original names hidden.",
+      "Granting an original model also allows aliases that list it. Picking only an alias does not allow its original names.",
     rest: (n: number) => (n === 1 ? "1 more" : `${n} more`),
     noMatch: "No model matches",
     lockedHint: (p: string) => `Matched by ${p}; edit that pattern to drop it`,

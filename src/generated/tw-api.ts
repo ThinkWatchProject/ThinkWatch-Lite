@@ -68,7 +68,12 @@ stayed?: Stay | null, };
  * 和配置里 `aliases` 的一项是同一件事：哪家上游提供列表里的任一名称，就能服务这个
  * 别名，发过去用它自己的那个名称（按列表顺序取它有的第一个）。
  */
-export type AliasInput = { name: string, models: Array<string>, };
+export type AliasInput = { name: string, models: Array<string>, 
+/**
+ * Hide target original names in client discovery only. Omission preserves an
+ * existing alias's setting; new aliases default to false.
+ */
+hide_originals?: boolean | null, };
 
 /**
  * 别名列表里的一个名称，以及哪些上游的模型清单里有它。
@@ -106,7 +111,12 @@ shadows: Array<string>,
  * 规则同 [`AliasesView::suggestions`]。列表里已经有的名称、已经有列表里某个名称的
  * 上游不在里面
  */
-same_model: Array<PinnedModel>, };
+same_model: Array<PinnedModel>, 
+/**
+ * Original names hidden by this alias in an unrestricted client catalog.
+ * Actual client lists still apply protocol, availability and key permissions.
+ */
+hidden_originals?: Array<string>, };
 
 /**
  * 预览一个还没保存的别名（`POST /alias-preview`）。
@@ -170,6 +180,10 @@ rules: Array<AliasRuleRef>, };
  */
 export type AliasView = { name: string, 
 /**
+ * Hide original model names from client discovery without changing access.
+ */
+hide_originals?: boolean, 
+/**
  * 按书写顺序
  */
 models: Array<AliasModel>, 
@@ -215,6 +229,11 @@ renamed_in: AliasUsage, };
  * 别名页（`GET /aliases`）。
  */
 export type AliasesView = { 
+/**
+ * This Core understands hide_originals. Absent/false on older servers;
+ * clients must not offer the setting there.
+ */
+hide_originals_supported: boolean, 
 /**
  * 按书写顺序
  */
@@ -2692,7 +2711,12 @@ alias?: Array<string> | null,
 /**
  * 列出了这个模型名的别名，按别名表的顺序。别名自己这一项是空的
  */
-aliases: Array<string>, };
+aliases: Array<string>, 
+/**
+ * Available aliases that hide this original name in an unrestricted client
+ * catalog. Admins still receive the complete directory and original IDs.
+ */
+hidden_by?: Array<string>, };
 
 /**
  * 建连的那一步对着谁。

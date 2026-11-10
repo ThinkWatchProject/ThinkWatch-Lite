@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Msg } from "@/types";
-import { draftOf, onlyAuto, shownProblems, withModel, withName, withoutModel } from "./draft";
+import { aliasInput, draftOf, onlyAuto, shownProblems, withModel, withName, withoutModel } from "./draft";
 
 const real = new Set(["claude-opus-5", "deepseek-chat"]);
 const offered = (m: string) => real.has(m);
@@ -72,4 +72,15 @@ describe("别名草稿：名称下面用红字列出的问题", () => {
     const typed = draftOf("claude-opus-5", ["claude-opus-5"]);
     expect(shownProblems(problems, typed)).toEqual(problems);
   });
+});
+
+it("preserves client discovery policy while editing names and targets; gates old Core payloads", () => {
+  let d = draftOf("short", ["raw"], true);
+  d = withName(d, "renamed", offered, false);
+  d = withModel(d, "other");
+  d = withoutModel(d, "raw");
+  expect(aliasInput(d, true)).toEqual({ name: "renamed", models: ["other"], hide_originals: true });
+  expect(aliasInput({ ...d, hideOriginals: false }, true).hide_originals).toBe(false);
+  expect(aliasInput(d, false)).not.toHaveProperty("hide_originals");
+  expect(draftOf("new", []).hideOriginals).toBe(false);
 });

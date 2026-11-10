@@ -8,7 +8,6 @@ import { usd, type UsageHistory } from "@/types";
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
 import { Tip } from "@/ui/tip";
-import { windowStart, type Range } from "@/ui/range";
 import { useStartOf } from "@/useNow";
 import { overviewText } from "./overview.i18n";
 import { rankCost } from "./series";
@@ -22,7 +21,6 @@ import {
   layout,
   levelOf,
   monthLabels,
-  overlaps,
   recorded,
   statsOf,
   step,
@@ -67,7 +65,7 @@ export function useUsageHistory(tick: number): { r: Resource<UsageHistory>; toda
 }
 
 /**
- * 最近一年：一天一格的热力图，固定一年，不跟时间范围走；所选时间范围在格子上描边。
+ * 最近一年：一天一格的热力图，固定一年，不跟时间范围走。
  *
  * 53 列（周）× 7 行（周一在上），最右一列是本周，今天之后的不画；格子随卡片宽度伸缩。
  * 开始记录之前的日子画成更淡的实心格「未记录」—— **不是「没有用量」**，那时还没在记。不画
@@ -80,14 +78,12 @@ export function useUsageHistory(tick: number): { r: Resource<UsageHistory>; toda
  */
 export function Year({
   history,
-  range,
   metric,
   onMetric: setMetric,
   onPickDay,
 }: {
   /** `useUsageHistory` 取到的 */
   history: { r: Resource<UsageHistory>; today: number };
-  range: Range;
   /**
    * 选中的指标。放在页面那一层，和用量那六个指标的选择一样
    */
@@ -136,7 +132,6 @@ export function Year({
           metric={metric}
           partial={partial}
           detailSince={h.detail_since_ms}
-          range={range}
           onPickDay={onPickDay}
           t={t}
           ot={ot}
@@ -197,7 +192,6 @@ function Body({
   metric,
   partial,
   detailSince,
-  range,
   onPickDay,
   t,
   ot,
@@ -207,7 +201,6 @@ function Body({
   partial: boolean;
   /** 逐条记录从哪一刻起有。比它早的日子点不开：概览在那几天按逐条记录算出来全是零 */
   detailSince: number | null;
-  range: Range;
   onPickDay: (day: Date, cell: HTMLElement) => void;
   t: Text;
   ot: OverviewText;
@@ -216,11 +209,6 @@ function Body({
   const s = useMemo(() => statsOf(days, metric), [days, metric]);
   const months = useMemo(() => monthLabels(days), [days]);
 
-  // 所选时间范围：画图的一方以 `range.to ?? 现在` 作为右端
-  const rFrom = windowStart(range);
-  const rTo = range.to ?? Date.now();
-  const inRange = (d: Day) => recorded(d) && overlaps(d, rFrom, rTo);
-  const anyInRange = days.some(inRange);
   const anyUnrecorded = days.some((d) => d.state === "unrecorded");
 
   const fmt = (v: number) => fmtValue(metric, v, t);
@@ -270,7 +258,6 @@ function Body({
         days={days}
         months={months}
         level={(d) => (recorded(d) ? levelOf(valueOf(d, metric), th) : 0)}
-        inRange={inRange}
         openable={(d) => recorded(d) && detailSince !== null && d.at + DAY_MS > detailSince}
         metric={metric}
         onPickDay={onPickDay}
@@ -279,12 +266,6 @@ function Body({
       />
 
       <div className="mt-2.5 flex items-center gap-4 pl-[30px] tw-label text-muted-foreground">
-        {anyInRange && (
-          <span className="flex items-center gap-1.5">
-            <span aria-hidden className={cn("size-2.5 rounded-[2px] ring-[1.5px] ring-foreground/70", LEVEL[2])} />
-            {t.legendRange}
-          </span>
-        )}
         {anyUnrecorded && (
           <span className="flex items-center gap-1.5">
             <span aria-hidden className="size-2.5 rounded-[2px] bg-surface/55" />
@@ -307,7 +288,6 @@ function Grid({
   days,
   months,
   level,
-  inRange,
   openable,
   metric,
   onPickDay,
@@ -317,7 +297,6 @@ function Grid({
   days: Day[];
   months: (number | null)[];
   level: (d: Day) => number;
-  inRange: (d: Day) => boolean;
   /** 点得开的日子：有记录，而且逐条记录还在 */
   openable: (d: Day) => boolean;
   metric: YearMetric;
@@ -427,9 +406,9 @@ function Grid({
                     }}
                     onBlur={() => setFocused((f) => (f === i ? null : f))}
                     className={cn(
-                      "relative aspect-square rounded-[2.5px] outline-none",
+                      "relative aspect-square rounded-[2.5px] outline-none focus-visible:z-10 focus-visible:ring-2 focus-visible:ring-ring",
                       unrec ? "bg-surface/55" : [LEVEL[lv], openable(d) && "cursor-pointer"],
-                      shown === i ? "ring-2 ring-foreground" : inRange(d) && "ring-[1.5px] ring-foreground/70",
+                      hover === i && "ring-1 ring-foreground/35",
                     )}
                   >
                     {wd}

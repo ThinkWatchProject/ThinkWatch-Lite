@@ -45,7 +45,6 @@ export const yearText = messages(
     /** 用量合计还在、逐条的请求记录已过保留期的日子：悬停里说明为什么点不开 */
     aged: "请求记录已过保留期，没有当天的明细",
     unavailable: "暂时取不到",
-    legendRange: "所选时间范围",
     less: "少",
     more: "多",
     gridLabel: "最近一年每天的用量",
@@ -90,7 +89,6 @@ export const yearText = messages(
     unrecorded: "Not recorded",
     aged: "Request records past the retention period; no details for this day",
     unavailable: "Unavailable right now",
-    legendRange: "Selected range",
     less: "Less",
     more: "More",
     gridLabel: "Daily usage over the past year",

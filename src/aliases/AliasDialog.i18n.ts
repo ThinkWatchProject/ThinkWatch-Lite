@@ -42,6 +42,11 @@ export const aliasDialogText = messages(
     sameModel: "其他上游的同一模型",
     sameModelWhat: "按名称认出的，确认是同一个模型再勾选。",
 
+    hideOriginals: "客户端仅展示别名",
+    hideOriginalsHint: "从客户端模型列表隐藏对应的上游原名；其他别名不受影响。原名仍可按现有权限请求，客户端可能需要刷新模型列表。",
+    hideOriginalsUpgrade: "连接的 Core 不支持此设置，请升级 Core。",
+    hiddenOriginals: (names: string) => `将隐藏的原名：${names}。实际列表仍按协议和密钥权限筛选。`,
+    hiddenOriginalsEmpty: "当前没有可隐藏的原名。",
     sentTo: "发往各上游",
     sentHead: (name: string) => `客户端请求 ${name} 时`,
     sentHeadUnnamed: "客户端请求这个别名时",
@@ -106,6 +111,11 @@ export const aliasDialogText = messages(
     sameModel: "The same model on other upstreams",
     sameModelWhat: "Recognised by name. Check one after confirming it is the same model.",
 
+    hideOriginals: "Show only the alias in client model lists",
+    hideOriginalsHint: "Hide the mapped original names from client model lists. Other aliases are unaffected. Original names remain callable with existing permissions; clients may need to refresh their model lists.",
+    hideOriginalsUpgrade: "The connected Core does not support this setting. Upgrade Core to use it.",
+    hiddenOriginals: (names: string) => `Original names to hide: ${names}. Client lists still apply protocol and key permissions.`,
+    hiddenOriginalsEmpty: "No original names are currently available to hide.",
     sentTo: "Sent to each upstream",
     sentHead: (name: string) => `When a client requests ${name}`,
     sentHeadUnnamed: "When a client requests this alias",

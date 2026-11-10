@@ -198,7 +198,7 @@ function Body({
             <Spend d={d} range={range} metric={metric} ov={ov} dim={dim} onDim={onDim} />
             <Quota d={d} ov={ov} />
           </div>
-          <Year history={history} range={range} metric={yearMetric} onMetric={onYearMetric} onPickDay={onPickDay} />
+          <Year history={history} metric={yearMetric} onMetric={onYearMetric} onPickDay={onPickDay} />
           <Breakdown d={d} range={range} ov={ov} dim={dim} onDim={onDim} />
           {pad > 0 && <div aria-hidden style={{ height: pad }} />}
         </>

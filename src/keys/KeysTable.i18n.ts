@@ -4,7 +4,7 @@ export const keysTableText = messages(
   {
     key: "密钥",
     route: "路由",
-    models: "可见模型",
+    models: "可用模型",
     last24h: "24 小时",
     cost: "费用",
     actions: "操作",
@@ -27,7 +27,7 @@ export const keysTableText = messages(
   {
     key: "Key",
     route: "Route",
-    models: "Visible models",
+    models: "Allowed models",
     last24h: "Last 24 hours",
     cost: "Cost",
     actions: "Actions",
