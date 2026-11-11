@@ -409,11 +409,10 @@ fn read(path: &Path) -> Result<Journal, Msg> {
     }
 }
 fn save(j: &Journal) -> Result<(), Msg> {
-    crate::atomic_file::write(
-        &journal_path(),
-        &serde_json::to_vec_pretty(j).map_err(failed)?,
-    )
-    .map_err(failed)
+    save_at(&journal_path(), j)
+}
+fn save_at(path: &Path, j: &Journal) -> Result<(), Msg> {
+    crate::atomic_file::write(path, &serde_json::to_vec_pretty(j).map_err(failed)?).map_err(failed)
 }
 pub fn preferred(owner: &str) -> Result<Option<String>, Msg> {
     Ok(load()?.clients.get(owner).map(|c| c.base.clone()))
@@ -504,9 +503,14 @@ impl Applied {
         if let Some(version) = self.written {
             // CAS guards every config field, not only listeners. Never undo another edit.
             let req = self.target.before.as_ref().unwrap().request(version);
-            control.call::<ep::SaveListen>(&[], &req).await.map_err(|e|
-                msg!("wsl.rollback_failed", detail = e.to_string() =>
-                    "The WSL adoption failed, but its listener change could not be rolled back because settings changed or became unavailable: {detail}. Review gateway listening settings; the ownership record was retained."))?;
+            if let Err(e) = control.call::<ep::SaveListen>(&[], &req).await {
+                let mut pending = load()?;
+                // Keep cleanup ownership, but never claim a failed adoption as an active client.
+                pending.clients = self.old.clients;
+                save(&pending)?;
+                return Err(msg!("wsl.rollback_failed", detail = e.to_string() =>
+                    "The WSL adoption failed, but its listener change could not be rolled back because settings changed or became unavailable: {detail}. Review gateway listening settings; the ownership record was retained."));
+            }
         }
         save(&self.old)
     }
@@ -515,10 +519,18 @@ impl Applied {
 /// Explicit restore only. Restore the baseline once the last managed client is
 /// released, and only while the complete listen settings still match our record.
 pub async fn release(control: &ControlClient, owner: &str) -> Result<(), Msg> {
-    let mut j = load()?;
+    release_at(control, owner, &journal_path()).await.map_err(|e|
+        msg!("wsl.listener_cleanup_failed", detail = e.text =>
+            "The client configuration was restored, but unused WSL listeners or source rules could not be removed: {detail}. Review gateway listening settings. Cleanup ownership was retained."))
+}
+async fn release_at(control: &ControlClient, owner: &str, path: &Path) -> Result<(), Msg> {
+    let mut j = read(path)?;
     if j.clients.remove(owner).is_none() {
         return Ok(());
     }
+    // The file has already been restored. Persist that fact even if Core is down;
+    // retain baseline/expected separately so a later explicit adoption can clean up.
+    save_at(path, &j)?;
     if let (Some(expected), Some(_)) = (&j.expected, &j.baseline) {
         let ov = control
             .call::<ep::Overview>(&[], &())
@@ -545,7 +557,7 @@ pub async fn release(control: &ControlClient, owner: &str) -> Result<(), Msg> {
         j.baseline = None;
         j.expected = None;
     }
-    save(&j)
+    save_at(path, &j)
 }
 
 pub async fn restore_target(
@@ -697,6 +709,35 @@ pub async fn wsl_listen_impact(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[tokio::test]
+    async fn restored_clients_are_not_reported_as_managed_when_core_is_unavailable() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("wsl-adoption.json");
+        let original = baseline();
+        let client = managed("172.23.80.1", "172.23.84.2");
+        let mut expected = original.clone();
+        include_managed(&mut expected, &client, &[nic("172.23.80.1")]);
+        save_at(
+            &path,
+            &Journal {
+                baseline: Some(original.clone()),
+                expected: Some(expected.clone()),
+                clients: BTreeMap::from([("codex".into(), client)]),
+            },
+        )
+        .unwrap();
+        let control = ControlClient::new(
+            tw_api::control::Address::in_dir(d.path()),
+            d.path().join("absent.yaml"),
+        );
+        assert!(release_at(&control, "codex", &path).await.is_err());
+        let pending = read(&path).unwrap();
+        assert!(pending.clients.is_empty());
+        assert_eq!(pending.baseline, Some(original.clone()));
+        assert_eq!(pending.expected, Some(expected.clone()));
+        // A future explicit operation can still identify and remove the unused additions.
+        assert_eq!(compose(&pending, &expected, &[], None, None), original);
+    }
     #[test]
     fn nat_additions_preserve_lan_and_limit_new_sources() {
         let mut s = Spec {

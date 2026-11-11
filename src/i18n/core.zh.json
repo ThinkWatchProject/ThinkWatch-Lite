@@ -1178,6 +1178,7 @@
     "wsl.listener_change": "本次接管还会启用 Windows 网关监听 {address}。保留已有监听和密钥校验；仅在现有规则未放行时添加所需的 WSL 来源。",
     "wsl.listener_restore": "同时移除 Lite 添加且已无客户端需要的监听和来源规则；独立修改过的设置会保留。",
     "wsl.rollback_failed": "WSL 接管失败，且因设置已变化或控制面不可用，无法回退监听：{detail}。请检查网关监听设置；接管记录已保留。",
-    "wsl.stopped": "WSL · {distro} 已停止。启动发行版后才能检查网关连通性。"
+    "wsl.stopped": "WSL · {distro} 已停止。启动发行版后才能检查网关连通性。",
+    "wsl.listener_cleanup_failed": "客户端配置已还原，但未能移除闲置的 WSL 监听或来源规则：{detail}。请检查网关监听设置；清理记录已保留。"
   }
 }
