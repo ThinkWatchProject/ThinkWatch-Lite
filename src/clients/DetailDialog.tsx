@@ -67,6 +67,8 @@ export function DetailDialog({
   const remote = useRemote();
   const status = statusOf(client, gatewayBase, Date.now(), remote !== null, wsl);
   const adopted = client.adopted_at_ms != null;
+  const reconnect = adopted && !!wsl?.adoptable &&
+    (status.reason?.kind === "gateway_changed" || status.reason?.kind === "listener_unavailable");
   const key = client.key ? keys.find((k) => k.name === client.key) : undefined;
   const why = reasonText(status.reason, t);
 
@@ -271,6 +273,7 @@ export function DetailDialog({
           <Button variant="outline" onClick={onClose}>
             {common.close}
           </Button>
+          {reconnect && <Button pending={asking} onClick={onAdopt}>{t.reconnect}</Button>}
           {adopted ? (
             <Button variant="outline" pending={asking} onClick={onRestore}>
               {t.restore}

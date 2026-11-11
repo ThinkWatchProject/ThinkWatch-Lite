@@ -60,6 +60,9 @@ export const clientsText = messages(
 
     // 操作
     adopt: "接管…",
+    reconnect: "重新接管…",
+    reconnectTitle: (name: string) => `重新接管 ${name}`,
+    confirmReconnect: "重新接管",
     restore: "还原…",
     manual: "配置方法…",
     details: "详情…",
@@ -179,23 +182,26 @@ export const clientsText = messages(
       wsl1: (host: string) => `WSL 1，与 Windows 共用网络，经由 ${host} 连接网关。`,
       mirrored: (host: string) => `mirrored 网络，经由 ${host} 连接网关。`,
       nat: (host: string) => `NAT 网络，经由 ${host} 连接网关。`,
-      natBlocked: "NAT 网络，无法接管。",
+      natBlocked: "NAT 网络，尚未找到可用的网关地址。",
       restart: "NAT 网络，重启 WSL 后改用 mirrored 网络。",
       fallback: "NAT 网络，未能改用 mirrored 网络。",
     },
     /** 连着远程时，组名下面那一句后面接上：这一组里还有指着本机网关的（组收起时也看得见） */
     wslLeft: (summary: string, n: number) => `${summary}${n} 个已接管的客户端仍指向本机网关。`,
     // 不能接管时，组里的那条说明
-    natBody: "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问；将 WSL 改为 mirrored 网络模式后才能接管。",
+    natBody: "尚未找到可用的 NAT 主机地址。请检查 WSL 默认路由和 Windows 网卡，也可选择切换到 mirrored 网络模式。",
     natVersion: "WSL 的 mirrored 网络模式需要 WSL 2.0.5 或更高版本，可在终端中运行 wsl --update 更新。",
     toMirrored: "改为 mirrored 模式…",
     restartBody: "已在 .wslconfig 中将 WSL 设为 mirrored 网络模式，重启 WSL 后生效。",
-    fallbackBody: "WSL 重启后仍在使用 NAT 网络，未能启用 WSL 的 mirrored 网络模式，因此无法接管 WSL 中的客户端。",
+    fallbackBody: "WSL 重启后仍在使用 NAT 网络。接管将尝试使用 NAT 主机地址；若需要 mirrored 网络，请检查 WSL 设置。",
     restartWsl: "重启 WSL…",
     oldWindowsBody:
-      "WSL 使用 NAT 网络，Windows 上的网关无法从 WSL 内访问。WSL 的 mirrored 网络模式需要 Windows 11 22H2 或更高版本，这台电脑的 Windows 不支持，因此无法接管 WSL 中的客户端。",
+      "这台电脑不支持 mirrored 网络模式。接管可使用 NAT 主机地址，请检查 WSL 默认路由和 Windows 网卡。",
     oldWslBody: (version: string) => `WSL ${version} 不支持 mirrored 网络模式，需先在终端中运行 wsl --update。`,
     unreachable: "WSL 中无法访问网关",
+    gatewayChanged: "网关地址已变化，请重新接管",
+    listenerUnavailable: "网关当前不可达，请检查监听或防火墙",
+    wslNeedsAttention: "已接管的客户端当前无法连接。原配置已保留，重新接管前会展示需要的改动。",
     // 改为 mirrored 的确认
     mirroredTitle: "将 WSL 改为 mirrored 网络模式",
     mirroredAllDistros: "对这台电脑上所有 WSL 2 发行版生效。",
@@ -280,6 +286,9 @@ export const clientsText = messages(
     seeWhy: "See why",
 
     adopt: "Connect…",
+    reconnect: "Reconnect…",
+    reconnectTitle: (name: string) => `Reconnect ${name}`,
+    confirmReconnect: "Reconnect",
     restore: "Restore…",
     manual: "Set up…",
     details: "Details…",
@@ -397,7 +406,7 @@ export const clientsText = messages(
       wsl1: (host: string) => `WSL 1 shares the network with Windows; clients reach the gateway at ${host}.`,
       mirrored: (host: string) => `Mirrored networking; clients reach the gateway at ${host}.`,
       nat: (host: string) => `NAT networking; clients reach the gateway at ${host}.`,
-      natBlocked: "NAT networking; clients cannot be connected.",
+      natBlocked: "NAT networking; no usable gateway address found yet.",
       restart: "NAT networking; mirrored networking takes over once WSL restarts.",
       fallback: "NAT networking; mirrored networking could not be turned on.",
     },
@@ -406,18 +415,21 @@ export const clientsText = messages(
         ? `${summary} 1 connected client still points to the local gateway.`
         : `${summary} ${n} connected clients still point to the local gateway.`,
     natBody:
-      "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. Clients can be connected once WSL is switched to its mirrored networking mode.",
+      "No usable NAT host address was found. Check the WSL default route and Windows interfaces, or choose mirrored networking.",
     natVersion: "WSL's mirrored networking mode needs WSL 2.0.5 or later; wsl --update in a terminal updates it.",
     toMirrored: "Switch to mirrored…",
     restartBody: "WSL's mirrored networking mode is set in .wslconfig and takes effect once WSL restarts.",
     fallbackBody:
-      "WSL still uses NAT networking after restarting. WSL's mirrored networking mode could not be turned on, so clients in WSL cannot be connected.",
+      "WSL still uses NAT networking after restarting. Connecting will try the NAT host address; check WSL settings if mirrored networking is required.",
     restartWsl: "Restart WSL…",
     oldWindowsBody:
-      "WSL uses NAT networking, so the gateway on Windows cannot be reached from inside WSL. WSL's mirrored networking mode needs Windows 11 22H2 or later, which this computer does not have, so clients in WSL cannot be connected.",
+      "This computer does not support mirrored networking. Clients can use the NAT host address; check the WSL default route and Windows interfaces.",
     oldWslBody: (version: string) =>
       `WSL ${version} does not support mirrored networking. Run wsl --update in a terminal first.`,
     unreachable: "The gateway cannot be reached from WSL",
+    gatewayChanged: "Gateway address changed. Reconnect to review the update.",
+    listenerUnavailable: "Gateway unavailable. Check the listener or firewall.",
+    wslNeedsAttention: "Managed clients cannot currently connect. Their configuration is preserved; reconnect to review the required changes.",
     mirroredTitle: "Switch WSL to mirrored networking",
     mirroredAllDistros: "Applies to every WSL 2 distribution on this computer.",
     mirroredRestart: "Takes effect once WSL restarts.",

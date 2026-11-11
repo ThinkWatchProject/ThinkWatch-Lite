@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { levelOf } from "./ListenSection";
+import { draftOf, levelOf } from "./ListenSection";
 
 describe("监听范围的三档", () => {
   it("两个关键字各归各的", () => {
@@ -32,4 +32,23 @@ describe("监听范围的三档", () => {
     expect(levelOf("0.0.0.0")).toBe("all");
     expect(levelOf("::")).toBe("all");
   });
+});
+
+it("secondary addresses stay visible and pinned addresses are retained in the draft", () => {
+  const v = { bind: "172.23.80.1", additional: ["192.168.1.5"], port: 8788, allow_from: [], default_allow_from: [], exposed: true };
+  const draft = draftOf(v);
+  expect(draft.level).toBe("lan");
+  expect(draft.nic).toBe("172.23.80.1");
+  expect(draft.additional).toEqual(["192.168.1.5"]);
+});
+
+it("loopback is authoritative even when YAML retains inactive secondary addresses", () => {
+  const v = { bind: "loopback", additional: ["172.23.80.1"], port: 8788, allow_from: [], default_allow_from: [], exposed: false };
+  expect(draftOf(v).level).toBe("local");
+  expect(draftOf(v).additional).toEqual([]);
+});
+
+it("wildcard IPv4 listeners retain additional IPv6 sockets", () => {
+  const v = { bind: "all", additional: ["::1"], port: 8788, allow_from: [], default_allow_from: [], exposed: true };
+  expect(draftOf(v).additional).toEqual(["::1"]);
 });

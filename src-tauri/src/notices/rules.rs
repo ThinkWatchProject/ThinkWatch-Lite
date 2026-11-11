@@ -69,7 +69,7 @@ pub fn default_view(key: &str) -> &'static str {
         "unpriced" => UPSTREAMS,
         // 同步要处理的事在设置的「同步与备份」；密钥改写不成的在客户端页
         "sync" => crate::sync::SYNC_VIEW,
-        "keysync" => "clients",
+        "keysync" | "wsl" => "clients",
         // 网关、配置文件、监听，以及认不出来的：设置页至少能看到网关在不在跑
         _ => SETTINGS,
     }

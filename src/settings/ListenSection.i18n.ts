@@ -3,6 +3,13 @@ import { messages } from "@/i18n";
 export const listenText = messages(
   {
     title: "网关监听",
+    additional: "其他监听地址",
+    additionalHint: "与主网卡共用端口和放行网段；切换为仅本机会一并关闭。",
+    remove: "移除",
+    wslImpactTitle: "部分 WSL 客户端将无法连接",
+    wslImpactBody: (names: string) => `此更改会影响 ${names}。接管记录和客户端配置会保留，应用不会自动恢复监听。`,
+    cancel: "取消",
+    saveAnyway: "确认更改",
     current: "当前地址",
     notListening: "未在监听",
     /** 对外开放时，别的设备该用的地址（core 按网卡算好的） */
@@ -38,6 +45,13 @@ export const listenText = messages(
   },
   {
     title: "Listening",
+    additional: "Additional listen addresses",
+    additionalHint: "Uses the same port and allowed ranges. Selecting This machine closes these listeners too.",
+    remove: "Remove",
+    wslImpactTitle: "Some WSL clients will lose connectivity",
+    wslImpactBody: (names: string) => `This change affects ${names}. Adoption records and client configuration will be preserved. The app will not reopen listeners automatically.`,
+    cancel: "Cancel",
+    saveAnyway: "Apply change",
     current: "Address",
     notListening: "Not listening",
     reachable: (addrs: string) => `Other devices connect to ${addrs}.`,

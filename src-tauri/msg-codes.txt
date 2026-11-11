@@ -212,11 +212,17 @@ scan.skill.all_tools
 scan.skill.all_tools.detail
 t.detail test
 t.title test
+wsl.listener_change
+wsl.listener_cleanup_failed
+wsl.listener_restore
+wsl.network_unavailable
 wsl.no_user
 wsl.none
+wsl.probe_failed
+wsl.rollback_failed
 wsl.shutdown_failed
+wsl.stopped
 wsl.unknown
-wsl.unreachable
 wsl.unreadable
 wsl.via_windows
 wslconfig.encoding

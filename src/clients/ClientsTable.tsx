@@ -283,6 +283,8 @@ function DetectedRow({
   const adopted = c.adopted_at_ms != null;
   /** WSL 里够不着网关的那一组：接管、手动配置都不给 */
   const reachable = ctx.wsl?.adoptable ?? true;
+  const reconnect = adopted && !!ctx.wsl && reachable &&
+    (status.reason?.kind === "gateway_changed" || status.reason?.kind === "listener_unavailable");
   const items = [...menu(c, actions, t, reachable), ...moveItems(sort, t)];
   const open = () => {
     if (!absent) actions.details(c);
@@ -348,9 +350,9 @@ function DetectedRow({
                 variant="outline"
                 size="xs"
                 pending={ctx.asking === c.id}
-                onClick={() => (absent ? actions.manual(c.id) : adopted ? actions.restore(c) : actions.adopt(c))}
+                onClick={() => (absent ? actions.manual(c.id) : reconnect ? actions.adopt(c) : adopted ? actions.restore(c) : actions.adopt(c))}
               >
-                {absent ? t.manual : adopted ? t.restore : t.adopt}
+                {absent ? t.manual : reconnect ? t.reconnect : adopted ? t.restore : t.adopt}
               </Button>
             )}
             <RowMenuButton items={items} label={t.actionsFor(c.name)} />
@@ -542,6 +544,7 @@ function menu(c: DetectedClient, a: RowActions, t: typeof clientsText.zh, reacha
   const installed = c.installed;
   return [
     { kind: "item", label: t.details, onSelect: () => a.details(c), disabled: !installed },
+    ...(c.adopted_at_ms != null && !c.other_instance ? [{ kind: "item" as const, label: t.restore, onSelect: () => a.restore(c) }] : []),
     ...(reachable ? [{ kind: "item" as const, label: t.manual, onSelect: () => a.manual(c.id) }] : []),
     { kind: "sep" },
     {
