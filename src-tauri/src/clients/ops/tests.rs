@@ -418,6 +418,79 @@ fn adopt_then_restore_puts_the_users_file_back_and_masks_their_key() {
     assert!(adopted(home.path(), &backups(&home)).is_empty());
 }
 
+/// Connection health does not depend on fetching the gateway's model catalog.
+#[test]
+fn codex_configuration_updates_are_detected_offline_in_local_and_wsl_listings() {
+    let home = tempfile::tempdir().unwrap();
+    let c = find("codex", home.path()).unwrap();
+    let target = clients::Gateway::keyed("http://127.0.0.1:8788", "tw-codex", vec![]);
+    let gateway = gw(vec![]);
+    let current = |backups: &Path| {
+        list(home.path(), backups, &gateway, &BTreeMap::new())
+            .clients
+            .into_iter()
+            .find(|c| c.id == "codex")
+            .unwrap()
+    };
+    assert!(!current(&backups(&home)).config_needs_update);
+    adopt(
+        home.path(),
+        &backups(&home),
+        "codex",
+        &target,
+        None,
+        &Around::default(),
+    )
+    .unwrap();
+    assert!(!current(&backups(&home)).config_needs_update);
+    let path = c.config_path(home.path());
+    let fresh = std::fs::read_to_string(&path).unwrap();
+    let broken = tw_adopt::toml::remove(
+        &fresh,
+        &["model_providers", "thinkwatch", "model_catalog_url"],
+    )
+    .unwrap();
+    std::fs::write(&path, &broken).unwrap();
+    let local = current(&backups(&home));
+    assert!(local.config_needs_update);
+    assert!(
+        !local.models_stale,
+        "no gateway or persisted model list is needed"
+    );
+    assert!(!current(&home.path().join("another-instance")).config_needs_update);
+    let w = tw_adopt::wsl::WslHome {
+        distro: tw_adopt::wsl::Distro {
+            name: "Ubuntu".into(),
+            version: 2,
+            uid: 1000,
+        },
+        root: home.path().into(),
+        home: home.path().into(),
+        linux_home: "/home/user".into(),
+    };
+    let wsl = list_wsl(&w, &backups(&home), &gateway);
+    assert!(
+        wsl.iter()
+            .find(|c| c.id == "codex")
+            .unwrap()
+            .config_needs_update
+    );
+    let online = gw(vec![key("codex", "tw-codex", Some("codex"), false)]);
+    let preview = plan_adopt(home.path(), "codex", &online, vec![], &Around::default()).unwrap();
+    assert!(!preview.after.contains("tw-codex"));
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), broken);
+    adopt(
+        home.path(),
+        &backups(&home),
+        "codex",
+        &target,
+        Some(&preview.digest),
+        &Around::default(),
+    )
+    .unwrap();
+    assert!(!current(&backups(&home)).config_needs_update);
+}
+
 /// opencode 的模型清单跟网关对不上了才提示更新；顺序不算，没接管的不提示
 #[test]
 fn a_stale_opencode_model_list_is_flagged_on_the_listing() {

@@ -23,6 +23,7 @@ function client(over: Partial<DetectedClient> = {}): DetectedClient {
     verified: "fields_only",
     costs: [],
     models_stale: false,
+    config_needs_update: false,
     movable: true,
     manual: { steps: [], fields: [], endpoint: BASE },
     ...over,
@@ -30,6 +31,15 @@ function client(over: Partial<DetectedClient> = {}): DetectedClient {
 }
 
 describe("客户端的状态", () => {
+  it("连接配置不完整时，历史请求不会掩盖更新提示", () => {
+    const c = client({ adopted_at_ms: 1, last_seen_ms: 2, config_needs_update: true });
+    expect(statusOf(c, BASE, NOW)).toEqual({ state: "broken", reason: { kind: "config_update" } });
+    expect(statusOf({ ...c, config_needs_update: false }, BASE, NOW).state).toBe("in_use");
+    expect(statusOf({ ...c, adopted_at_ms: null }, BASE, NOW).state).toBe("idle");
+    expect(statusOf({ ...c, other_instance: true }, BASE, NOW).state).toBe("other");
+    expect(statusOf(c, BASE, NOW, false, { adoptable: false }).reason?.kind).toBe("unreachable");
+  });
+
   it("没检测到就是未检测到，别的都不看", () => {
     expect(statusOf(client({ installed: false, adopted_at_ms: 1 }), BASE, NOW).state).toBe("absent");
   });

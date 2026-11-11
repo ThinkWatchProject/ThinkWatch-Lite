@@ -50,6 +50,8 @@ pub struct Detected {
     pub models: Option<Vec<crate::clients::ModelCard>>,
     /// 模型基础规格以外的客户端配置过期了（缺少网关推理档位的声明）
     pub model_config_stale: bool,
+    /// Managed connection fields do not satisfy the current client contract.
+    pub config_needs_update: bool,
     /// 这台电脑上它由组织统一管理，接管不了：托管配置在哪。只有 Claude Desktop 会有
     pub managed: Option<String>,
 }
@@ -133,6 +135,7 @@ pub fn detect_one(c: &Client, home: &Path) -> Detected {
                 crate::pi::Flavor::of(c.id).is_some_and(|f| crate::pi::thinking_stale(t, f))
             }
         }),
+        config_needs_update: c.config_needs_update(text.as_deref().unwrap_or("")),
         shadows: c.live_shadows(home),
         takes_effect: c.takes_effect,
         verified: c.verified,
