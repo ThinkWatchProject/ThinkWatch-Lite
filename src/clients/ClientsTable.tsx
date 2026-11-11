@@ -283,6 +283,7 @@ function DetectedRow({
   const adopted = c.adopted_at_ms != null;
   /** WSL 里够不着网关的那一组：接管、手动配置都不给 */
   const reachable = ctx.wsl?.adoptable ?? true;
+  const updateConfig = adopted && c.config_needs_update && reachable;
   const reconnect = adopted && !!ctx.wsl && reachable &&
     (status.reason?.kind === "gateway_changed" || status.reason?.kind === "listener_unavailable");
   const items = [...menu(c, actions, t, reachable), ...moveItems(sort, t)];
@@ -350,9 +351,9 @@ function DetectedRow({
                 variant="outline"
                 size="xs"
                 pending={ctx.asking === c.id}
-                onClick={() => (absent ? actions.manual(c.id) : reconnect ? actions.adopt(c) : adopted ? actions.restore(c) : actions.adopt(c))}
+                onClick={() => (absent ? actions.manual(c.id) : updateConfig || reconnect ? actions.adopt(c) : adopted ? actions.restore(c) : actions.adopt(c))}
               >
-                {absent ? t.manual : reconnect ? t.reconnect : adopted ? t.restore : t.adopt}
+                {absent ? t.manual : updateConfig ? t.updateConfig : reconnect ? t.reconnect : adopted ? t.restore : t.adopt}
               </Button>
             )}
             <RowMenuButton items={items} label={t.actionsFor(c.name)} />

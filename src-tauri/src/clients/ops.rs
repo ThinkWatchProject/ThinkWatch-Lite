@@ -185,6 +185,7 @@ fn detected_view(
         verified: d.verified.into(),
         costs: d.costs,
         models_stale: false,
+        config_needs_update: mine && d.config_needs_update,
         models: d.models.map(|ms| ms.into_iter().map(|m| m.id).collect()),
         movable: false,
         managed: d.managed.as_ref().map(|by| {

@@ -206,6 +206,7 @@ function detected(x: Partial<DetectedClient> & { id: string; name: string; path:
     verified: "fields_only",
     costs: [],
     models_stale: false,
+    config_needs_update: false,
     // Claude Desktop 和 DeepSeek Harness 的配置位置不能换
     movable: !["claude-desktop", "dsh"].includes(x.id),
     key: null,
