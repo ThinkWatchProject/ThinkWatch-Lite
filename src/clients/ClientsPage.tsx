@@ -33,6 +33,7 @@ import { ManualDialog, type ManualTarget } from "./ManualDialog";
 import { LocationsDialog } from "./LocationsDialog";
 import { mergeOrder, sameIds, sortByOrder } from "./order";
 import { PlanDialog } from "./PlanDialog";
+import { ConfigUpdates } from "./ConfigUpdates";
 import { RestoreAllDialog } from "./RestoreAllDialog";
 import { MirroredDialog, RestartWslDialog } from "./WslDialogs";
 import { hostOf, isLoopback, pointsHere, manualStatusOf, statusOf, type ClientState, type Status, type WslPlace } from "./status";
@@ -430,6 +431,8 @@ export default function ClientsPage({
         </Banner>
       ))}
 
+      <ConfigUpdates clients={data?.clients ?? []} asking={asking} onUpdate={(c) => void ask(c, false)} />
+
       <Loadable r={clients} loading={<RowsSkeleton rows={5} cols={5} />} errorTitle={t.loadFailed}>
         {(d) =>
           ctx && (
@@ -669,6 +672,7 @@ function WslSection({
         )}
         {!g.error && (
           <>
+            <ConfigUpdates clients={g.clients} asking={ctx.asking} onUpdate={ctx.actions.adopt} disabled={!g.adoptable} />
             {installed.length > 0 && <DetectedTable clients={installed} ctx={ctx} head={false} sortable />}
             {g.adoptable && absent.length > 0 && <DetectedTable clients={absent} ctx={ctx} head={false} dim />}
           </>

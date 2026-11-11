@@ -1373,6 +1373,46 @@ impl Client {
         norm(written) != norm(now)
     }
 
+    /// Check the current connection contract, independently of model lists or
+    /// the Lite version that wrote the file. Detection never changes the file.
+    pub fn config_needs_update(&self, text: &str) -> bool {
+        if self.id != "codex" {
+            return false;
+        }
+        let Ok(config) = crate::toml::value(text) else {
+            return true;
+        };
+        let get = |path: &[&str]| config.get(path);
+        let provider = |field| ["model_providers", PROVIDER_ID, field];
+        let Some(Val::Str(endpoint)) = get(&provider("base_url")) else {
+            return true;
+        };
+        let Some(base) = endpoint.trim_end_matches('/').strip_suffix("/v1") else {
+            return true;
+        };
+        // Credentials are not compared with gateway state: detection must also
+        // work offline. Discovery still requires a nonempty token (or NO_KEY).
+        if !matches!(get(&provider("experimental_bearer_token")), Some(Val::Str(k)) if !k.trim().is_empty())
+        {
+            return true;
+        }
+        let gw = Gateway {
+            base: base.into(),
+            key: None,
+            models: Vec::new(),
+        };
+        // Reuse the writer's fields, including the active profile's overrides,
+        // so a change to the contract also updates the health check.
+        edits_for(self, &gw, text)
+            .into_iter()
+            .filter(|e| !e.secret)
+            .any(|e| {
+                let path: Vec<_> = e.path.iter().map(String::as_str).collect();
+                let want = (e.value != Val::Null).then(|| e.value.normalized());
+                get(&path).map(|v| v.normalized()) != want
+            })
+    }
+
     /// 配置里此刻写着的模型（只有 [`Client::writes_models`] 的客户端有）。没有那一条
     /// provider 就是 `None`。
     pub fn models_in(&self, text: &str) -> Option<Vec<ModelCard>> {
