@@ -448,10 +448,7 @@ pub async fn list_wsl(
                 let preferred = network::load()?
                     .clients
                     .into_iter()
-                    .find(|(owner, _)| {
-                        tw_adopt::wsl::split_key_id(owner)
-                            .is_some_and(|(_, distro)| distro == w.name())
-                    })
+                    .find(|(owner, _)| tw_adopt::wsl::distro_for_key(owner, [w.name()]).is_some())
                     .map(|(_, m)| m.base);
                 match network::resolve(&state, &w, preferred, None).await {
                     Ok(target) => {

@@ -697,6 +697,17 @@ pub fn same_distro(client: &str, distro: &str, id: &str) -> bool {
     key_id(client, distro) == id
 }
 
+/// Recover a real name from known distributions, never from the lossy key slug.
+/// Ambiguous slugs cannot identify a distribution safely.
+pub fn distro_for_key<'a>(id: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let (client, _) = split_key_id(id)?;
+    let mut matches = names
+        .into_iter()
+        .filter(|name| same_distro(client, name, id));
+    let name = matches.next()?;
+    matches.next().is_none().then_some(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -766,6 +777,27 @@ odd:x:1001:1001::relative/home:/bin/sh
         for c in CLIENTS {
             assert!(same_distro(c, long, &key_id(c, long)), "{c}");
         }
+    }
+
+    #[test]
+    fn managed_keys_resolve_real_names_without_losing_case_punctuation_or_length() {
+        let names = [
+            "Ubuntu",
+            "Ubuntu-22.04",
+            "My  Distro_",
+            "Ubuntu-24.04-with-a-very-long-name-given-by-its-owner-and-more",
+        ];
+        for client in CLIENTS {
+            for name in names {
+                assert_eq!(distro_for_key(&key_id(client, name), names), Some(name));
+            }
+        }
+        assert_eq!(distro_for_key("codex-wsl-ubuntu", ["Debian"]), None);
+        assert_eq!(distro_for_key("codex", names), None);
+        assert_eq!(
+            distro_for_key("codex-wsl-ubuntu-22-04", ["Ubuntu-22.04", "Ubuntu-22-04"]),
+            None
+        );
     }
 
     #[test]

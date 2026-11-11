@@ -634,12 +634,11 @@ pub fn watch(handle: &tauri::AppHandle, notices: std::sync::Arc<crate::notices::
                     .unwrap_or_default();
                 let mut checked = BTreeMap::new();
                 for (owner, m) in journal.clients {
-                    let Some((_, distro)) = wsl::split_key_id(&owner) else {
+                    let Some(distro) =
+                        wsl::distro_for_key(&owner, running.iter().map(String::as_str))
+                    else {
                         continue;
                     };
-                    if !running.iter().any(|d| d == distro) {
-                        continue;
-                    }
                     let key = format!("wsl:{owner}");
                     let ok = match checked.get(&(distro.to_string(), m.base.clone())) {
                         Some(ok) => *ok,
@@ -689,6 +688,7 @@ pub async fn wsl_listen_impact(
         allow_from: listen.allow_from,
     };
     let j = load()?;
+    let distros = super::wsl::distros();
     Ok(j.clients
         .into_iter()
         .filter(|(_, m)| {
@@ -703,7 +703,10 @@ pub async fn wsl_listen_impact(
                 || m.source.is_some_and(|s| !spec.allows(s))
         })
         .filter_map(|(owner, _)| {
-            wsl::split_key_id(&owner).map(|(id, distro)| format!("WSL · {distro} · {id}"))
+            let (id, slug) = wsl::split_key_id(&owner)?;
+            let distro = wsl::distro_for_key(&owner, distros.iter().map(|d| d.name.as_str()))
+                .unwrap_or(slug);
+            Some(format!("WSL · {distro} · {id}"))
         })
         .collect())
 }
