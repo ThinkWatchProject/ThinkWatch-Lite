@@ -331,6 +331,103 @@ fn adopting_codex_keeps_every_project_trust_and_mcp_server() {
 }
 
 #[test]
+fn codex_connection_health_detects_current_settings_and_updates_reversibly() {
+    use tw_adopt::json::Val;
+    let seed = format!(
+        "profile = \"work\"\n{CODEX}\n[profiles.work]\nmodel_reasoning_effort = \"high\"\n\n[profiles.personal]\nmodel_provider = \"personal\"\nmodel_catalog_json = \"/private/personal.json\"\n"
+    );
+    let cases: &[(&[&str], Option<Val>)] = &[
+        (
+            &["model_providers", "thinkwatch", "model_catalog_url"],
+            None,
+        ),
+        (
+            &["model_providers", "thinkwatch", "model_catalog_url"],
+            Some(Val::s("http://old-gateway/v1/models")),
+        ),
+        (&["features", "api_key_model_discovery"], None),
+        (
+            &["features", "api_key_model_discovery"],
+            Some(Val::Bool(false)),
+        ),
+        (
+            &["model_catalog_json"],
+            Some(Val::s("/private/catalog.json")),
+        ),
+        (
+            &["profiles", "work", "features", "api_key_model_discovery"],
+            Some(Val::Bool(false)),
+        ),
+        (
+            &["profiles", "work", "model_catalog_json"],
+            Some(Val::s("/private/work.json")),
+        ),
+        (
+            &["profiles", "work", "model_provider"],
+            Some(Val::s("another-provider")),
+        ),
+        (
+            &["model_providers", "thinkwatch", "env_key"],
+            Some(Val::s("UNSET_KEY")),
+        ),
+        (
+            &["model_providers", "thinkwatch", "experimental_bearer_token"],
+            Some(Val::s("")),
+        ),
+    ];
+    for (field, value) in cases {
+        let b = bed("codex", &seed);
+        let c = client("codex");
+        let path = c.config_path(&b.home);
+        let p = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+        apply(&c, &p, &b.backups).unwrap();
+        let fresh = read(&path);
+        assert!(
+            !c.config_needs_update(&fresh),
+            "inactive profiles must not cause a warning"
+        );
+        let broken = match value {
+            Some(v) => tw_adopt::toml::set(&fresh, field, v).unwrap(),
+            None => tw_adopt::toml::remove(&fresh, field).unwrap(),
+        };
+        std::fs::write(&path, &broken).unwrap();
+        assert!(
+            tw_adopt::detect::detect_one(&c, &b.home).config_needs_update,
+            "{field:?}"
+        );
+        assert_eq!(read(&path), broken, "detection must be read-only");
+        let update = plan_adopt(&c, &b.home, &gw(), &Around::default()).unwrap();
+        assert!(!update.is_noop(), "{field:?}");
+        apply(&c, &update, &b.backups).unwrap();
+        assert!(!c.config_needs_update(&read(&path)), "{field:?}");
+        assert!(
+            plan_adopt(&c, &b.home, &gw(), &Around::default())
+                .unwrap()
+                .is_noop()
+        );
+        let restore = plan_restore(&c, &b.home).unwrap();
+        apply_restore(&c, &restore, &b.backups).unwrap();
+        assert_eq!(
+            tw_adopt::toml::value(&read(&path)).unwrap().normalized(),
+            tw_adopt::toml::value(&restored_codex(&seed))
+                .unwrap()
+                .normalized(),
+            "{field:?}: updates must retain the original restoration state"
+        );
+    }
+    let c = client("codex");
+    let b = bed("codex", CODEX);
+    let mut no_key = gw();
+    no_key.key = None;
+    let p = plan_adopt(&c, &b.home, &no_key, &Around::default()).unwrap();
+    assert!(
+        !c.config_needs_update(&p.after),
+        "a no-auth gateway's sentinel is valid"
+    );
+    assert!(c.config_needs_update("this is invalid TOML = ["));
+}
+
+#[test]
 fn codex_uses_a_remote_catalog_without_persisting_the_model_list() {
     let b = bed("codex", CODEX);
     let c = client("codex");

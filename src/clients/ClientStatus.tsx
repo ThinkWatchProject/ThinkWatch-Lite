@@ -54,6 +54,8 @@ export function reasonText(reason: Reason | undefined, t: typeof clientsText.zh)
       return t.silent;
     case "restart":
       return t.restart;
+    case "config_update":
+      return t.configUpdateReason;
     case "local":
       return t.pointsAtLocal(hostOf(reason.endpoint));
     case "gateway_changed":

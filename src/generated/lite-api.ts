@@ -154,6 +154,10 @@ costs: Array<Msg>,
  */
 models_stale: boolean, 
 /**
+ * 已接管客户端的连接配置不符合当前要求。更新前预览差异，确认后才写入。
+ */
+config_needs_update: boolean, 
+/**
  * 配置里此刻写着的模型。只有把模型写进配置的客户端（opencode、Pi、oh-my-pi、
  * Grok Build、Qwen Code）有；删除别名时据此说出哪几个已接管客户端的模型列表写着它
  */

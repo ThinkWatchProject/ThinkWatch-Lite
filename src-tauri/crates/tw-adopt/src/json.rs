@@ -76,7 +76,7 @@ impl Val {
             ),
         }
     }
-    fn get<'a>(&'a self, path: &[&str]) -> Option<&'a Val> {
+    pub(crate) fn get<'a>(&'a self, path: &[&str]) -> Option<&'a Val> {
         let mut cur = self;
         for k in path {
             let Val::Obj(ms) = cur else { return None };

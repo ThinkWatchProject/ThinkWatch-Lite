@@ -23,6 +23,7 @@ export type Reason =
   | { kind: "silent" }
   /** 还没生效，要重启客户端 */
   | { kind: "restart" }
+  | { kind: "config_update" }
   /** 连着远程 core，而它还指着这台机器上（已经停了的）网关 */
   | { kind: "local"; endpoint: string }
   /** WSL 里的：当前无法确定可用的网关地址 */
@@ -51,8 +52,8 @@ export const SILENCE_MS = 5 * 60 * 1000;
 /**
  * 按 core 给的事实定档。
  *
- * **收到过请求排在最前面。**有一份优先级更高的文件「可能」盖住我们的设置，
- * 而请求已经带着这把密钥来了 —— 证据比怀疑可靠，这时它就是在用。
+ * 网络不可达或连接配置缺项时先提示处理。其余情况优先看请求：有一份优先级更高的
+ * 文件「可能」盖住我们的设置，而请求已经带着这把密钥来了，这时它就是在用。
  */
 export function statusOf(
   c: DetectedClient,
@@ -83,6 +84,7 @@ export function statusOf(
   if (remote && c.endpoint && isLoopback(c.endpoint)) {
     return { state: "broken", reason: { kind: "local", endpoint: c.endpoint } };
   }
+  if (c.config_needs_update) return { state: "broken", reason: { kind: "config_update" } };
   if (c.last_seen_ms != null && c.last_seen_ms > adoptedAt) return { state: "in_use" };
   if (c.endpoint && !pointsHere(c.endpoint, gatewayBase) && !wsl?.reachable_bases?.some((base) => pointsHere(c.endpoint!, base))) {
     return { state: "broken", reason: { kind: "moved", endpoint: c.endpoint } };
