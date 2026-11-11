@@ -38,7 +38,7 @@ pub async fn restore_all(state: tauri::State<'_, crate::AppState>) -> Out<Vec<Re
             .await
             .map(|w| crate::core_text::text(&w));
     }
-    if local && let Ok(j) = crate::clients::network::load() {
+    if let Ok(j) = crate::clients::network::load() {
         for owner in j.clients.keys() {
             let Some((id, distro)) = tw_adopt::wsl::split_key_id(owner) else {
                 continue;
@@ -57,7 +57,8 @@ pub async fn restore_all(state: tauri::State<'_, crate::AppState>) -> Out<Vec<Re
             if let Some(r) = out
                 .iter_mut()
                 .find(|r| r.client == name && r.ok && !r.skipped)
-                && let Err(w) = crate::clients::network::release(&control, owner).await
+                && let Err(w) =
+                    crate::clients::network::release(local.then_some(&control), owner).await
             {
                 r.warning = Some(crate::core_text::text(&w));
             }

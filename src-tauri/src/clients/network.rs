@@ -518,12 +518,12 @@ impl Applied {
 
 /// Explicit restore only. Restore the baseline once the last managed client is
 /// released, and only while the complete listen settings still match our record.
-pub async fn release(control: &ControlClient, owner: &str) -> Result<(), Msg> {
+pub async fn release(control: Option<&ControlClient>, owner: &str) -> Result<(), Msg> {
     release_at(control, owner, &journal_path()).await.map_err(|e|
         msg!("wsl.listener_cleanup_failed", detail = e.text =>
             "The client configuration was restored, but unused WSL listeners or source rules could not be removed: {detail}. Review gateway listening settings. Cleanup ownership was retained."))
 }
-async fn release_at(control: &ControlClient, owner: &str, path: &Path) -> Result<(), Msg> {
+async fn release_at(control: Option<&ControlClient>, owner: &str, path: &Path) -> Result<(), Msg> {
     let mut j = read(path)?;
     if j.clients.remove(owner).is_none() {
         return Ok(());
@@ -532,6 +532,8 @@ async fn release_at(control: &ControlClient, owner: &str, path: &Path) -> Result
     // retain baseline/expected separately so a later explicit adoption can clean up.
     save_at(path, &j)?;
     if let (Some(expected), Some(_)) = (&j.expected, &j.baseline) {
+        let control = control
+            .ok_or_else(|| failed(tr!("本机网关不可用", "The local gateway is unavailable")))?;
         let ov = control
             .call::<ep::Overview>(&[], &())
             .await
@@ -730,13 +732,30 @@ mod tests {
             tw_api::control::Address::in_dir(d.path()),
             d.path().join("absent.yaml"),
         );
-        assert!(release_at(&control, "codex", &path).await.is_err());
+        assert!(release_at(Some(&control), "codex", &path).await.is_err());
         let pending = read(&path).unwrap();
         assert!(pending.clients.is_empty());
         assert_eq!(pending.baseline, Some(original.clone()));
         assert_eq!(pending.expected, Some(expected.clone()));
         // A future explicit operation can still identify and remove the unused additions.
         assert_eq!(compose(&pending, &expected, &[], None, None), original);
+    }
+
+    #[tokio::test]
+    async fn restoring_while_connected_to_a_remote_core_never_uses_it_for_local_cleanup() {
+        let d = tempfile::tempdir().unwrap();
+        let path = d.path().join("wsl-adoption.json");
+        save_at(
+            &path,
+            &Journal {
+                baseline: Some(baseline()),
+                expected: Some(baseline()),
+                clients: BTreeMap::from([("codex".into(), managed("172.23.80.1", "172.23.84.2"))]),
+            },
+        )
+        .unwrap();
+        assert!(release_at(None, "codex", &path).await.is_err());
+        assert!(read(&path).unwrap().clients.is_empty());
     }
     #[test]
     fn nat_additions_preserve_lan_and_limit_new_sources() {

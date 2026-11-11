@@ -830,8 +830,7 @@ pub async fn restore_client(
     };
     let mut r = ops::restore(&place.home(), &backups(), &id, client_expect.as_deref())?;
     if matches!(place, Place::Wsl(_))
-        && local
-        && let Err(warning) = network::release(&control, &place.owner(&id)).await
+        && let Err(warning) = network::release(local.then_some(&control), &place.owner(&id)).await
     {
         r.warnings.push(warning);
     }
