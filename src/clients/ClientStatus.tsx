@@ -56,6 +56,10 @@ export function reasonText(reason: Reason | undefined, t: typeof clientsText.zh)
       return t.restart;
     case "local":
       return t.pointsAtLocal(hostOf(reason.endpoint));
+    case "gateway_changed":
+      return t.gatewayChanged;
+    case "listener_unavailable":
+      return t.listenerUnavailable;
     case "unreachable":
       return t.unreachable;
     case "elsewhere":

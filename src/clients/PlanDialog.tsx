@@ -57,6 +57,7 @@ export function PlanDialog({
 }) {
   const t = useText(clientsText);
   const common = useText(commonText);
+  const reconnect = !restore && client.adopted_at_ms != null;
   const dialogFocus = useDialogFocus();
   const [diffOpen, setDiffOpen] = useState(false);
   // 同一次改动里的另外几份文件（DeepSeek Harness 的凭据文件、Claude Desktop 的
@@ -92,7 +93,7 @@ export function PlanDialog({
             <ClientMark id={client.id} name={client.name} size={18} />
           </Tile>
           <div className="flex min-w-0 flex-col gap-1.5">
-            <DialogTitle>{restore ? t.restoreTitle(client.name) : t.adoptTitle(client.name)}</DialogTitle>
+            <DialogTitle>{restore ? t.restoreTitle(client.name) : reconnect ? t.reconnectTitle(client.name) : t.adoptTitle(client.name)}</DialogTitle>
             <DialogDescription>
               {plan.before == null ? t.creates(path) : t.modifies(path)}
               {also.map((a) => {
@@ -226,7 +227,7 @@ export function PlanDialog({
               pending={pending}
               onClick={() => onConfirm(pick && choice ? choice.model : undefined)}
             >
-              {restore ? t.confirmRestore : t.confirmAdopt}
+              {restore ? t.confirmRestore : reconnect ? t.confirmReconnect : t.confirmAdopt}
             </Button>
           )}
         </DialogFooter>

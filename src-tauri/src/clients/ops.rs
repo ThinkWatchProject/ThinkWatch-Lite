@@ -852,13 +852,21 @@ pub fn adopted_on_this_machine_wsl(
     w: &tw_adopt::wsl::WslHome,
     backups: &Path,
 ) -> Vec<(Client, String)> {
-    pointing_here(
-        &w.home,
-        backups,
-        all(&w.home)
-            .into_iter()
-            .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id)),
-    )
+    all(&w.home)
+        .into_iter()
+        .filter(|c| tw_adopt::wsl::CLIENTS.contains(&c.id))
+        .filter_map(|c| {
+            let d = detect::detect_one(&c, &w.home);
+            if !ours(&d, backups) {
+                return None;
+            }
+            let endpoint = d.endpoint?;
+            let owner = tw_adopt::wsl::key_id(c.id, w.name());
+            (is_loopback(&endpoint)
+                || super::network::is_managed_endpoint(backups, &owner, &endpoint))
+            .then_some((c, endpoint))
+        })
+        .collect()
 }
 
 /// 另一个 ThinkWatch Lite 接管的不算：改为指向服务器也不该改它们

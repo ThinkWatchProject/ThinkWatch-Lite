@@ -61,7 +61,7 @@ export interface RestoreOutcome {
 export const api = {
   list: () => invoke<ClientsResponse>("list_clients"),
   /** WSL 里的那几组。**读 WSL 会唤醒发行版**，所以不跟着请求刷新 */
-  wsl: () => invoke<WslResponse>("list_wsl"),
+  wsl: (poll = false) => invoke<WslResponse>("list_wsl", { poll }),
   planAdopt: (id: string, env?: string) => invoke<PlanView>("plan_adopt", { id, env }),
   planRestore: (id: string, env?: string) => invoke<PlanView>("plan_restore", { id, env }),
   /**

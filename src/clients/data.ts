@@ -1,6 +1,7 @@
 /**
  * 这台机器上的客户端（`list_clients`）。客户端页和密钥页挂的是同一份缓存。
  */
+import { useEffect, useRef } from "react";
 import { useResource, type Resource } from "@/lib/resource";
 import type { ClientsResponse, CoreEvent, LocalEvent, WslResponse } from "@/types";
 import { isWindows } from "@/platform";
@@ -25,10 +26,23 @@ export function useClients({ live = false }: { live?: boolean } = {}): Resource<
 }
 
 /**
- * WSL 里的那几组（`list_wsl`）。**不挂任何事件**：读 `\\wsl.localhost` 会把发行版
- * 唤醒，跟着每个请求刷新的话，发行版永远睡不下去。打开客户端页时取一次，动过某个
- * WSL 客户端之后由页面自己重取。
+ * WSL 里的那几组（`list_wsl`）。打开页面时读取，随后只轮询运行中的发行版。
+ * 后台检查不为探测启动发行版，不跟随每个请求刷新。
  */
 export function useWsl(): Resource<WslResponse> {
-  return useResource(isWindows ? "clients:wsl" : null, api.wsl);
+  const loaded = useRef(false);
+  const r = useResource(isWindows ? "clients:wsl" : null, async () => {
+    const result = await api.wsl(loaded.current);
+    loaded.current = true;
+    return result;
+  }, { events: ["config_reloaded", "listen_changed"], throttleMs: 3_000 });
+  useEffect(() => {
+    if (!isWindows) return;
+    // Poll only while visible; the backend skips stopped distributions before opening UNC paths.
+    const check = () => { if (document.visibilityState === "visible") void r.reload(); };
+    const timer = window.setInterval(check, 15_000);
+    window.addEventListener("focus", check);
+    return () => { window.clearInterval(timer); window.removeEventListener("focus", check); };
+  }, [r.reload]);
+  return r;
 }
