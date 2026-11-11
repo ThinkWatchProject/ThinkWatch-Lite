@@ -27,7 +27,7 @@ import type { AliasHint, AliasInput, AliasPreview, AliasSave, AliasUsage, KnownM
 import { Boxed, DialogError, FormItem } from "@/upstreams/parts";
 import { aliasDialogText } from "./AliasDialog.i18n";
 import { api } from "./api";
-import { ONLY_ITSELF, draftOf, onlyAuto, shownProblems, withModel, withName, withoutModel, type Draft } from "./draft";
+import { ONLY_ITSELF, aliasInput, draftOf, onlyAuto, shownProblems, withModel, withName, withoutModel, type Draft } from "./draft";
 
 
 /** 输入停下来这么久再问 core 和 Rust */
@@ -110,8 +110,12 @@ function Body({
     return m;
   }, [catalog]);
 
-  const [draft, setDraft] = useState<Draft>(() => draftOf(initial?.name ?? editing ?? "", initial?.models ?? []));
-  const { name, models, auto } = draft;
+  const [draft, setDraft] = useState<Draft>(() =>
+    draftOf(initial?.name ?? editing ?? "", initial?.models ?? [], initial?.hide_originals ?? false),
+  );
+  const { name, models, auto, hideOriginals } = draft;
+  const [discoverySupport, setDiscoverySupport] = useState<boolean | null>(null);
+  const input = aliasInput(draft, discoverySupport === true);
   /** 编辑时从 core 读到的模型和各自的上游。读到之前是 `null` */
   const [loaded, setLoaded] = useState<Map<string, string[]> | null>(() =>
     editing != null && initial?.models === undefined ? null : new Map(),
@@ -135,18 +139,23 @@ function Body({
 
   // 编辑：按原名读出列着的模型
   useEffect(() => {
-    if (editing == null || initial?.models !== undefined) return;
     let live = true;
     api
       .aliases()
       .then((v) => {
         if (!live) return;
+        setDiscoverySupport(v.hide_originals_supported === true);
+        if (editing == null) return;
         const a = v.aliases.find((x) => x.name === editing);
         if (!a) {
           setLoadError(t.notFound(editing));
           return;
         }
-        setDraft((d) => ({ ...d, models: a.models.map((m) => m.model) }));
+        setDraft((d) => ({
+          ...d,
+          models: initial?.models ?? a.models.map((m) => m.model),
+          hideOriginals: a.hide_originals ?? false,
+        }));
         setLoaded(new Map(a.models.map((m) => [m.model, m.providers])));
       })
       .catch((e) => live && setLoadError(errorText(e)));
@@ -172,7 +181,7 @@ function Body({
   }, [renaming, usage, editing]);
 
   // 草稿一变：问 core 预览、问 Rust 名称提示。**只认最后一次**：回来时草稿可能又变了
-  const draftKey = JSON.stringify([trimmed, models]);
+  const draftKey = JSON.stringify(input);
   const previewSeq = useRef(latestOnly());
   const hintSeq = useRef(latestOnly());
   useEffect(() => {
@@ -192,7 +201,7 @@ function Body({
       const current = previewSeq.current.start();
       const key = draftKey;
       api
-        .previewAlias({ alias: { name: trimmed, models }, original: editing })
+        .previewAlias({ alias: input, original: editing })
         .then((p) => {
           if (!current()) return;
           setPreview({ key, p });
@@ -204,7 +213,7 @@ function Body({
         });
     }, PREVIEW_DELAY_MS);
     return () => clearTimeout(timer);
-    // draftKey 包含 trimmed 和 models
+    // draftKey 包含名称、模型和当前 Core 支持的展示设置
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draftKey, loaded === null]);
 
@@ -238,7 +247,7 @@ function Body({
           : onlyItself
             ? t.needOtherName
             : null;
-  const blocked = missing !== null || loadError !== null || (fresh && problems.length > 0);
+  const blocked = missing !== null || loadError !== null || (hideOriginals && discoverySupport !== true) || (fresh && problems.length > 0);
 
   /** 建这个别名之后，名称改发给哪些模型（各上游实际收到的，没有就是列出的） */
   const sentModels = unique((p?.served_by ?? []).map((s) => s.model));
@@ -246,7 +255,7 @@ function Body({
   async function save() {
     setSaving(true);
     setError(null);
-    const body: AliasSave = { alias: { name: trimmed, models }, base_version: base };
+    const body: AliasSave = { alias: input, base_version: base };
     try {
       let version: string;
       if (editing != null) {
@@ -376,6 +385,24 @@ function Body({
             </Boxed>
           </FormItem>
         )}
+
+        <div className="flex flex-col gap-1.5">
+          <label className="flex items-center gap-2 tw-body">
+            <Checkbox
+              checked={hideOriginals}
+              disabled={discoverySupport !== true || loading}
+              onCheckedChange={(v) => setDraft((d) => ({ ...d, hideOriginals: v === true }))}
+            />
+            {t.hideOriginals}
+          </label>
+          <p className="tw-label text-muted-foreground">{t.hideOriginalsHint}</p>
+          {discoverySupport === false && <p className="tw-label text-warning">{t.hideOriginalsUpgrade}</p>}
+          {hideOriginals && fresh && p && (
+            <p className="break-words tw-label text-muted-foreground">
+              {p.hidden_originals?.length ? t.hiddenOriginals(p.hidden_originals.join(sep)) : t.hiddenOriginalsEmpty}
+            </p>
+          )}
+        </div>
 
         <FormItem label={t.sentTo} desc={t.sentWhat}>
           <SentTo

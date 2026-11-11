@@ -15,11 +15,8 @@
 //! **访问 `\\wsl.localhost` 会把发行版唤醒。**所以这里只提供「读一个发行版」，
 //! 什么时候读由调用方决定：客户端页打开时、用户要动它的时候，不在后台轮询。
 //!
-//! WSL 里的客户端写的地址和 Windows 上的一样，是 `127.0.0.1` —— **网关不为 WSL
-//! 另外听一张网卡**。够得着它的只有两种：WSL 1（和 Windows 共用网络），以及 WSL 2
-//! 的 mirrored 网络。WSL 2 默认的 NAT 下，WSL 里的 127.0.0.1 是它自己，那时不接管，
-//! 只说清楚为什么、怎么改成 mirrored（[`decide`]；`.wslconfig` 的读写见
-//! [`crate::wslconfig`]）。
+//! 网关地址由调用方检测：优先验证回环，NAT 使用默认路由的 Windows 主机地址。
+//! 探测不经过环境代理，不改 Linux 网络或客户端配置。
 //!
 //! 注册表、`wsl.exe` 那几段只在 Windows 上；其余是和平台无关的纯函数（passwd、
 //! `wsl --version` 的输出、该怎么判断），在任何平台上都跑单测。
@@ -700,6 +697,17 @@ pub fn same_distro(client: &str, distro: &str, id: &str) -> bool {
     key_id(client, distro) == id
 }
 
+/// Recover a real name from known distributions, never from the lossy key slug.
+/// Ambiguous slugs cannot identify a distribution safely.
+pub fn distro_for_key<'a>(id: &str, names: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    let (client, _) = split_key_id(id)?;
+    let mut matches = names
+        .into_iter()
+        .filter(|name| same_distro(client, name, id));
+    let name = matches.next()?;
+    matches.next().is_none().then_some(name)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -769,6 +777,27 @@ odd:x:1001:1001::relative/home:/bin/sh
         for c in CLIENTS {
             assert!(same_distro(c, long, &key_id(c, long)), "{c}");
         }
+    }
+
+    #[test]
+    fn managed_keys_resolve_real_names_without_losing_case_punctuation_or_length() {
+        let names = [
+            "Ubuntu",
+            "Ubuntu-22.04",
+            "My  Distro_",
+            "Ubuntu-24.04-with-a-very-long-name-given-by-its-owner-and-more",
+        ];
+        for client in CLIENTS {
+            for name in names {
+                assert_eq!(distro_for_key(&key_id(client, name), names), Some(name));
+            }
+        }
+        assert_eq!(distro_for_key("codex-wsl-ubuntu", ["Debian"]), None);
+        assert_eq!(distro_for_key("codex", names), None);
+        assert_eq!(
+            distro_for_key("codex-wsl-ubuntu-22-04", ["Ubuntu-22.04", "Ubuntu-22-04"]),
+            None
+        );
     }
 
     #[test]
@@ -984,9 +1013,9 @@ odd:x:1001:1001::relative/home:/bin/sh
         );
     }
 
-    /// NAT（没有 .wslconfig、没写、写了 nat）：不接管；版本查得到就不提，查不到要提一句
+    /// NAT 网络描述保留可用的版本信息；接管资格由独立的探测判断。
     #[test]
-    fn nat_is_not_adopted_and_says_whether_the_version_is_known() {
+    fn nat_description_says_whether_the_version_is_known() {
         assert_eq!(
             decide(Some(22631), NetMode::Nat, never, || ver("2.3.26.0"), false),
             Wsl2::Nat {
@@ -1064,5 +1093,175 @@ odd:x:1001:1001::relative/home:/bin/sh
             ),
             Wsl2::Restart
         );
+    }
+}
+
+/// The default gateways in route priority order. Never use resolv.conf (DNS tunnelling)
+/// or the guest's own hostname address as the Windows endpoint.
+pub fn default_gateways(text: &str) -> Vec<std::net::Ipv4Addr> {
+    let mut rows: Vec<_> = text
+        .lines()
+        .filter_map(|line| {
+            let p: Vec<_> = line.split_whitespace().collect();
+            if p.first() != Some(&"default") {
+                return None;
+            }
+            let value = |key| p.windows(2).find(|w| w[0] == key).map(|w| w[1]);
+            let ip: std::net::Ipv4Addr = value("via")?.parse().ok()?;
+            if ip.is_loopback() || ip.is_unspecified() || ip.is_multicast() {
+                return None;
+            }
+            Some((
+                value("metric")
+                    .and_then(|s| s.parse::<u32>().ok())
+                    .unwrap_or(0),
+                ip,
+            ))
+        })
+        .collect();
+    rows.sort_by_key(|(metric, _)| *metric);
+    let mut out = Vec::new();
+    for (_, ip) in rows {
+        if !out.contains(&ip) {
+            out.push(ip);
+        }
+    }
+    out
+}
+
+pub fn route_source(text: &str) -> Option<std::net::Ipv4Addr> {
+    let p: Vec<_> = text.split_whitespace().collect();
+    let ip: std::net::Ipv4Addr = p.windows(2).find(|w| w[0] == "src")?[1].parse().ok()?;
+    (!ip.is_loopback() && !ip.is_unspecified() && !ip.is_multicast()).then_some(ip)
+}
+
+/// Query only running distributions. This does not start a stopped VM.
+#[cfg(windows)]
+pub fn running_distros() -> Vec<String> {
+    run(
+        &["--list", "--running", "--quiet"],
+        std::time::Duration::from_secs(4),
+    )
+    .filter(|r| r.ok)
+    .map(|r| {
+        decode_output(&r.stdout)
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    })
+    .unwrap_or_default()
+}
+#[cfg(not(windows))]
+pub fn running_distros() -> Vec<String> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+pub fn gateways(distro: &str) -> Vec<std::net::Ipv4Addr> {
+    run(
+        &[
+            "-d", distro, "--exec", "ip", "-4", "route", "show", "default",
+        ],
+        std::time::Duration::from_secs(4),
+    )
+    .filter(|r| r.ok)
+    .map(|r| default_gateways(&decode_output(&r.stdout)))
+    .unwrap_or_default()
+}
+#[cfg(not(windows))]
+pub fn gateways(_distro: &str) -> Vec<std::net::Ipv4Addr> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+pub fn source(distro: &str, host: std::net::Ipv4Addr) -> Option<std::net::Ipv4Addr> {
+    let r = run(
+        &[
+            "-d",
+            distro,
+            "--exec",
+            "ip",
+            "-4",
+            "route",
+            "get",
+            &host.to_string(),
+        ],
+        std::time::Duration::from_secs(4),
+    )?;
+    r.ok.then(|| route_source(&decode_output(&r.stdout)))
+        .flatten()
+}
+#[cfg(not(windows))]
+pub fn source(_distro: &str, _host: std::net::Ipv4Addr) -> Option<std::net::Ipv4Addr> {
+    None
+}
+
+/// Check the public identity from the control connection. A different process listening
+/// inside NAT WSL on 127.0.0.1 must never count as the Windows gateway.
+#[cfg(windows)]
+pub fn probe(distro: &str, base: &str, identity: &str) -> bool {
+    // Constant shell program, URL only in positional arguments. No secrets in command lines.
+    const SCRIPT: &str = r#"if command -v curl >/dev/null 2>&1; then
+exec curl --disable --noproxy '*' --silent --fail --connect-timeout 1 --max-time 2 --dump-header - --output /dev/null "$1/healthz"
+elif command -v python3 >/dev/null 2>&1; then
+exec python3 -c 'import http.client,sys,urllib.parse; u=urllib.parse.urlsplit(sys.argv[1]); c=http.client.HTTPConnection(u.hostname,u.port,timeout=2); c.request("GET","/healthz"); r=c.getresponse(); print("x-thinkwatch-gateway: "+(r.getheader("x-thinkwatch-gateway") or ""))' "$1"
+else exit 127; fi"#;
+    run(
+        &[
+            "-d",
+            distro,
+            "--exec",
+            "sh",
+            "-c",
+            SCRIPT,
+            "thinkwatch-probe",
+            base,
+        ],
+        std::time::Duration::from_secs(4),
+    )
+    .is_some_and(|r| r.ok && probe_matches(&decode_output(&r.stdout), identity))
+}
+#[cfg(not(windows))]
+pub fn probe(_distro: &str, _base: &str, _identity: &str) -> bool {
+    false
+}
+
+pub fn probe_matches(headers: &str, identity: &str) -> bool {
+    !identity.is_empty()
+        && headers.lines().any(|line| {
+            line.split_once(':').is_some_and(|(k, v)| {
+                k.eq_ignore_ascii_case("x-thinkwatch-gateway") && v.trim() == identity
+            })
+        })
+}
+
+#[cfg(test)]
+mod networking_tests {
+    use super::*;
+    #[test]
+    fn routing_uses_metric_and_never_treats_a_guest_or_dns_ip_as_a_gateway() {
+        assert_eq!(
+            default_gateways(
+                "default via 10.0.0.1 dev tun0 metric 100\ndefault via 172.23.80.1 dev eth0 metric 10\n172.23.80.0/20 dev eth0 src 172.23.84.2"
+            ),
+            vec![
+                "172.23.80.1".parse::<std::net::Ipv4Addr>().unwrap(),
+                "10.0.0.1".parse().unwrap()
+            ]
+        );
+        assert_eq!(
+            route_source("172.23.80.1 dev eth0 src 172.23.84.2 uid 1000"),
+            Some("172.23.84.2".parse().unwrap())
+        );
+        assert!(default_gateways("default dev eth0\ndefault via 127.0.0.1").is_empty());
+    }
+    #[test]
+    fn health_check_rejects_other_servers() {
+        assert!(!probe_matches("HTTP/1.1 200 OK\n\nok", "abc"));
+        assert!(!probe_matches("x-thinkwatch-gateway: old", "abc"));
+        assert!(probe_matches("X-ThinkWatch-Gateway: abc\r\n", "abc"));
+        assert!(!probe_matches("x-thinkwatch-gateway:", ""));
     }
 }

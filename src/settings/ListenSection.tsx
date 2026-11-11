@@ -1,4 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
+import { invoke } from "@tauri-apps/api/core";
+import { Button } from "@/ui/button";
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogConfirm } from "@/ui/alert-dialog";
 import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { Banner } from "@/ui/banner";
@@ -32,21 +35,23 @@ export function levelOf(bind: string): Level {
 
 interface Draft {
   level: Level;
-  /** 局域网那一档选的网卡。配置里写的是地址时就是那个地址，存的时候换成名字 */
+  /** 局域网那一档选的网卡或固定地址；保存其他设置时保留原写法 */
   nic: string;
+  additional: string[];
   port: string;
   allow: string[];
 }
 
-function draftOf(v: ListenView): Draft {
+export function draftOf(v: ListenView): Draft {
   const level = levelOf(v.bind);
-  return { level, nic: level === "lan" ? v.bind : "", port: String(v.port), allow: v.allow_from };
+  return { level, nic: level === "lan" ? v.bind : "", additional: level !== "local" ? v.additional : [], port: String(v.port), allow: v.allow_from };
 }
 
 function same(a: Draft, b: Draft): boolean {
   return (
     a.level === b.level &&
     (a.level !== "lan" || a.nic === b.nic) &&
+    a.additional.length === b.additional.length && a.additional.every((x, i) => x === b.additional[i]) &&
     a.port === b.port &&
     a.allow.length === b.allow.length &&
     a.allow.every((x, i) => x === b.allow[i])
@@ -88,6 +93,7 @@ export function ListenSection({
   const nics = nicList.data ?? null;
   // 放弃更改时连同名单里没加进去的那一行一起清掉：换一个 key 让它重来
   const [epoch, setEpoch] = useState(0);
+  const [impact, setImpact] = useState<{ names: string[]; body: ListenSave } | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [justSaved, flash] = useSavedFlash();
@@ -107,7 +113,7 @@ export function ListenSection({
   function pick(level: Level) {
     // 选「局域网」时落到第一张网卡，用户再从选单里换
     if (level === "lan" && !draft.nic) return set({ level, nic: nics?.[0]?.name ?? "" });
-    set({ level });
+    set({ level, additional: level !== "local" ? draft.additional : [] });
   }
 
   /** 选单按名字。配置里写的是地址时认出它属于哪张网卡 */
@@ -119,10 +125,11 @@ export function ListenSection({
   const nicOk = draft.level !== "lan" || !!draft.nic;
   const exposed = draft.level !== "local";
 
-  async function save() {
-    const bind = draft.level === "local" ? "loopback" : draft.level === "all" ? "all" : nicName(draft.nic);
+  async function save(confirmed?: ListenSave) {
+    const bind = draft.level === "local" ? "loopback" : draft.level === "all" ? "all" : draft.nic;
     const body: ListenSave = {
       bind,
+      additional: draft.level !== "local" ? draft.additional : [],
       port: Number(draft.port),
       allow_from: draft.allow,
       base_version: configVersion,
@@ -130,9 +137,15 @@ export function ListenSection({
     setBusy(true);
     setError(null);
     try {
-      await call("SaveListen", body);
-      // 网卡按名字存。草稿里若还是地址，先换成名字，否则配置推回来之后两边对不上、
-      // 表单一直显示改过
+      const request = confirmed ?? body;
+      const names = await invoke<string[]>("wsl_listen_impact", { listen: request });
+      if (names.length > 0 && (!confirmed || names.join("\n") !== impact?.names.join("\n"))) {
+        setImpact({ names, body: request });
+        return;
+      }
+      await call("SaveListen", request);
+      setImpact(null);
+      // 固定地址保持固定，只有用户主动选择网卡时才按名字保存。
       commit({ ...draft, nic: draft.level === "lan" ? bind : "" });
       flash();
       onChanged();
@@ -157,6 +170,19 @@ export function ListenSection({
 
   return (
     <SettingsGroup id="listen" title={t.title}>
+      <AlertDialog open={impact != null} onOpenChange={(open) => { if (!open && !busy) setImpact(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t.wslImpactTitle}</AlertDialogTitle>
+            <AlertDialogDescription>{t.wslImpactBody(impact?.names.join(t.sep) ?? "")}</AlertDialogDescription>
+            {error && <p className="tw-label text-destructive">{error}</p>}
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={busy}>{t.cancel}</AlertDialogCancel>
+            <AlertDialogConfirm pending={busy} onConfirm={() => { if (impact) void save(impact.body); }}>{t.saveAnyway}</AlertDialogConfirm>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* 配置里写的地址没换上（手改了配置、网卡没了地址）：旧地址还在服务 */}
       <Banner layout="inline" tone="warning" show={!error && !!status?.listen_error} title={t.staleTitle}>
         {status?.listen_error ? t.staleBody(coreText(status.listen_error), addr ?? "") : null}
@@ -233,6 +259,18 @@ export function ListenSection({
                 )
               }
             />
+          )}
+
+          {draft.level !== "local" && draft.additional.length > 0 && (
+            <SettingsRow label={t.additional} description={t.additionalHint} control={
+              <div className="flex flex-col gap-1">
+                {draft.additional.map((address) => <div key={address} className="flex items-center gap-2">
+                  <span className="font-mono tw-label">{address}</span>
+                  <Button type="button" variant="ghost" size="xs" disabled={busy}
+                    onClick={() => set({ additional: draft.additional.filter((s) => s !== address) })}>{t.remove}</Button>
+                </div>)}
+              </div>
+            } />
           )}
 
           <SettingsRow

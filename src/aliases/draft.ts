@@ -6,19 +6,20 @@
  * 自动列进来的那一个跟着撤掉；用户删了它，同一个名称就不再自动列；用户自己加了别的，
  * 它就不再算自动的。
  */
-import type { Msg } from "@/types";
+import type { AliasInput, Msg } from "@/types";
 
 export interface Draft {
   name: string;
   models: string[];
+  hideOriginals: boolean;
   /** 自动列进来的那一个。用户动过列表就是 `null` */
   auto: string | null;
   /** 自动列进来、又被删掉的 */
   declined: string[];
 }
 
-export function draftOf(name: string, models: string[]): Draft {
-  return { name, models, auto: null, declined: [] };
+export function draftOf(name: string, models: string[], hideOriginals = false): Draft {
+  return { name, models, hideOriginals, auto: null, declined: [] };
 }
 
 /** 改名称。`offered`：这个名称是不是某个上游的真模型。编辑时不自动列 */
@@ -68,4 +69,13 @@ export const ONLY_ITSELF = "config.alias_only_itself";
 export function shownProblems(problems: readonly Msg[], d: Draft): Msg[] {
   const auto = onlyAuto(d);
   return problems.filter((m) => !SAID_IN_FOOTER.has(m.code) && !(auto && m.code === ONLY_ITSELF));
+}
+
+/** Old Core versions must never silently accept an unsupported setting. */
+export function aliasInput(d: Draft, supported: boolean): AliasInput {
+  return {
+    name: d.name.trim(),
+    models: d.models,
+    ...(supported ? { hide_originals: d.hideOriginals } : {}),
+  };
 }

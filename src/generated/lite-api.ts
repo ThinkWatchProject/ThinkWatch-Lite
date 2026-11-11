@@ -863,11 +863,19 @@ noop: boolean, };
  */
 export type WslGroup = { 
 /**
+ * Gateway origins verified from this running distribution. Managed clients only.
+ */
+reachable_bases: Array<string>, 
+/**
+ * Networking diagnostic; clients remain visible and restorable.
+ */
+network_error?: Msg | null, 
+/**
  * 发行版的名字（`Ubuntu`）。对这一组的命令都带着它
  */
 distro: string, network: WslNetwork, 
 /**
- * 此刻能不能接管：WSL 1、mirrored 能，连着远程 core 时都能。**不能的时候不给
+ * 是否能识别接管目标。版本和网络模式不决定资格。**不能的时候不给
  * 接管和手动配置**，接管过的照样能还原
  */
 adoptable: boolean, 
@@ -880,22 +888,19 @@ error?: Msg | null,
  */
 clients: Array<DetectedClient>, 
 /**
- * 这个发行版里的客户端该连的地址：和这台电脑上的一样
+ * 这个发行版里的客户端该连的地址：验证后的回环、Windows NAT 网卡或远程网关
  */
 gateway_base: string, };
 
 /**
- * WSL 里的一个发行版用哪种网络；本机时，不能接管的那几种说明卡在哪一步。
- *
- * WSL 里的客户端写的地址和这台电脑上的一样（本机时是 `127.0.0.1`），够得着它的
- * 只有 WSL 1 和 mirrored。其余几种界面上说明原因，能动手的给按钮（改为 mirrored、
- * 重启 WSL）。
+ * WSL 发行版的网络描述。能否接管独立地通过地址发现和探测判断；
+ * Windows 版本和 mirrored 支持不作为 NAT 接管的前置条件。
  */
 export type WslNetwork = { "kind": "wsl1" } | { "kind": "mirrored" } | { "kind": "nat", wsl_version: string | null, } | { "kind": "restart" } | { "kind": "fallback" } | { "kind": "old_windows" } | { "kind": "old_wsl", wsl_version: string, };
 
 /**
  * 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，
- * 所以只在打开这一页、动过它之后取，不跟着每个请求刷新。
+ * 首次打开页面时读取，后续只检查运行中的发行版，不跟着每个请求刷新。
  */
 export type WslResponse = { 
 /**

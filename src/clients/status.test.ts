@@ -59,27 +59,20 @@ describe("客户端的状态", () => {
     );
   });
 
-  it("WSL 里指着的不是 127.0.0.1 的是未生效（以前按 NAT 接管的），哪怕之前收到过请求", () => {
+  it("NAT 和 mirrored 都根据实际可达性判断，手动配置不纳入接管", () => {
     const adopted = NOW - 60_000;
-    const reachable = { adoptable: true };
-    const nat = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: "http://172.27.96.1:18790" });
-    expect(statusOf(nat, BASE, NOW, false, reachable)).toEqual({
-      state: "broken",
-      reason: { kind: "elsewhere", endpoint: "http://172.27.96.1:18790" },
-    });
-    // localhost 也不算：mirrored 下只认 127.0.0.1
-    const named = client({ adopted_at_ms: adopted, endpoint: "http://localhost:18790" });
-    expect(statusOf(named, BASE, NOW, false, reachable).reason?.kind).toBe("elsewhere");
-    // 指着 127.0.0.1 的照常：收到过请求就是使用中，带不带 /v1 都一样
-    const ok = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: `${BASE}/v1` });
-    expect(statusOf(ok, BASE, NOW, false, reachable).state).toBe("in_use");
-    // 没接管的不算
-    expect(statusOf(client({ endpoint: "http://172.27.96.1:18790" }), BASE, NOW, false, reachable).state).toBe(
-      "idle",
-    );
+    const natBase = "http://172.27.96.1:18790";
+    const c = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: `${natBase}/v1` });
+    expect(statusOf(c, natBase, NOW, false, { adoptable: true, reachable_bases: [natBase] }).state).toBe("in_use");
+    // Mode changes alone do not invalidate a reachable old endpoint.
+    expect(statusOf(c, BASE, NOW, false, { adoptable: true, reachable_bases: [natBase, BASE] }).state).toBe("in_use");
+    // Historical requests must not hide address drift or a closed listener.
+    expect(statusOf(c, "http://172.28.96.1:18790", NOW, false, { adoptable: true, reachable_bases: [] }).reason?.kind).toBe("gateway_changed");
+    expect(statusOf(c, natBase, NOW, false, { adoptable: true, reachable_bases: [] }).reason?.kind).toBe("listener_unavailable");
+    expect(statusOf(client({ endpoint: natBase }), natBase, NOW, false, { adoptable: true, reachable_bases: [natBase] }).state).toBe("idle");
   });
 
-  it("WSL 里那一组够不着网关（NAT 这些）时，接管过的都是未生效", () => {
+  it("WSL 里那一组够不着网关时，接管过的都是未生效", () => {
     const adopted = NOW - 60_000;
     const blocked = { adoptable: false };
     const c = client({ adopted_at_ms: adopted, last_seen_ms: adopted + 1, endpoint: BASE });
@@ -167,7 +160,7 @@ describe("本机网关的地址", () => {
     }
   });
 
-  it("WSL 里的客户端只认 127.0.0.1", () => {
+  it("精确识别 IPv4 回环地址", () => {
     expect(isIpv4Loopback("http://127.0.0.1:8788")).toBe(true);
     expect(isIpv4Loopback("http://127.0.0.1:8788/v1")).toBe(true);
     for (const e of ["http://localhost:8788", "http://[::1]:8788", "http://172.27.96.1:8788", "not a url"]) {

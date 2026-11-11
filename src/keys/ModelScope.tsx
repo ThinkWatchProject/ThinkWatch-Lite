@@ -57,6 +57,7 @@ export function ModelScope({
   const [draft, setDraft] = useState("");
   const [shown, setShown] = useState(PAGE);
 
+  const hidden = useMemo(() => new Set(catalog.filter((m) => m.hidden_by?.length).map((m) => m.id)), [catalog]);
   const { patterns } = splitEntries(entries);
   const rows = useMemo(() => rowsOf(entries, catalog), [entries, catalog]);
   const matched = useMemo(() => {
@@ -197,6 +198,9 @@ export function ModelScope({
                         </TableCell>
                         <TableCell className={r.source ? undefined : "text-muted-foreground"}>
                           <span className="font-mono">{r.id}</span>
+                          {hidden.has(r.id) && (
+                            <span className="ml-1.5 tw-label text-muted-foreground">{t.hiddenFromClients}</span>
+                          )}
                           {r.alias && (
                             <AliasMark title={t.aliasOf(r.alias)} className="ml-1.5 align-[1px]" />
                           )}

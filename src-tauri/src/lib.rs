@@ -289,6 +289,7 @@ pub fn run() {
             uninstall::uninstall,
             clients::list_clients,
             clients::list_wsl,
+            clients::network::wsl_listen_impact,
             clients::plan_wsl_mirrored,
             clients::set_wsl_mirrored,
             clients::shutdown_wsl,
@@ -599,6 +600,8 @@ pub fn run() {
             // 盯着这台机器上客户端的配置文件：动了就让界面重读，新出现可疑的东西
             // 就提醒。**不等 core**：这些文件和 core 在不在无关
             start_client_watch(&handle, notices.clone());
+            #[cfg(windows)]
+            clients::network::watch(&handle, notices.clone());
 
             // 事件桥：控制面的 SSE → Tauri 事件 → 前端。
             let h = handle.clone();

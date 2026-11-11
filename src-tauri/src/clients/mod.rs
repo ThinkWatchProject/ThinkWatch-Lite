@@ -10,6 +10,7 @@
 
 pub mod desktop_rule;
 pub mod locations;
+pub mod network;
 pub mod ops;
 mod reveal;
 pub mod wsl;
@@ -371,73 +372,125 @@ pub async fn list_clients(state: tauri::State<'_, AppState>) -> Out<wire::Client
 
 /// 客户端页的 WSL 部分：每个发行版一组。
 ///
-/// **读 WSL 会唤醒发行版**，所以它是单独的一个命令，界面只在打开客户端页、动过
-/// 某个 WSL 客户端之后取，不跟着请求刷新。读不到的发行版那一组写「无法读取」，
-/// 不让整页报错。
+/// **读 WSL 会唤醒发行版**，所以首次打开页面才完整读取，后续轮询先筛选运行中的
+/// 发行版。读不到的发行版那一组写「无法读取」，不让整页报错。
 ///
 /// 每一组说它用哪种网络、此刻能不能接管（[`wsl::network`]）。本机时 WSL 2 的情况
 /// 全机只问一次：读注册表、`.wslconfig`，起 `wsl.exe` 问版本和此刻的网络 —— 所有
 /// WSL 2 发行版在同一台虚拟机里，问一个开着的就够。
 #[tauri::command]
-pub async fn list_wsl(state: tauri::State<'_, AppState>) -> Out<wire::WslResponse> {
+pub async fn list_wsl(
+    state: tauri::State<'_, AppState>,
+    poll: Option<bool>,
+) -> Out<wire::WslResponse> {
+    static CACHE: std::sync::Mutex<BTreeMap<String, wire::WslGroup>> =
+        std::sync::Mutex::new(BTreeMap::new());
+    let poll = poll.unwrap_or(false);
     let distros = blocking(wsl::distros).await?;
     if distros.is_empty() {
         return Ok(wire::WslResponse {
             distros: Vec::new(),
         });
     }
+    let running = if poll {
+        blocking(tw_adopt::wsl::running_distros).await?
+    } else {
+        Vec::new()
+    };
     let gw = gateway(&state).await?;
     let remote = state.link.is_remote();
-    // 读每个发行版会把它唤醒，一个要好几秒：放在阻塞线程上
-    let opened: Vec<(tw_adopt::wsl::Distro, Result<WslHome, Msg>)> = blocking(move || {
-        distros
-            .into_iter()
-            .map(|d| (d.clone(), wsl::open(d)))
-            .collect()
-    })
-    .await?;
-    // 问一个读得到的（此刻开着的）WSL 2 发行版
-    let probe = opened
-        .iter()
-        .find(|(d, w)| d.version != 1 && w.is_ok())
-        .map(|(d, _)| d.name.clone());
-    let wsl2 = if !remote && opened.iter().any(|(d, _)| d.version != 1) {
-        Some(
-            tokio::task::spawn_blocking(move || wsl::wsl2(probe))
-                .await
-                .map_err(|e| CmdError::plain(e.to_string()))?,
-        )
-    } else {
-        None
+    let peer = match state.link.current() {
+        crate::connection::Current::Local => "local".to_string(),
+        crate::connection::Current::Remote(r) => r.id,
     };
-    // 检测要读发行版里的配置文件，走的是 `\\wsl.localhost\…`，一个文件也要好一阵：
-    // 同样放在阻塞线程上
-    let out = blocking(move || {
-        let config = wsl::config_mode();
-        opened
-            .into_iter()
-            .map(|(d, w)| {
-                let (network, adoptable) = wsl::network(remote, &d, config, || {
-                    wsl2.clone()
-                        .unwrap_or(tw_adopt::wsl::Wsl2::Nat { version: None })
-                });
-                let (clients, error) = match w {
-                    Ok(w) => (ops::list_wsl(&w, &backups(), &gw), None),
-                    Err(e) => (Vec::new(), Some(e)),
-                };
-                wire::WslGroup {
-                    distro: d.name,
-                    network,
-                    adoptable,
-                    error,
-                    clients,
-                    gateway_base: gw.base.clone(),
+    let config = wsl::config_mode();
+    let mut groups = Vec::new();
+    for d in distros {
+        let cache_key = format!("{peer}:{}:{}", gw.base, d.name);
+        if poll && !running.contains(&d.name) {
+            let cached = CACHE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .get(&cache_key)
+                .cloned();
+            if let Some(mut g) = cached {
+                g.reachable_bases.clear();
+                g.network_error = Some(msg!("wsl.stopped", distro = &d.name =>
+                    "WSL · {distro} is stopped. Start it to check gateway connectivity."));
+                groups.push(g);
+            }
+            continue;
+        }
+        let dist = d.clone();
+        let opened = blocking(move || wsl::open(dist)).await?;
+        let probe = Some(d.name.clone());
+        let net = if remote || d.version == 1 {
+            None
+        } else {
+            Some(blocking(move || wsl::wsl2(probe)).await?)
+        };
+        let network = wsl::network(remote, &d, config, || {
+            net.unwrap_or(tw_adopt::wsl::Wsl2::Nat { version: None })
+        });
+        let mut g = wire::WslGroup {
+            distro: d.name.clone(),
+            network,
+            adoptable: false,
+            reachable_bases: Vec::new(),
+            network_error: None,
+            error: None,
+            clients: Vec::new(),
+            gateway_base: gw.base.clone(),
+        };
+        match opened {
+            Err(e) => g.error = Some(e),
+            Ok(w) => {
+                let preferred = network::load()?
+                    .clients
+                    .into_iter()
+                    .find(|(owner, _)| tw_adopt::wsl::distro_for_key(owner, [w.name()]).is_some())
+                    .map(|(_, m)| m.base);
+                match network::resolve(&state, &w, preferred, None).await {
+                    Ok(target) => {
+                        g.gateway_base = target.base;
+                        g.adoptable = true;
+                    }
+                    Err(e) => g.network_error = Some(e),
                 }
-            })
-            .collect()
-    })
-    .await?;
-    Ok(wire::WslResponse { distros: out })
+                let local_gw = ops::Gateway {
+                    base: g.gateway_base.clone(),
+                    keys: gw.keys.clone(),
+                };
+                let read_home = w.clone();
+                g.clients =
+                    blocking(move || ops::list_wsl(&read_home, &backups(), &local_gw)).await?;
+                let mut bases = vec![g.gateway_base.clone()];
+                for c in &g.clients {
+                    if c.adopted_at_ms.is_some()
+                        && !c.other_instance
+                        && let Some(endpoint) = c.endpoint.as_deref()
+                        && let Ok(u) = url::Url::parse(endpoint)
+                    {
+                        let base = u.origin().ascii_serialization();
+                        if !bases.contains(&base) {
+                            bases.push(base);
+                        }
+                    }
+                }
+                for base in bases {
+                    if remote || network::reachable(&state.control, w.name(), &base).await {
+                        g.reachable_bases.push(base);
+                    }
+                }
+            }
+        }
+        CACHE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .insert(cache_key, g.clone());
+        groups.push(g);
+    }
+    Ok(wire::WslResponse { distros: groups })
 }
 
 /// 把 WSL 2 改成 mirrored 网络：算一份 `.wslconfig` 的改动。**不写任何东西。**
@@ -500,7 +553,7 @@ pub async fn wslconfig_kept() -> Out<Option<wire::WslConfigKept>> {
 
 /// 算一份接管改动。**不写任何东西。**
 ///
-/// WSL 里的那一份：此刻够不着网关（NAT 这些）的拒绝；确认框里多一句请求经由
+/// WSL 里的那一份同时预览所需的监听改动；确认框里说明请求经由
 /// Windows 上的网关（[`wsl::plan_notes`]）。
 #[tauri::command]
 pub async fn plan_adopt(
@@ -536,8 +589,15 @@ pub async fn plan_adopt(
             Ok(v)
         }
         Place::Wsl(w) => {
+            let target = network::resolve(
+                &state,
+                w,
+                network::preferred(&place.owner(&id))?,
+                Some(place.owner(&id)),
+            )
+            .await?;
             let gw = ops::Gateway {
-                base: wsl::target(&state, w).await?,
+                base: target.base.clone(),
                 keys: keys(&state.control).await?,
             };
             let owner = place.owner(&id);
@@ -551,6 +611,7 @@ pub async fn plan_adopt(
             v.path = w.shown(Path::new(&v.path));
             v.notes
                 .extend(wsl::plan_notes(c.name, w, state.link.is_remote()));
+            target.attach(&mut v);
             Ok(v)
         }
     }
@@ -576,13 +637,51 @@ pub async fn adopt_client(
     expect: Option<String>,
     model: Option<String>,
 ) -> Out<wire::AdoptResponse> {
+    let _guard = network::MUTATION.lock().await;
+    let moved = state.control.moved();
+    let generation = *moved.borrow();
+    let control = state.control.snapshot();
     let place = Place::open(env).await?;
     let c = place.find(&id)?;
-    let base = match &place {
-        Place::Here => gateway_base(&state.control, &gateway_host(&state)).await?,
-        Place::Wsl(w) => wsl::target(&state, w).await?,
+    let target = match &place {
+        Place::Here => None,
+        Place::Wsl(w) => Some(
+            network::resolve(
+                &state,
+                w,
+                network::preferred(&place.owner(&id))?,
+                Some(place.owner(&id)),
+            )
+            .await?,
+        ),
     };
-    let key = prepare_key(&state.control, &place.owner(&id)).await?;
+    let base = match &place {
+        Place::Here => gateway_base(&control, &gateway_host(&state)).await?,
+        Place::Wsl(_) => target.as_ref().unwrap().base.clone(),
+    };
+    // Network and client snapshots are reviewed together, before keys or listeners are written.
+    let gw = ops::Gateway {
+        base: base.clone(),
+        keys: keys(&control).await?,
+    };
+    let models = match ops::key_for(&gw, &place.owner(&id)) {
+        Ok((_, key, _)) => models_for(&c, &base, &key).await?,
+        Err(_) => Vec::new(),
+    };
+    let around = place.around(!state.link.is_remote()).await;
+    let mut reviewed =
+        ops::plan_adopt_as(&place.home(), &id, &place.owner(&id), &gw, models, &around)?;
+    let client_digest = reviewed.digest.clone();
+    if let Some(t) = &target {
+        t.attach(&mut reviewed);
+    }
+    ops::still_as_reviewed(expect.as_deref(), &reviewed.digest, c.name)?;
+    ops::still_as_reviewed(
+        Some(&generation.to_string()),
+        &moved.borrow().to_string(),
+        c.name,
+    )?;
+    let key = prepare_key(&control, &place.owner(&id)).await?;
     let models = models_for(&c, &base, &key.key).await?;
     let around = place.around(!state.link.is_remote()).await;
     let prepared = ops::prepare_adopt(
@@ -590,11 +689,25 @@ pub async fn adopt_client(
         &backups(),
         &id,
         &tw_adopt::clients::Gateway::keyed(&base, &key.key, models),
-        expect.as_deref(),
+        Some(&client_digest),
         &around,
     )?;
+    if model.is_some() && (c.id != tw_adopt::desktop::ID || !matches!(place, Place::Here)) {
+        return Err(desktop_rule::gateway_changed(c.name).into());
+    }
+    ops::still_as_reviewed(
+        Some(&generation.to_string()),
+        &moved.borrow().to_string(),
+        c.name,
+    )?;
+    let applied = match (&place, target) {
+        (Place::Wsl(w), Some(t)) => {
+            Some(network::apply(&control, w.name(), &place.owner(&id), t).await?)
+        }
+        _ => None,
+    };
     let change = if c.id == tw_adopt::desktop::ID && matches!(place, Place::Here) {
-        let s = desktop_rule::snapshot(&state.control).await?;
+        let s = desktop_rule::snapshot(&control).await?;
         desktop_rule::change(
             &s,
             c.name,
@@ -609,14 +722,30 @@ pub async fn adopt_client(
         None
     };
     let written = match &change {
-        Some(ch) => Some(desktop_rule::write(&state.control, ch).await?),
+        Some(ch) => Some(desktop_rule::write(&control, ch).await?),
         None => None,
     };
+    let unchanged = {
+        let current = *moved.borrow();
+        ops::still_as_reviewed(Some(&generation.to_string()), &current.to_string(), c.name)
+    };
+    if let Err(e) = unchanged {
+        if let Some(applied) = applied {
+            applied.rollback(&control).await?;
+        }
+        if let (Some(ch), Some(version)) = (&change, &written) {
+            desktop_rule::revert(&control, ch, version).await?;
+        }
+        return Err(e.into());
+    }
     let mut r = match prepared.write(&backups()) {
         Ok(r) => r,
         Err(e) => {
+            if let Some(applied) = applied {
+                applied.rollback(&control).await?;
+            }
             if let (Some(ch), Some(version)) = (&change, &written)
-                && let Err(again) = desktop_rule::revert(&state.control, ch, version).await
+                && let Err(again) = desktop_rule::revert(&control, ch, version).await
             {
                 return Err(desktop_rule::not_reverted(ch, &e, &again).into());
             }
@@ -643,6 +772,17 @@ pub async fn plan_restore(
     if let Place::Wsl(w) = &place {
         v.path = w.shown(Path::new(&v.path));
     }
+    if let Place::Wsl(_) = &place
+        && let Some(target) = network::restore_target(
+            &state.control.snapshot(),
+            !state.link.is_remote(),
+            &place.owner(&id),
+        )
+        .await
+        .unwrap_or(None)
+    {
+        network::attach_restore(&target, &mut v);
+    }
     // Claude Desktop：接管时在它的密钥上加的那条规则一起删。问不到 core 就不说 —— 还原
     // 照样做得了，删不成的那一刻再提醒
     if c.id == tw_adopt::desktop::ID
@@ -666,9 +806,31 @@ pub async fn restore_client(
     env: Option<String>,
     expect: Option<String>,
 ) -> Out<wire::AdoptResponse> {
+    let control = state.control.snapshot();
+    let local = !state.link.is_remote();
     let place = Place::open(env).await?;
     let c = place.find(&id)?;
-    let mut r = ops::restore(&place.home(), &backups(), &id, expect.as_deref())?;
+    let _guard = network::MUTATION.lock().await;
+    let client_expect = if matches!(place, Place::Wsl(_)) {
+        let mut view = ops::plan_restore_as(&place.home(), &id, &place.owner(&id), &[])?;
+        let digest = view.digest.clone();
+        if let Some(target) = network::restore_target(&control, local, &place.owner(&id))
+            .await
+            .unwrap_or(None)
+        {
+            network::attach_restore(&target, &mut view);
+        }
+        ops::still_as_reviewed(expect.as_deref(), &view.digest, c.name)?;
+        Some(digest)
+    } else {
+        expect
+    };
+    let mut r = ops::restore(&place.home(), &backups(), &id, client_expect.as_deref())?;
+    if matches!(place, Place::Wsl(_))
+        && let Err(warning) = network::release(local.then_some(&control), &place.owner(&id)).await
+    {
+        r.warnings.push(warning);
+    }
     if c.id == tw_adopt::desktop::ID
         && matches!(place, Place::Here)
         && let Some(w) = desktop_rule::remove_after_restore(&state.control, &place.owner(&id)).await

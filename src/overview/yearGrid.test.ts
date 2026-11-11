@@ -7,7 +7,6 @@ import {
   layout,
   levelOf,
   monthLabels,
-  overlaps,
   statsOf,
   step,
   streakOf,
@@ -159,15 +158,9 @@ describe("统计", () => {
   });
 });
 
-describe("所选时间范围与键盘", () => {
+describe("键盘导航", () => {
   const days = layout(NOW, { since_ms: 0, detail_since_ms: null, buckets: [] });
   const idx = (at: number) => days.findIndex((d) => d.at === at);
-
-  it("和区间有交集的日子", () => {
-    const d = find(days, day(2026, 9, 27));
-    expect(overlaps(d, day(2026, 9, 27, 12), NOW)).toBe(true);
-    expect(overlaps(d, day(2026, 9, 28), NOW)).toBe(false);
-  });
 
   it("左右一周、上下一天，走不到的地方停在原地", () => {
     const today = idx(day(2026, 9, 28));

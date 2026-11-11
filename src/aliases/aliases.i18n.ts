@@ -16,6 +16,7 @@ export const aliasesText = messages(
     loadFailed: "别名读取失败",
 
     alias: "别名",
+    aliasOnly: "客户端仅展示别名",
     models: "上游模型",
     context: "上下文",
     day: "24 小时",
@@ -73,6 +74,7 @@ export const aliasesText = messages(
     loadFailed: "Could not load the aliases",
 
     alias: "Alias",
+    aliasOnly: "Alias only in client lists",
     models: "Upstream models",
     context: "Context",
     day: "24 hours",

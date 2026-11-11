@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { setLang } from "@/i18n";
 import type { KnownModel } from "@/types";
-import { aliasNamed, modelNote, type ModelOption } from "./fields";
+import { suggestedModels, aliasNamed, modelNote, type ModelOption } from "./fields";
 
 const OPTIONS: ModelOption[] = [
   { id: "claude-opus-5", providers: ["anthropic", "bedrock"], alias: ["claude-opus-5", "us.anthropic.claude-opus-5-v1:0"] },
@@ -48,4 +48,18 @@ describe("输入框里的值是不是别名", () => {
     // 别名列表里的模型名不是别名本身
     expect(aliasNamed("us.anthropic.claude-opus-5-v1:0", byId)).toBeNull();
   });
+});
+
+it("omits hidden originals only from empty client-name suggestions", () => {
+  const models = [
+    { id: "short", alias: ["raw"] },
+    { id: "raw", hidden_by: ["short"], providers: ["a"] },
+    { id: "other" },
+  ];
+  expect(suggestedModels(models, "")).toEqual(["short", "other"]);
+  expect(suggestedModels(models, "raw")).toEqual(["short", "raw", "other"]);
+  expect(suggestedModels(["raw", "other"], "")).toEqual(["raw", "other"]);
+  setLang("en");
+  expect(modelNote(models[1])).toBe("a · hidden from client lists");
+  setLang("zh");
 });
