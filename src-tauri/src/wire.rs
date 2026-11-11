@@ -167,11 +167,8 @@ pub struct ClientsResponse {
     pub order: Vec<String>,
 }
 
-/// WSL 里的一个发行版用哪种网络；本机时，不能接管的那几种说明卡在哪一步。
-///
-/// WSL 里的客户端写的地址和这台电脑上的一样（本机时是 `127.0.0.1`），够得着它的
-/// 只有 WSL 1 和 mirrored。其余几种界面上说明原因，能动手的给按钮（改为 mirrored、
-/// 重启 WSL）。
+/// WSL 发行版的网络描述。能否接管独立地通过地址发现和探测判断；
+/// Windows 版本和 mirrored 支持不作为 NAT 接管的前置条件。
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum WslNetwork {
@@ -179,7 +176,7 @@ pub enum WslNetwork {
     Wsl1,
     /// WSL 2 的 mirrored 网络：和 Windows 共用网卡
     Mirrored,
-    /// WSL 2 的默认：NAT。本机时不能接管，可以改为 mirrored。`wsl_version`：
+    /// WSL 2 的 NAT 网络。`wsl_version`：
     /// 查到的 WSL 版本（够新）；查不出来是 `null`，说明里要提一句版本要求
     Nat { wsl_version: Option<String> },
     /// `.wslconfig` 已设为 mirrored，WSL 还在用改之前的网络：重启 WSL 之后生效
@@ -213,10 +210,15 @@ impl From<tw_adopt::wsl::Wsl2> for WslNetwork {
 /// 客户端页上「WSL · <发行版>」那一组。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct WslGroup {
+    /// Gateway origins verified from this running distribution. Managed clients only.
+    pub reachable_bases: Vec<String>,
+    /// Networking diagnostic; clients remain visible and restorable.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub network_error: Option<Msg>,
     /// 发行版的名字（`Ubuntu`）。对这一组的命令都带着它
     pub distro: String,
     pub network: WslNetwork,
-    /// 此刻能不能接管：WSL 1、mirrored 能，连着远程 core 时都能。**不能的时候不给
+    /// 是否能识别接管目标。版本和网络模式不决定资格。**不能的时候不给
     /// 接管和手动配置**，接管过的照样能还原
     pub adoptable: bool,
     /// 读不到这个发行版时的原因。**这时 `clients` 是空的**，界面写「无法读取」
@@ -224,12 +226,12 @@ pub struct WslGroup {
     pub error: Option<Msg>,
     /// 这个发行版里的客户端（第一批：Claude Code、Codex）
     pub clients: Vec<DetectedClient>,
-    /// 这个发行版里的客户端该连的地址：和这台电脑上的一样
+    /// 这个发行版里的客户端该连的地址：验证后的回环、Windows NAT 网卡或远程网关
     pub gateway_base: String,
 }
 
 /// 客户端页的 WSL 部分。**和 `ClientsResponse` 分开取**：读 WSL 会把发行版唤醒，
-/// 所以只在打开这一页、动过它之后取，不跟着每个请求刷新。
+/// 首次打开页面时读取，后续只检查运行中的发行版，不跟着每个请求刷新。
 #[derive(Debug, Clone, Serialize, Deserialize, TS)]
 pub struct WslResponse {
     /// 注册表里登记着的发行版，按注册表里的顺序。不在 Windows 上时是空的

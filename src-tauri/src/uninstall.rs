@@ -24,6 +24,9 @@ use crate::{data_dir, error::Out, wire::UninstallStep};
 /// （`clients::desktop_rule`）。删不成照样算还原了，那一条带上提醒（[`RestoreOutcome::warning`]）
 #[tauri::command]
 pub async fn restore_all(state: tauri::State<'_, crate::AppState>) -> Out<Vec<RestoreOutcome>> {
+    let _guard = crate::clients::network::MUTATION.lock().await;
+    let control = state.control.snapshot();
+    let local = !state.link.is_remote();
     let mut out =
         crate::clients::blocking(|| restore_everywhere(&tw_adopt::foreign::backup_root())).await?;
     let desktop = tw_adopt::desktop::ID;
@@ -31,9 +34,41 @@ pub async fn restore_all(state: tauri::State<'_, crate::AppState>) -> Out<Vec<Re
         .iter_mut()
         .find(|r| r.here && r.id == desktop && r.ok && !r.skipped)
     {
-        r.warning = crate::clients::desktop_rule::remove_after_restore(&state.control, desktop)
+        r.warning = crate::clients::desktop_rule::remove_after_restore(&control, desktop)
             .await
             .map(|w| crate::core_text::text(&w));
+    }
+    if let Ok(j) = crate::clients::network::load() {
+        let distros = crate::clients::wsl::distros();
+        for owner in j.clients.keys() {
+            let Some((id, _)) = tw_adopt::wsl::split_key_id(owner) else {
+                continue;
+            };
+            let Some(distro) =
+                tw_adopt::wsl::distro_for_key(owner, distros.iter().map(|d| d.name.as_str()))
+            else {
+                continue;
+            };
+            let Some(client) = tw_adopt::clients::adoptable()
+                .into_iter()
+                .find(|c| c.id == id)
+            else {
+                continue;
+            };
+            let name = format!(
+                "{} ({})",
+                client.name,
+                crate::clients::wsl::place_name(distro)
+            );
+            if let Some(r) = out
+                .iter_mut()
+                .find(|r| r.client == name && r.ok && !r.skipped)
+                && let Err(w) =
+                    crate::clients::network::release(local.then_some(&control), owner).await
+            {
+                r.warning = Some(crate::core_text::text(&w));
+            }
+        }
     }
     Ok(out)
 }

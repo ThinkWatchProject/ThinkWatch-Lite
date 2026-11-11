@@ -176,7 +176,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   DeleteGroup: refuse,
   KnownModels: () => knownModels(),
   // 示例配置里没有别名
-  Aliases: () => ({ aliases: [], suggestions: [] }),
+  Aliases: () => ({ aliases: [], suggestions: [], hide_originals_supported: true }),
   CreateAlias: refuse,
   UpdateAlias: refuse,
   DeleteAlias: refuse,

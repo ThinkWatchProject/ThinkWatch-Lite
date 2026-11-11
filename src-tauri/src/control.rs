@@ -219,6 +219,12 @@ impl ControlClient {
         }
     }
 
+    /// Independent endpoint selection for a multi-step transaction. Retargeting
+    /// the UI must not redirect rollback or listener writes to another Core.
+    pub fn snapshot(&self) -> Self {
+        Self::to(self.target())
+    }
+
     /// 换一个 core 连。**所有克隆一起换**，正在订阅的事件流会被叫醒重连
     pub fn retarget(&self, target: Target) {
         *self.target.write().expect("锁未中毒") = target;

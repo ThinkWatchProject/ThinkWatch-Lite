@@ -251,7 +251,8 @@ import { Sparkline, sparklineWidth } from "@/ui/sparkline";
 - **Past-year heatmap** (`src/overview/Year.tsx`): one cell per day, `--data-1` mixed into
   `--surface` at 16 / 32 / 52 / 78% by quartile of the days with usage (never brighter than
   `--data-1` itself), `--surface` for none, `--surface` at 55% for days before recording
-  started; the selected range is outlined.
+  started. Colors always represent usage; only the hovered or keyboard-focused day is
+  highlighted, without persistent outlines for the overview's time range.
 - Hand-roll a bar or a chart only when none of these fits, and then follow the same rules.
 
 ---

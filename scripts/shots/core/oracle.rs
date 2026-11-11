@@ -76,6 +76,7 @@ async fn dump() {
         if name == "status" {
             v["pid"] = 0.into();
             v["config_path"] = "".into();
+            v["gateway_probe"] = "fixture-gateway".into();
         }
         write(name, &v);
     }

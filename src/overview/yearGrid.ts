@@ -281,11 +281,6 @@ export function monthLabels(days: readonly Day[]): (number | null)[] {
   return out;
 }
 
-/** 这一天和 `[from, to)` 有没有交集（所选时间范围描边） */
-export function overlaps(d: Day, from: number, to: number): boolean {
-  return d.at < to && d.end > from;
-}
-
 /**
  * 方向键从第 `i` 格往哪走：左右是一周，上下是一天。走到画不出来的格子（一年之前、今天之后）
  * 或者出了网格就停在原地。`Home` / `End` 是最早的一天和今天。

@@ -1,9 +1,11 @@
 {
-  "api_version": 58,
+  "api_version": 59,
   "clients": 4,
   "config_path": "",
   "draining": 0,
   "gateway_addr": null,
+  "gateway_addrs": [],
+  "gateway_probe": "fixture-gateway",
   "gateway_reachable": [],
   "handover": "idle",
   "in_flight": 0,
@@ -16,5 +18,5 @@
     "reachable": []
   },
   "uptime_secs": 0,
-  "version": "0.90.0"
+  "version": "0.93.0"
 }

@@ -448,6 +448,7 @@
     "gw.route.all_selected_disabled": "路由选中的上游均已停用：{detail}",
     "gw.route.protocol_mismatch": "{path} 只能由 {wanted} 格式的上游处理，而上游「{upstream}」是 {got} 格式。",
     "gw.count_tokens.bedrock_upstream": "无法通过 AWS Bedrock 上游「{upstream}」计算 token 数。",
+    "gw.convert.reasoning_history_incompatible": "带签名的思考历史无法发送给上游「{upstream}」：来源或请求格式不兼容。",
     "gw.convert.failed": "无法转换为上游「{upstream}」的格式：{detail}",
     "gw.convert.tool_unsendable": "请求要求使用工具 {tool}，但无法按上游「{upstream}」的格式发送。网页搜索这类服务端工具只能由所属的服务商执行。",
     "gw.convert.tools_unsendable": "请求要求调用工具，但其中的工具都无法按上游「{upstream}」的格式发送。网页搜索这类服务端工具只能由所属的服务商执行。",
@@ -1041,7 +1042,6 @@
     "wsl.unknown": "没有名为 {distro} 的 WSL 发行版。",
     "wsl.via_windows": "WSL · {distro} 中的 {client} 经由 Windows 上的网关发送请求。",
     "wsl.none": "这台电脑上没有 WSL 发行版。",
-    "wsl.unreachable": "当前的网络模式下，WSL · {distro} 无法访问 Windows 上的网关。",
     "wsl.shutdown_failed": "未能停止 WSL：{detail}",
     "wslconfig.encoding": "{path} 既不是 UTF-8 也不是 UTF-16 文本，未作修改。可手动在其中的 [wsl2] 段设置 networkingMode=mirrored。",
     "adopt.manual.claude_desktop.open": "在 Claude Desktop 中依次打开 Help → Troubleshooting → Enable Developer Mode，然后打开 Developer → Configure Third-Party Inference。",
@@ -1172,6 +1172,13 @@
     "sync.config.unknown_proxy": "同步位置经代理「{proxy}」连接，但 proxies 中未定义该代理；内置的选项为 direct 和 system。",
     "sync.config.plain_http_proxy": "内网的 http:// 同步位置不能经代理「{proxy}」连接：密码会以明文经过代理。请使用直连，或改用 https:// 地址。",
     "sync.config.blank_exclude": "sync.exclude 中有空的上游名称。",
-    "sync.config.multiline": "sync.{field} 须只占一行。"
+    "sync.config.multiline": "sync.{field} 须只占一行。",
+    "wsl.network_unavailable": "无法识别 WSL · {distro} 可用的 Windows 网关地址。请启动发行版并检查默认路由；连通性检测需要 WSL 内安装 curl 或 python3。",
+    "wsl.probe_failed": "启用监听后，WSL · {distro} 仍无法访问此网关。请检查 Windows 防火墙和 WSL 网络；客户端配置尚未更改。",
+    "wsl.listener_change": "本次接管还会启用 Windows 网关监听 {address}。保留已有监听和密钥校验；仅在现有规则未放行时添加所需的 WSL 来源。",
+    "wsl.listener_restore": "同时移除 Lite 添加且已无客户端需要的监听和来源规则；独立修改过的设置会保留。",
+    "wsl.rollback_failed": "WSL 接管失败，且因设置已变化或控制面不可用，无法回退监听：{detail}。请检查网关监听设置；接管记录已保留。",
+    "wsl.stopped": "WSL · {distro} 已停止。启动发行版后才能检查网关连通性。",
+    "wsl.listener_cleanup_failed": "客户端配置已还原，但未能移除闲置的 WSL 监听或来源规则：{detail}。请检查网关监听设置；清理记录已保留。"
   }
 }
