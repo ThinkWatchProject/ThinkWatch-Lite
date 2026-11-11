@@ -39,8 +39,14 @@ pub async fn restore_all(state: tauri::State<'_, crate::AppState>) -> Out<Vec<Re
             .map(|w| crate::core_text::text(&w));
     }
     if let Ok(j) = crate::clients::network::load() {
+        let distros = crate::clients::wsl::distros();
         for owner in j.clients.keys() {
-            let Some((id, distro)) = tw_adopt::wsl::split_key_id(owner) else {
+            let Some((id, _)) = tw_adopt::wsl::split_key_id(owner) else {
+                continue;
+            };
+            let Some(distro) =
+                tw_adopt::wsl::distro_for_key(owner, distros.iter().map(|d| d.name.as_str()))
+            else {
                 continue;
             };
             let Some(client) = tw_adopt::clients::adoptable()
