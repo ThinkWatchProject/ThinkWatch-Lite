@@ -51,6 +51,7 @@ export const shareDialogText = messages(
       routes: "路由",
       disabled: "停用状态",
       tiers: "200K 以上的分档价格",
+      reasoningEffort: "手动推理档位（请使用配置包分享）",
       rejected: (what: string) => `${what}（链接不接受其中的字符）`,
     },
     /** 链接写不进去、去掉了的那一项 */
@@ -117,6 +118,7 @@ export const shareDialogText = messages(
       routes: "routes",
       disabled: "disabled state",
       tiers: "tiered prices above 200K",
+      reasoningEffort: "manual reasoning levels (use a config package to share them)",
       rejected: (what: string) => `${what} (characters links do not accept)`,
     },
     params: {

@@ -347,6 +347,7 @@ function Row({
       : null,
     m.reasoning_source === "manual" && m.reasoning != null ? t.manualReasoning(m.reasoning) : null,
     m.image_input_source === "manual" && m.image_input != null ? t.manualImageInput(m.image_input) : null,
+    m.manual_reasoning_effort != null ? t.manualEffort(m.manual_reasoning_effort.supported_levels.join(" / ")) : null,
   ].filter((x): x is string => x !== null);
   // 右键和行尾「…」共用这一份
   const items: MenuItems = [
