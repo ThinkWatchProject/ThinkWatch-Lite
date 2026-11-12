@@ -472,6 +472,7 @@
     "gw.upstream.period_used_up": "上游「{upstream}」当天、当周或当月的一条用量上限已用完，将于 {resets} 重置。",
     "gw.upstream.status": "上游「{upstream}」返回 {status}。",
     "gw.upstream.status_message": "上游「{upstream}」返回 {status}：{message}",
+    "gw.upstream.response_error": "上游「{upstream}」在响应中返回错误：{message}",
     "gw.upstream.stream_opening_error": "上游「{upstream}」开始回答后、给出任何内容之前报错（{kind}）：{message}",
     "gw.upstream.stream_ended_early": "上游在给出任何内容之前结束了回答。",
     "gw.upstream.idle_timeout": "上游「{upstream}」在 {secs} 秒内没有发出内容。",
