@@ -97,7 +97,7 @@ jobs:
     # macOS, Windows and Linux each get their own job: every platform has
     # `cfg` branches (menu bar, notifications, theme, login-shell env) that
     # only its own compiler ever sees.
-    runs-on: macos-latest
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
