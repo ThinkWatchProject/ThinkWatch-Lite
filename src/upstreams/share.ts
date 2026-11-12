@@ -45,7 +45,8 @@ export type Left =
   | "proxy"
   | "routes"
   | "disabled"
-  | "tiers";
+  | "tiers"
+  | "reasoningEffort";
 
 export interface Shared {
   proposal: ImportProposal;
@@ -109,6 +110,7 @@ function sheetOf(s: PriceSheetInput | null): { sheet: ImportSheet | null; tiers:
 export function shareProposal(p: ProviderView, extra: ShareExtra, secrets: boolean): Shared {
   const f = formFromView(p);
   const left = new Set<Left>();
+  if (extra.models?.some((row) => row.manual_reasoning_effort != null)) left.add("reasoningEffort");
   const chatgpt = p.protocol === "chatgpt";
   let auth: ImportAuth;
   if (chatgpt || f.authMode === "account") {

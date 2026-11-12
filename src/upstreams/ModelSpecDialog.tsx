@@ -10,30 +10,20 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/ui/input-group";
+import { Checkbox } from "@/ui/checkbox";
+import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import type { ModelRow, SpecSource } from "@/types";
+import type { ModelRow, SpecSource, ReasoningEffort, ReasoningLevel } from "@/types";
 import { api } from "./api";
 import { modelsKey } from "./data";
 import { errorText } from "./labels";
-import { isEmptySpec, manualOf, sameSpec, specOf, tokensOf, type SpecFlag } from "./modelSpec";
+import { effortOf, isEmptySpec, manualOf, sameSpec, specOf, tokensOf, toggleEffortLevel, REASONING_LEVELS, type EffortForm, type EffortMode, type SpecFlag } from "./modelSpec";
 import { modelSpecDialogText } from "./ModelSpecDialog.i18n";
 import { DialogError, FormItem } from "./parts";
 
-/**
- * 手写一家上游的一个模型的上下文窗口、输出上限、推理、图片输入（`PUT /provider-model-spec`）。
- *
- * 价目表不认识的中转站模型说不出上下文窗口，价目表写错的也有：这里写的只管这一家的
- * 这一个模型，写了就优先于价目表。**四项都不写就是删掉手写的**，回到价目表。
- *
- * 格子里是手写的那个数；没手写的空着，占位写价目表给的数（没有就说价目表中没有）——
- * 留空是什么意思，看占位就知道。推理、图片输入是三段：价目表 / 支持 / 不支持，价目表怎么说
- * 写在下面一行。
- *
- * 挂载方：上游表「模型」一格的弹窗（「规格…」）、编辑上游对话框的「模型」一节（上下文窗口
- * 那一格、行菜单的「规格…」）。对话框挂在弹窗外面：弹窗一收起，里面的东西就卸掉了。
- */
+/** Per-provider model overrides; automatic values are shown separately and never saved as overrides. */
 export function ModelSpecDialog({
   open,
   onOpenChange,
@@ -55,7 +45,7 @@ export function ModelSpecDialog({
   return (
     <Dialog open={open && row !== null} onOpenChange={onOpenChange}>
       {/* 点到对话框外面不关：填了一半的数不该因为一次误点丢掉。Esc、×、取消照常 */}
-      <DialogContent className="flex flex-col gap-4 sm:max-w-[520px]" onInteractOutside={(e) => e.preventDefault()}>
+      <DialogContent className="flex max-h-[90dvh] flex-col gap-4 overflow-y-auto sm:max-w-[560px]" onInteractOutside={(e) => e.preventDefault()}>
         {/* 内容只在开着时挂上：每次打开都从这一行此刻的值填起 */}
         {row && (
           <Body
@@ -90,6 +80,7 @@ function Body({
   const [context, setContext] = useState(manual.context);
   const [output, setOutput] = useState(manual.output);
   const [reasoning, setReasoning] = useState(manual.reasoning);
+  const [effort, setEffort] = useState(manual.effort);
   const [imageInput, setImageInput] = useState(manual.imageInput);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -99,11 +90,11 @@ function Body({
   */
   const [base] = useState(configVersion);
 
-  const spec = specOf({ context, output, reasoning, imageInput });
-  /** 打开时的四项。打开时的值是 core 给的，一定写得对 */
+  const spec = specOf({ context, output, reasoning, imageInput, effort });
+  /** Compare with the manual values from when the dialog opened. */
   const before = specOf(manual)!;
   const changed = spec !== undefined && !sameSpec(spec, before);
-  /** 原来手写过、现在四项都不写了：保存就是删掉，回到价目表 */
+  /** All editable overrides are cleared; preserve advanced settings owned by Core. */
   const removing = spec !== undefined && isEmptySpec(spec) && !isEmptySpec(before);
 
   async function save() {
@@ -169,7 +160,10 @@ function Body({
         <FlagField
           label={t.reasoning}
           value={reasoning}
-          onChange={setReasoning}
+          onChange={(next) => {
+            setReasoning(next);
+            if (next === "no") setEffort(effortOf(null));
+          }}
           table={row.reasoning}
           source={row.reasoning_source}
         />
@@ -181,6 +175,8 @@ function Body({
           source={row.image_input_source}
         />
       </div>
+
+      <EffortField row={row} value={effort} onChange={setEffort} disabled={reasoning === "no"} />
 
       <DialogError error={error} />
 
@@ -204,8 +200,9 @@ function Body({
 function placeholderOf(
   value: number | null | undefined,
   source: SpecSource | null | undefined,
-  t: { fromTable: (n: string) => string; useTable: string; notInTable: string },
+  t: { fromTable: (n: string) => string; fromUpstream: (n: string) => string; useTable: string; notInTable: string },
 ): string {
+  if (source === "upstream" && value != null) return t.fromUpstream(value.toLocaleString());
   if (source === "price_table" && value != null) return t.fromTable(value.toLocaleString());
   if (source === "manual") return t.useTable;
   return t.notInTable;
@@ -231,7 +228,8 @@ function FlagField({
 }) {
   const t = useText(modelSpecDialogText);
   const desc =
-    source === "price_table" && table != null
+    source === "upstream" && table != null ? t.fromUpstream(table ? t.yes : t.no)
+    : source === "price_table" && table != null
       ? t.fromTable(table ? t.yes : t.no)
       : source === "manual"
         ? undefined
@@ -290,5 +288,66 @@ function TokensField({
         </InputGroupAddon>
       </InputGroup>
     </FormItem>
+  );
+}
+
+function EffortField({ row, value, onChange, disabled }: {
+  row: ModelRow; value: EffortForm; onChange: (v: EffortForm) => void; disabled: boolean;
+}) {
+  const t = useText(modelSpecDialogText);
+  const describe = (profile: ReasoningEffort | null | undefined) => {
+    if (profile == null) return t.unknown;
+    if (profile.supported_levels.length === 0) return t.noAdjustable;
+    return profile.supported_levels.join(" / ") + (profile.default_level ? ` · ${t.defaultLevel}: ${profile.default_level}` : "");
+  };
+  const source = row.reasoning_effort_source === "manual" ? t.manual
+    : row.reasoning_effort_source === "upstream" ? t.upstream
+    : row.reasoning_effort_source === "price_table" ? t.priceTable : t.unknown;
+  function mode(next: EffortMode) {
+    const levels = value.levels.length ? value.levels : [...(row.reported_reasoning_effort?.supported_levels ?? [])];
+    onChange({ ...value, mode: next, levels });
+  }
+  return (
+    <div className="space-y-3 border-t pt-4">
+      <FormItem label={t.effort} desc={disabled ? t.effortDisabled : t.effortHelp}>
+        <Segmented<EffortMode>
+          label={t.effort} value={value.mode} disabled={disabled} onChange={mode}
+          options={[
+            { id: "auto", label: t.table },
+            { id: "none", label: t.noAdjustable },
+            { id: "manual", label: t.manual },
+          ]}
+        />
+      </FormItem>
+      {!disabled && value.mode === "manual" && (
+        <>
+          <fieldset className="space-y-2">
+            <legend className="tw-label text-muted-foreground">{t.supportedLevels}</legend>
+            <div className="flex flex-wrap gap-x-4 gap-y-3">
+              {REASONING_LEVELS.map((level) => (
+                <label key={level} className="flex cursor-pointer items-center gap-1.5 tw-body">
+                  <Checkbox checked={value.levels.includes(level)} onCheckedChange={() => onChange(toggleEffortLevel(value, level))} />
+                  <span>{level}</span>
+                </label>
+              ))}
+            </div>
+            {value.levels.length === 0 && <p className="tw-label text-destructive">{t.chooseLevel}</p>}
+          </fieldset>
+          <FormItem label={t.defaultLevel} htmlFor="spec-effort-default" desc={t.defaultHelp}>
+            <NativeSelect id="spec-effort-default" value={value.defaultLevel} onChange={(e) => onChange({ ...value, defaultLevel: e.target.value as ReasoningLevel | "auto" })}>
+              <NativeSelectOption value="auto">{t.table}</NativeSelectOption>
+              {REASONING_LEVELS.filter((level) => value.levels.includes(level)).map((level) => <NativeSelectOption key={level} value={level}>{level}</NativeSelectOption>)}
+            </NativeSelect>
+          </FormItem>
+        </>
+      )}
+      <div className="space-y-1 rounded-lg bg-muted/50 p-3 tw-label text-muted-foreground">
+        <p>{t.reported}: {describe(row.reported_reasoning_effort)}</p>
+        <p>{t.savedEffective}: {describe(row.reasoning_effort)} · {source}</p>
+        {!!row.reasoning_effort_filtered_levels?.length && <p>{t.filtered(row.reasoning_effort_filtered_levels.join(" / "))}</p>}
+        {row.aliases.length > 0 && <p>{t.aliasEffortHelp}</p>}
+      </div>
+      {value.mode !== "auto" && <Button type="button" variant="ghost" size="sm" onClick={() => onChange(effortOf(null))}>{t.resetEffort}</Button>}
+    </div>
   );
 }
