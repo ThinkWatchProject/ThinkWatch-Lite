@@ -814,3 +814,108 @@ async fn a_tool_call_plugin_is_turned_on_only_through_the_confirmed_save() {
     .await
     .unwrap();
 }
+
+/// The desktop transport preserves effort edits and returns the Core's effective profile.
+#[tokio::test]
+async fn manual_effort_profiles_round_trip_through_the_desktop_control_client() {
+    use tw_api::{ModelSpecSave, ReasoningEffort, ReasoningEffortChange, ReasoningLevel::*, ep};
+    let core = Core::start();
+    core.wait_ready().await;
+    let c = core.ok();
+    let provider = "manual-effort";
+    let model = "private-model";
+    c.call::<ep::CreateProvider>(
+        &[],
+        &serde_json::from_value(serde_json::json!({
+            "provider":{"name":provider,"base_url":"http://127.0.0.1:1/v1","protocol":"openai-chat"}
+        }))
+        .unwrap(),
+    )
+    .await
+    .unwrap();
+    c.call::<ep::SetManualModels>(
+        &[],
+        &tw_api::ManualModelsSave {
+            provider: provider.into(),
+            models: vec![model.into()],
+            base_version: None,
+        },
+    )
+    .await
+    .unwrap();
+    let profile = ReasoningEffort {
+        supported_levels: vec![Medium, High, Ultra],
+        default_level: Some(Ultra),
+    };
+    c.call::<ep::SetModelSpec>(
+        &[],
+        &ModelSpecSave {
+            provider: provider.into(),
+            model: model.into(),
+            reasoning_effort: ReasoningEffortChange::Set {
+                value: profile.clone(),
+            },
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let rows = c
+        .call::<ep::ProviderModels>(&[provider], &())
+        .await
+        .unwrap();
+    let row = rows.models.iter().find(|r| r.id == model).unwrap();
+    assert_eq!(row.manual_reasoning_effort.as_ref(), Some(&profile));
+    assert_eq!(row.reasoning, Some(true));
+    assert_eq!(row.manual_reasoning, None);
+    assert_eq!(
+        row.reasoning_effort,
+        Some(ReasoningEffort {
+            supported_levels: vec![Medium, High],
+            default_level: Some(Medium)
+        })
+    );
+    assert_eq!(row.reasoning_effort_filtered_levels, [Ultra]);
+    c.call::<ep::SetModelSpec>(
+        &[],
+        &ModelSpecSave {
+            provider: provider.into(),
+            model: model.into(),
+            context_window: Some(64000),
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let rows = c
+        .call::<ep::ProviderModels>(&[provider], &())
+        .await
+        .unwrap();
+    let row = rows.models.iter().find(|r| r.id == model).unwrap();
+    assert_eq!(
+        row.manual_reasoning_effort.as_ref(),
+        Some(&profile),
+        "omitted effort edits keep the original profile"
+    );
+    c.call::<ep::SetModelSpec>(
+        &[],
+        &ModelSpecSave {
+            provider: provider.into(),
+            model: model.into(),
+            reasoning_effort: ReasoningEffortChange::Auto,
+            ..Default::default()
+        },
+    )
+    .await
+    .unwrap();
+    let rows = c
+        .call::<ep::ProviderModels>(&[provider], &())
+        .await
+        .unwrap();
+    let row = rows.models.iter().find(|r| r.id == model).unwrap();
+    assert!(row.manual_reasoning_effort.is_none());
+    assert!(
+        row.reasoning_effort.is_none(),
+        "missing upstream metadata remains unknown after reset"
+    );
+}

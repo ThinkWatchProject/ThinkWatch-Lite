@@ -21,17 +21,18 @@ edition = "2024"
 rust-version = "1.90"
 license = "MIT"
 
-# core 的几个 crate。**钉在 tag 上，不是分支，而且全部钉同一个 tag。**跟着 `main`
+# 配套 Core 变更先固定到同一个不可变提交；Core 发版后换成该版本的 tag 再打包。
+# 发布版本的 core crate 全部钉同一个 tag。跟着 `main`
 # 走意味着同一份源码今天和明天编出来的东西不一样；而更要紧的是，打进 `.app` 的那个
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.94.0" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.94.0" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.94.0" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.94.0" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.94.0" }
-tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.94.0" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "1bfb70ead3e5e9f5bc7a9092220d1d58f6a9bee7" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "1bfb70ead3e5e9f5bc7a9092220d1d58f6a9bee7" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "1bfb70ead3e5e9f5bc7a9092220d1d58f6a9bee7" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "1bfb70ead3e5e9f5bc7a9092220d1d58f6a9bee7" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "1bfb70ead3e5e9f5bc7a9092220d1d58f6a9bee7" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "1bfb70ead3e5e9f5bc7a9092220d1d58f6a9bee7" }
 
 [lib]
 name = "thinkwatch_lite_lib"

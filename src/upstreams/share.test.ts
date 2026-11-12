@@ -228,3 +228,12 @@ describe("分享上游：链接里的提议", () => {
     expect(dropParam(proposal, "service")).toBeNull();
   });
 });
+
+
+it("分享链接明确列出未包含的手动档位，不把自动档位写成手动配置", () => {
+  const manual = shareProposal(view(), { ...NONE, models: [{ id: "private", enabled: true, estimated: false, aliases: [], manual: true, listed: false, manual_reasoning_effort: { supported_levels: ["high"] } }] }, false);
+  expect(manual.left).toContain("reasoningEffort");
+  const automatic = shareProposal(view(), { ...NONE, models: [{ id: "private", enabled: true, estimated: false, aliases: [], manual: false, listed: true, reasoning_effort: { supported_levels: ["high"] }, reasoning_effort_source: "upstream" }] }, false);
+  expect(automatic.left).not.toContain("reasoningEffort");
+  expect(automatic.proposal.specs).toEqual([]);
+});
