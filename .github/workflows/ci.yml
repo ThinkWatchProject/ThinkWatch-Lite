@@ -77,7 +77,9 @@ jobs:
       - name: Unit tests
         run: pnpm test
       - name: Build
-        run: pnpm build
+        # Typecheck above already checks the app and screenshot tooling. Keep
+        # pnpm build's typecheck for local/release builds; CI only needs Vite here.
+        run: pnpm exec vite build
 
   # Formatting doesn't depend on the platform, so it is checked once, here,
   # and the three platform jobs below only compile and test. It needs no
@@ -106,11 +108,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          # **只在 dev 上存。**一个 PR 读得到的缓存只有三处：它自己的、目标分支（dev）
-          # 的、默认分支（main）的，读不到别的 PR 存的。PR 上存的那份只有同一个 PR
-          # 再推一次才用得上，却一样大，挤占仓库 10 GB 的缓存额度、把 dev 的挤掉。
-          # main 只是快进，它的推送和 dev 上同一笔一样，存了也没人读
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          # Main cannot restore dev's branch-scoped cache. Save both trusted
+          # branches so main and its PRs can reuse the default branch's
+          # dependencies. PRs restore caches without writing copies.
+          save-if: ${{ github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main' }}
       # **一个只检查代码的任务为什么要下载一个发布产物。**
       #
       # `tauri.conf.json` 声明 `.app` 里装着 twcore，而 Tauri 的
@@ -162,12 +163,10 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
-          # **失败也存。**这个 action 默认只在任务成功时保存缓存，而一个刚
-          # 立起来、还在逐条修的任务恰恰一次都不会成功 —— 于是「红 → 不存
-          # 缓存 → 从零编译 → 还是红」自己维持住了。PR 上不存（见 macOS 那一档），
-          # 所以这条只对 dev 起作用
+          # Keep dependencies after a failed trusted-branch build as well.
+          # PRs only restore; main needs its own cache (see the macOS job).
           cache-on-failure: true
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main' }}
 
       # 理由同 macOS 那一档：`tauri.conf.json` 声明包里装着 twcore，而 Tauri
       # 的 build script 在**编译期**就校验那个文件在不在。
@@ -276,7 +275,7 @@ jobs:
           workspaces: src-tauri
           cache-on-failure: true
           # 见 macOS 那一档
-          save-if: ${{ github.ref == 'refs/heads/dev' }}
+          save-if: ${{ github.ref == 'refs/heads/dev' || github.ref == 'refs/heads/main' }}
 
       # 理由同 macOS 那一档：`tauri.conf.json` 声明包里装着 twcore，而 Tauri
       # 的 build script 在**编译期**就校验那个文件在不在；接缝测试还要真的
