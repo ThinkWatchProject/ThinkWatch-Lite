@@ -7,6 +7,8 @@
 // i18n 表里取，所以中英两种界面走的是同一段代码。
 import { textOf } from "@/i18n";
 import { connText } from "@/connection/connection.i18n";
+import { webToolsText } from "@/routing/WebTools.i18n";
+import { routingPageText } from "@/routing/RoutingPage.i18n";
 import { routingText } from "@/routing/routing.i18n";
 import { byText, choose, click, idle, type, waitFor } from "./drive";
 
@@ -41,6 +43,33 @@ export const SCENES: Scene[] = [
   { id: "keys", page: "keys" },
   { id: "upstreams", page: "upstreams" },
   { id: "routing", page: "routing" },
+  {
+    id: "web-tools", page: "routing",
+    setup: async () => {
+      click(await waitFor(() => byText(textOf(routingPageText).probes)));
+      const title = await waitFor(() => byText(textOf(webToolsText).title, "section div"));
+      title.scrollIntoView({ block: "center" });
+    },
+  },
+  {
+    id: "web-tools-config", page: "routing", remote: true,
+    setup: async () => {
+      click(await waitFor(() => byText(textOf(routingPageText).probes)));
+      click(await waitFor(() => byText(textOf(webToolsText).configure)));
+      await waitFor("[role=dialog]");
+    },
+  },
+  {
+    id: "web-tools-language", page: "routing", remote: true,
+    setup: async () => {
+      click(await waitFor(() => byText(textOf(routingPageText).probes)));
+      click(await waitFor(() => byText(textOf(webToolsText).configure)));
+      const input = await waitFor<HTMLInputElement>("[role=dialog] input[id$='-language']");
+      click(input);
+      type(input, textOf(webToolsText) === webToolsText.zh ? "中文" : "Chinese");
+      await waitFor("[role=listbox]");
+    },
+  },
   { id: "security", page: "security" },
   { id: "mcp", page: "mcp" },
   { id: "settings", page: "settings" },

@@ -3,7 +3,7 @@ import { messages } from "@/i18n";
 export const probesTabText = messages(
   {
     intro:
-      "客户端自动发起的辅助请求，不由用户操作触发，同样产生费用。这一层先过，剩下的才轮到规则。",
+      "配置客户端辅助请求及联网工具的执行方式。设为转发的请求继续按路由规则选择上游。",
     intercept: "本地应答",
     interceptWhat: "由网关直接应答，不发送到上游，不产生费用。",
     forward: "转发",
@@ -12,7 +12,7 @@ export const probesTabText = messages(
   },
   {
     intro:
-      "Auxiliary requests that clients send on their own, without any user action. They incur costs as well, and they pass through here before any rule is evaluated.",
+      "Choose how client auxiliary requests and web tools are handled. Forwarded requests continue through routing rules.",
     intercept: "Answer locally",
     interceptWhat: "The gateway answers directly. Nothing is sent upstream and no cost is incurred.",
     forward: "Forward",

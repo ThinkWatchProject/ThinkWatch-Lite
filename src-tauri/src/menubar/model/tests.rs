@@ -244,7 +244,7 @@ fn today_leads_with_tokens_and_puts_the_cost_last_in_the_small_line() {
         d.meta.iter().map(|m| m.failed).collect::<Vec<_>>(),
         [false, true, false]
     );
-    assert_eq!(d.action, Action::Open("dashboard"));
+    assert_eq!(d.action, Action::Open("dashboard".into()));
     assert_eq!(d.line(), "今日 1.2M token · 128 次 · 失败 2 · $3.47");
     // 大字是取整过的：悬停提示里写准数
     assert_eq!(
@@ -632,7 +632,7 @@ fn a_used_up_quota_offers_the_reset_credits_only_when_there_are_some() {
     assert_eq!(credits.right.as_deref(), Some("可用 2 张"));
     assert_eq!(
         credits.action,
-        Some(Action::Open("upstreams")),
+        Some(Action::Open("upstreams".into())),
         "菜单里不直接用卡"
     );
     s.quotas[0].reset_credits = Some(0);
@@ -677,7 +677,7 @@ fn each_quota_window_reported_gets_its_own_row() {
     assert_eq!(w[0].1.line("ChatGPT"), "ChatGPT 每周 31% · 4 天后重置");
     assert!(rows.iter().any(|r| matches!(
         r,
-        Row::Quota { action, .. } if *action == Action::Open("upstreams")
+        Row::Quota { action, .. } if *action == Action::Open("upstreams".into())
     )));
     // 紧跟在「今日」后面，之后一条分隔线
     let at = rows

@@ -7,6 +7,7 @@ import { useText } from "@/i18n";
 import { PROBES, probeLabel } from "@/labels";
 import { patchConfig } from "@/patch";
 import type { Overview, ProbeMode } from "@/types";
+import { WebTools } from "./WebTools";
 import { probesTabText } from "./ProbesTab.i18n";
 
 /**
@@ -94,6 +95,7 @@ export function ProbesTab({ ov }: { ov: Overview }) {
         })}
       </ul>
       <p className="tw-label text-muted-foreground">{t.ruleHint}</p>
+      <WebTools overview={ov} />
     </div>
   );
 }

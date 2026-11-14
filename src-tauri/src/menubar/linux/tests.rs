@@ -43,7 +43,7 @@ fn tray(rows: Vec<Row>) -> (LinuxTray, Clicks) {
 fn activation_follows_the_window_opened_by_the_action() {
     for action in [
         Action::OpenMain,
-        Action::Open("overview"),
+        Action::Open("overview".into()),
         Action::OpenRequest(42),
         Action::OpenNotice("gateway:failed".into()),
         Action::AllNotices,
