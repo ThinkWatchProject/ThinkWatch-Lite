@@ -50,6 +50,9 @@
 # 同一个分支再推一次，还在跑的那次演练就取消（`concurrency`）。**tag 不取消**：
 # 发版的那次运行跑到一半被打断，可能只挂上了一部分文件。
 #
+# `rehearse/macos/` runs only the native macOS build and release page checks.
+# Windows/Linux artifacts from the release remain available separately.
+#
 # 不用手工触发（`workflow_dispatch`）：那只认默认分支上的这份文件，而改动
 # 要先进 dev、过很久才到 main —— 等于改完的流水线没法在合并之前演练。
 name: Release
@@ -90,7 +93,8 @@ jobs:
     if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') }}
     # 只发 Apple Silicon。**不是「暂时」** —— 覆盖不到的那部分机器
     # 拿到的是一个能下载但打不开的文件，那比没有更糟。
-    runs-on: macos-latest
+    # Use the supported macOS 15 ARM64 pool while macOS 26 is capacity constrained.
+    runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
 
@@ -266,6 +270,7 @@ jobs:
           if-no-files-found: error
 
   windows:
+    if: ${{ !startsWith(github.ref_name, 'rehearse/macos/') }}
     name: ThinkWatch Lite (${{ matrix.target }})
     strategy:
       # 一个架构挂了不取消另一个：演练的时候两边的问题想一次看全
@@ -554,8 +559,8 @@ jobs:
 
   linux:
     name: ThinkWatch Lite (${{ matrix.target }})
-    # 只演练 Windows 的分支不打它，见文件开头
-    if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') }}
+    # Focused Windows and macOS rehearsals skip Linux.
+    if: ${{ !startsWith(github.ref_name, 'rehearse/windows/') && !startsWith(github.ref_name, 'rehearse/macos/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -773,7 +778,8 @@ jobs:
     needs: [app, windows, windows-e2e, linux, release-body]
     # 演练到上面为止
     if: github.ref_type == 'tag'
-    runs-on: macos-latest
+    # Publication only assembles verified artifacts; it needs no macOS runner.
+    runs-on: ubuntu-latest
     # 发完把 cask 推给 tap 用的那把密钥（只对 homebrew-tap 一个仓库有推送权）。
     # **写在 job 上，不写在步骤上** —— 步骤自己的 `env` 读不到它自己的 `if`，
     # 而那一步要在没配密钥时整步跳过

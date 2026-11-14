@@ -9,6 +9,8 @@
 
 pub mod model;
 
+#[cfg(target_os = "macos")]
+pub mod helper;
 #[cfg(any(target_os = "linux", test))]
 mod linux;
 #[cfg(target_os = "macos")]
@@ -111,22 +113,9 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
     set_style(crate::prefs::load(&crate::data_dir()).menubar);
     #[cfg(target_os = "macos")]
     {
-        let mtm = objc2::MainThreadMarker::new()
-            .ok_or_else(|| anyhow::anyhow!("菜单栏要在主线程上建"))?;
-        let (a, b) = (app.clone(), app.clone());
-        macos::install(
-            mtm,
-            move |action| handle(&a, action),
-            move |open| {
-                OPEN.store(open, Ordering::Relaxed);
-                if open && let Some(st) = b.try_state::<AppState>() {
-                    st.menubar_now.notify_one();
-                }
-            },
-        );
+        helper::install(app)?;
         // 第一帧：还没收到任何数，但菜单栏上不能是空的
-        let (bar, rows) = model::build(&Snapshot::default(), drawn_style());
-        macos::apply(mtm, &bar, &rows);
+        present(&Snapshot::default());
     }
     #[cfg(target_os = "linux")]
     linux::install(app)?;
@@ -136,6 +125,14 @@ pub fn install(app: &tauri::AppHandle) -> anyhow::Result<()> {
     let h = app.clone();
     tauri::async_runtime::spawn(async move { run(h).await });
     Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn set_open(app: &tauri::AppHandle, open: bool) {
+    OPEN.store(open, Ordering::Relaxed);
+    if open && let Some(st) = app.try_state::<AppState>() {
+        st.menubar_now.notify_one();
+    }
 }
 
 /// 收数、画、等下一个理由。**被事件叫醒，不是定时醒**：空闲时一次都不醒
@@ -161,7 +158,7 @@ async fn run(app: tauri::AppHandle) {
         // `menubar_now` 叫醒这里，收一次、画出来
         if drawn_style() == Style::Hidden {
             #[cfg(target_os = "macos")]
-            macos::on_main(macos::hide);
+            helper::hide();
             now.notified().await;
             continue;
         }
@@ -258,13 +255,16 @@ fn sleep_until(at: Option<tokio::time::Instant>) -> tokio::time::Sleep {
 
 /// 把快照交给画的那一层
 fn present(snap: &Snapshot) {
-    let (bar, rows) = model::build(snap, drawn_style());
     #[cfg(target_os = "macos")]
-    macos::on_main(move |mtm| macos::apply(mtm, &bar, &rows));
-    #[cfg(target_os = "linux")]
-    linux::apply(&bar, &rows);
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-    tray::apply(&bar, &rows);
+    helper::present(snap, drawn_style());
+    #[cfg(not(target_os = "macos"))]
+    {
+        let (bar, rows) = model::build(snap, drawn_style());
+        #[cfg(target_os = "linux")]
+        linux::apply(&bar, &rows);
+        #[cfg(not(target_os = "linux"))]
+        tray::apply(&bar, &rows);
+    }
 }
 
 /// 只更新随时间走的那几样：现在几点、谁在跑、速率。**问 core 要**（`/live`）：

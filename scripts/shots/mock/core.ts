@@ -88,6 +88,12 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   ConfigRepairPlan: () => ({ base_version: configVersion(), fixes: [] }),
   RepairConfig: refuse,
   SaveListen: refuse,
+  WebTools: () => ({ config_version: configVersion(), system_locale: { language: "zh-Hans", region: "CN" }, config: {
+    mode: "upstream", engines: [], proxy: "system", language: "", region: "", allowed_domains: [], blocked_domains: [],
+    max_results: 8, read_pages: 2, max_page_chars: 12000, timeout_secs: 30, max_concurrent: 4, interval_ms: 1000, cache_secs: 600, max_tool_calls: 8, fallback_to_upstream: false,
+  } }),
+  SaveWebTools: refuse,
+  TestWebTool: refuse,
   // 导入导出与备份：只读的列一份当前版本，写的拒绝
   ConfigItems: () => overview(lastSeen()).providers.map((p) => ({ item: { kind: "provider", name: p.name }, refs: [] })),
   ExportConfig: refuse,

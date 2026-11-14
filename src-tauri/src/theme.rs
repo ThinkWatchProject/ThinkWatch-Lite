@@ -123,6 +123,8 @@ pub fn effective(setting: Option<Theme>) -> Theme {
 /// Linux 例外：那里 `None` 的意思是「不偏好深色」，也就是浅色。跟随系统得把
 /// 系统现在的答案写进去，之后由 [`linux`] 盯着系统再改。
 pub fn apply(app: &tauri::AppHandle, setting: Option<Theme>) {
+    #[cfg(target_os = "macos")]
+    crate::menubar::helper::set_theme(setting);
     #[cfg(target_os = "linux")]
     {
         linux::remember(setting);
