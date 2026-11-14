@@ -25,15 +25,13 @@ license = "MIT"
 # 走意味着同一份源码今天和明天编出来的东西不一样；而更要紧的是，打进 `.app` 的那个
 # twcore 二进制必须和这里编译进去的协议镜像来自同一个 core 版本 —— 打包脚本正是
 # 从 tw-api 锁到的 tag 去取二进制的（见 scripts/fetch-core.sh）。
-# Pending the hosted-web-tools Core release; switch this immutable development
-# revision to its release tag before bundling. See the linked Core pull request.
 [workspace.dependencies]
-tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "54a51512fe51ff855a9ebafd161e9a7520fbafb1" }
-tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "54a51512fe51ff855a9ebafd161e9a7520fbafb1" }
-tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "54a51512fe51ff855a9ebafd161e9a7520fbafb1" }
-tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "54a51512fe51ff855a9ebafd161e9a7520fbafb1" }
-tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "54a51512fe51ff855a9ebafd161e9a7520fbafb1" }
-tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", rev = "54a51512fe51ff855a9ebafd161e9a7520fbafb1" }
+tw-api = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.97.0" }
+tw-types = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.97.0" }
+tw-yaml = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.97.0" }
+tw-guard = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.97.0" }
+tw-watch = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.97.0" }
+tw-link = { git = "https://github.com/ThinkWatchProject/ThinkWatch-Core.git", tag = "v0.97.0" }
 
 [lib]
 name = "thinkwatch_lite_lib"
