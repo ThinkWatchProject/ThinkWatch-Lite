@@ -1029,7 +1029,7 @@ mod tests {
                 tone: Tone::Normal,
                 detail: detail.map(str::to_string),
             },
-            action: model::Action::Open("upstreams"),
+            action: model::Action::Open("upstreams".into()),
         };
         let plain = row_height(&row(None));
         assert_eq!(plain, QUOTA_BAR_Y + QUOTA_BAR_H + QUOTA_BOTTOM);

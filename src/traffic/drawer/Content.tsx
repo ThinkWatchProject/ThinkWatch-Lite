@@ -11,6 +11,7 @@ import { Pill } from "../Conversation";
 import { contentText } from "./Content.i18n";
 import { dialectOf } from "./dialect";
 import type { LiveContent } from "./live";
+import { WebToolSummary } from "./WebToolSummary";
 import { Parsed } from "./Parsed";
 import { Raw } from "./Raw";
 import { requestDrawerText } from "./RequestDrawer.i18n";
@@ -118,6 +119,7 @@ export function Content({
   return (
     <HitNeedles.Provider value={needles}>
       <div className={cn("flex flex-col gap-3", view === "raw" && "h-full min-h-[28rem]")}>
+        <WebToolSummary head={model.client.response.head} />
         <div className="flex flex-wrap items-center gap-2">
           <Segmented<ContentView>
             label={t.viewsLabel}

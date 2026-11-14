@@ -72,6 +72,9 @@ webview_endpoints![
     ConfigRepairPlan,
     RepairConfig,
     SaveListen,
+    WebTools,
+    SaveWebTools,
+    TestWebTool,
     // 记录。搜索翻的是整个库，界面自己发起、自己翻页
     History,
     HistorySearch,

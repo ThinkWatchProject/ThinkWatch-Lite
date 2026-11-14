@@ -18,7 +18,7 @@ pub enum Style {
 }
 
 /// 网关此刻的状态。守护进程的几种状态按「用户该知道什么」归成这几类
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Gateway {
     /// 正在起来，或者崩了之后正在重启
     #[default]
@@ -41,7 +41,7 @@ impl Gateway {
 }
 
 /// 收一次数得到的全部事实。**都是已经发生的事**，怎么说由 [`build`] 决定
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct Snapshot {
     pub gateway: Gateway,
     /// 客户端该连的网关地址（主机:端口，`127.0.0.1:18790`），和「复制网关地址」复制的是同一个。
@@ -88,14 +88,14 @@ impl Snapshot {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Connection {
     pub id: String,
     pub name: String,
     pub current: bool,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Today {
     pub requests: i64,
     pub failed: i64,
@@ -148,7 +148,7 @@ pub const HOUR_MS: i64 = 3_600_000;
 
 /// 今天按本地小时分的 token：第 k 格是 `[零点 + k 小时, 零点 + k + 1 小时)`，和 core 分格的
 /// 算法一样（从起点数，一格一个桶宽）
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Hourly {
     /// 今天的本地零点，Unix 毫秒
     pub from_ms: i64,
@@ -202,7 +202,7 @@ fn spark(h: &Hourly, now_ms: u64) -> Vec<Spark> {
         .collect()
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Quota {
     pub provider: String,
     pub windows: Vec<Window>,
@@ -210,7 +210,7 @@ pub struct Quota {
     pub reset_credits: Option<i64>,
 }
 
-#[derive(Debug, Clone, Default, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Window {
     /// 上游给的窗口名：`5h` / `weekly` / `30d`…，写法见 [`window_label`]
     pub window: String,
@@ -224,14 +224,14 @@ pub struct Window {
 
 /// 积分制套餐一个额度窗口的总额、已用、剩余，**都是上游给的原数**：剩余不是总额减已用
 /// 算出来的，三个数不一定对得上，显示剩余就显示它说的剩余
-#[derive(Debug, Clone, Copy, Default, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct QuotaCredits {
     pub total: f64,
     pub used: f64,
     pub remaining: f64,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Live {
     pub id: u64,
     /// 请求头认出来的应用（`claude-code`）。认不出来是 None
@@ -247,14 +247,16 @@ pub struct Live {
     pub rate: Option<u32>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize,
+)]
 pub enum Level {
     Info,
     Warning,
     Critical,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct NoticeLine {
     pub key: String,
     pub level: Level,
@@ -262,7 +264,7 @@ pub struct NoticeLine {
     pub body: String,
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Group {
     pub name: String,
     pub members: Vec<String>,
@@ -270,11 +272,11 @@ pub struct Group {
 }
 
 /// 点了之后做什么
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum Action {
     OpenMain,
     /// 打开主界面并落到这一页（`upstreams`、`dashboard`…）
-    Open(&'static str),
+    Open(std::borrow::Cow<'static, str>),
     /// 打开流量页并展开这一条
     OpenRequest(u64),
     /// 落到能处理这条提醒的那一页，并标为已读
@@ -880,7 +882,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
             out.push(Row::Quota {
                 provider: q.provider.clone(),
                 window: window_row(w, s.now_ms),
-                action: Action::Open("upstreams"),
+                action: Action::Open("upstreams".into()),
             });
         }
         let used_up = q
@@ -893,7 +895,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     &format!("resets:{}", q.provider),
                     "arrow.counterclockwise.circle",
                     tr!("额度重置卡…", "Quota Reset Credits…"),
-                    Action::Open("upstreams"),
+                    Action::Open("upstreams".into()),
                 )
                 .right(tr!(format!("可用 {n} 张"), format!("{n} available"))),
             ));
@@ -930,7 +932,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                     "live-more",
                     "",
                     tr!(format!("另有 {more} 个"), format!("{more} more")),
-                    Action::Open("requests"),
+                    Action::Open("requests".into()),
                 )
             }));
         }
@@ -1091,7 +1093,7 @@ fn dash(s: &Snapshot) -> Dash {
             }
             tip
         }),
-        action: Action::Open("dashboard"),
+        action: Action::Open("dashboard".into()),
     }
 }
 
