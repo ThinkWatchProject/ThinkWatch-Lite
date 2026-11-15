@@ -1,9 +1,10 @@
+import { Label } from "@/ui/label";
 import type { Dispatch, SetStateAction } from "react";
 import { ArrowDownIcon, ArrowUpIcon, Columns3Icon } from "lucide-react";
 import { useText } from "@/i18n";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Popover, PopoverContent, PopoverTitle, PopoverTrigger } from "@/ui/popover";
 import { COMPACT_COLUMNS, DEFAULT_COLUMNS, moveColumn, orderedColumns, pinColumn, toggleColumn, type Columns, type Pin } from "./columns";
 import { trafficText } from "./Traffic.i18n";
@@ -36,23 +37,23 @@ export function ColumnSettings({ settings, columns, onChange }: {
         <div>
           {orderedColumns(settings).map((col) => (
             <div key={col} className="flex items-center gap-2 py-1">
-              <label className="flex min-w-0 flex-1 items-center gap-2">
+              <Label className="flex min-w-0 flex-1 items-center gap-2">
                 <Checkbox
                   checked={columns.includes(col)}
                   disabled={col === "status"}
                   onCheckedChange={(shown) => onChange((prev) => toggleColumn(prev, col, shown === true))}
                 />
                 {t[col]}
-              </label>
-              <NativeSelect size="inline" className="w-24 shrink-0"
+              </Label>
+              <SelectField size="inline" className="w-24 shrink-0"
                 aria-label={t.pinColumn(t[col])}
                 value={settings.pinned[col] ?? "none"}
-                onChange={(e) => onChange((prev) => pinColumn(prev, col, e.target.value === "none" ? null : e.target.value as Pin))}
+                onValueChange={(nextValue) => onChange((prev) => pinColumn(prev, col, nextValue === "none" ? null : nextValue as Pin))}
               >
-                <NativeSelectOption value="none" disabled={col === "status" && Object.entries(settings.pinned).some(([c, p]) => c !== "status" && p === "left")}>{t.unpinnedColumn}</NativeSelectOption>
-                <NativeSelectOption value="left">{t.pinColumnLeft}</NativeSelectOption>
-                {col !== "status" && <NativeSelectOption value="right">{t.pinColumnRight}</NativeSelectOption>}
-              </NativeSelect>
+                <SelectOption value="none" disabled={col === "status" && Object.entries(settings.pinned).some(([c, p]) => c !== "status" && p === "left")}>{t.unpinnedColumn}</SelectOption>
+                <SelectOption value="left">{t.pinColumnLeft}</SelectOption>
+                {col !== "status" && <SelectOption value="right">{t.pinColumnRight}</SelectOption>}
+              </SelectField>
               <Button
                 variant="ghost"
                 size="icon-xs"

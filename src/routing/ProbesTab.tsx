@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useWriteQueue } from "@/lib/writeQueue";
 import { Segmented } from "@/ui/segmented";
 import { notify } from "@/ui/notify";
+import { Table, TableHeader, TableBody, TableHead, TableRow, TableCell } from "@/ui/table";
 import { Spinner } from "@/ui/spinner";
 import { useText } from "@/i18n";
 import { PROBES, probeLabel } from "@/labels";
@@ -59,29 +60,25 @@ export function ProbesTab({ ov }: { ov: Overview }) {
   return (
     <div className="flex flex-col gap-3">
       <p className="tw-body text-muted-foreground">{t.intro}</p>
-      <ul className="divide-y divide-border overflow-hidden rounded-lg border border-border">
+      <div className="overflow-hidden rounded-lg border border-border"><Table>
+        <TableHeader><TableRow><TableHead className="px-3.5">{t.kind}</TableHead><TableHead className="w-1">{t.mode}</TableHead><TableHead className="w-1 pr-3.5 text-right">{t.actions}</TableHead></TableRow></TableHeader>
+        <TableBody>
         {ov.client_probes.map((p) => {
           const kind = PROBES.find((x) => x.id === p.id);
           const label = kind?.label ?? probeLabel(p.id);
           const mode = pending[p.id] ?? landed[p.id] ?? p.mode;
           const busy = p.id in pending;
           return (
-            <li key={p.id} aria-busy={busy || undefined} className="flex items-start gap-4 bg-background px-3.5 py-3">
-              <div className="min-w-0 flex-1">
+            <TableRow key={p.id} aria-busy={busy || undefined}>
+              <TableCell className="whitespace-normal align-top px-3.5 py-3">
                 <div className="tw-body font-medium">{label}</div>
                 {kind && <p className="mt-0.5 tw-body text-muted-foreground">{kind.what}</p>}
                 {/* 每一档自己说清产不产生费用：切过去就看得到，不用每一行都预先警告一遍 */}
                 <p key={mode} className="mt-1 tw-label text-muted-foreground motion-fade">
                   {modes.find((m) => m.id === mode)?.what}
                 </p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                {/* 转圈的位置一直留着：出现、消失时分段控件不左右挪 */}
-                {busy ? (
-                  <Spinner aria-hidden className="size-3.5 text-muted-foreground motion-fade" />
-                ) : (
-                  <span aria-hidden className="size-3.5" />
-                )}
+              </TableCell>
+              <TableCell className="align-top py-3"><div className="flex items-center gap-2">
                 <Segmented<ProbeMode>
                   label={label}
                   value={mode}
@@ -89,13 +86,22 @@ export function ProbesTab({ ov }: { ov: Overview }) {
                   options={modes.map((m) => ({ id: m.id, label: m.label }))}
                   onChange={(v) => v !== mode && void set(p.id, v)}
                 />
-              </div>
-            </li>
+                {/* 转圈的位置一直留着：出现、消失时分段控件不左右挪 */}
+                {busy ? (
+                  <Spinner aria-hidden className="size-3.5 text-muted-foreground motion-fade" />
+                ) : (
+                  <span aria-hidden className="size-3.5" />
+                )}
+
+              </div></TableCell>
+              <TableCell />
+            </TableRow>
           );
         })}
-      </ul>
+        <WebTools overview={ov} />
+        </TableBody>
+      </Table></div>
       <p className="tw-label text-muted-foreground">{t.ruleHint}</p>
-      <WebTools overview={ov} />
     </div>
   );
 }

@@ -158,11 +158,11 @@ function Row({
       <TableRow className="hover:bg-transparent">
         <TableCell className="max-w-0 align-top whitespace-normal">
           {c.diff.length > 0 ? (
-            <button
+            <Button variant="ghost" size="xs"
               type="button"
               aria-expanded={open}
               title={open ? t.hideDiff : t.showDiff}
-              className="-ml-1 flex items-start gap-0.5 rounded-sm px-1 text-left break-words hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring/50"
+              className="h-auto min-h-6 whitespace-normal -ml-1 flex items-start gap-0.5 rounded-sm px-1 text-left break-words hover:bg-muted focus-visible:outline-2 focus-visible:outline-ring/50"
               onClick={() => setOpen((o) => !o)}
             >
               <ChevronRightIcon
@@ -170,7 +170,7 @@ function Row({
                 className={cn("mt-[3px] size-3.5 shrink-0 text-muted-foreground transition-transform", open && "rotate-90")}
               />
               <span>{itemWithUnits(c.item, c.units)}</span>
-            </button>
+            </Button>
           ) : (
             <p className="break-words">{itemWithUnits(c.item, c.units)}</p>
           )}

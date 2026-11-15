@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { ToggleGroup, ToggleGroupItem } from "./toggle-group";
 import { cn } from "@/lib/utils";
 
 /**
@@ -28,8 +29,12 @@ export function Segmented<T extends string>({
   block?: boolean;
 }) {
   return (
-    <div
-      role="radiogroup"
+    <ToggleGroup
+      type="single"
+      value={`value:${value}`}
+      onValueChange={(next) => { if (next.startsWith("value:") && options.some((option) => option.id === next.slice(6))) onChange(next.slice(6) as T); }}
+      disabled={disabled}
+      spacing={1}
       aria-label={label}
       className={cn(
         "items-center rounded-lg bg-muted p-0.5",
@@ -37,13 +42,10 @@ export function Segmented<T extends string>({
       )}
     >
       {options.map((o) => (
-        <button
+        <ToggleGroupItem
           key={o.id}
-          type="button"
-          role="radio"
-          aria-checked={value === o.id}
+          value={`value:${o.id}`}
           disabled={disabled || o.disabled}
-          onClick={() => onChange(o.id)}
           className={cn(
             "inline-flex items-center gap-1.5 rounded-md border border-transparent px-2.5 tw-body font-medium whitespace-nowrap text-muted-foreground transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50",
             block ? "h-7 justify-center" : "h-6",
@@ -52,8 +54,8 @@ export function Segmented<T extends string>({
           )}
         >
           {o.label}
-        </button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }

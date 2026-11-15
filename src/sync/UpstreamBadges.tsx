@@ -46,9 +46,9 @@ export function SyncBadges({ p }: { p: ProviderView }) {
         <span className="inline-flex shrink-0" {...keep}>
           <Popover>
             <PopoverTrigger asChild>
-              <button type="button" className="inline-flex rounded-4xl focus-visible:outline-2 focus-visible:outline-ring/50">
+              <Button variant="ghost" size="xs" type="button" className="h-auto p-0 inline-flex rounded-4xl focus-visible:outline-2 focus-visible:outline-ring/50">
                 <Badge variant="warning">{t.urlChanged}</Badge>
-              </button>
+              </Button>
             </PopoverTrigger>
             <PopoverContent align="start" className="w-80 gap-2" onContextMenu={(e) => e.stopPropagation()}>
               <p className="tw-head">{t.urlChangedTitle}</p>

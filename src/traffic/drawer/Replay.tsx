@@ -4,7 +4,7 @@ import { useText } from "@/i18n";
 import { ms, traffic } from "@/format";
 import { useResource } from "@/lib/resource";
 import { Button } from "@/ui/button";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { notify } from "@/ui/notify";
 import { ErrorState } from "@/ui/states";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
@@ -103,23 +103,23 @@ export function Replay({ id, originalProvider }: { id: number; originalProvider:
         />
       ) : (
         <div className="flex items-center gap-2">
-          <NativeSelect
+          <SelectField
             size="sm"
             value={provider}
             // 报价、发送在路上时不能换：换了的话，回来的报价和要发的不是同一家
             disabled={!ov.data || busy !== null}
-            onChange={(e) => {
-              setPicked(e.target.value);
+            onValueChange={(nextValue) => {
+              setPicked(nextValue);
               setQuote(null);
             }}
           >
             {names.map((n) => (
-              <NativeSelectOption key={n} value={n}>
+              <SelectOption key={n} value={n}>
                 {n}
                 {n === originalProvider ? t.originalUpstream : ""}
-              </NativeSelectOption>
+              </SelectOption>
             ))}
-          </NativeSelect>
+          </SelectField>
           <Button
             variant="outline"
             size="sm"

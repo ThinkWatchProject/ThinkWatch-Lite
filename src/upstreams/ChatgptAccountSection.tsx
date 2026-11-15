@@ -14,7 +14,7 @@ import {
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { notify } from "@/ui/notify";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusLabel } from "@/ui/status-dot";
@@ -129,20 +129,20 @@ export function ChatgptAccountSection({
           />
         </FormItem>
         <FormItem label={t.egress} htmlFor="cg-proxy" desc={t.egressDesc}>
-          <NativeSelect
+          <SelectField
             id="cg-proxy"
             className="w-full"
             value={form.proxy}
-            onChange={(e) => set({ proxy: e.target.value })}
+            onValueChange={(nextValue) => set({ proxy: nextValue })}
           >
-            <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
-            <NativeSelectOption value="system">{systemProxy}</NativeSelectOption>
+            <SelectOption value="direct">{t.direct}</SelectOption>
+            <SelectOption value="system">{systemProxy}</SelectOption>
             {ov.proxies.map((x) => (
-              <NativeSelectOption key={x.name} value={x.name}>
+              <SelectOption key={x.name} value={x.name}>
                 {x.name} · {proxyKindLabel(x.kind)} {x.addr}
-              </NativeSelectOption>
+              </SelectOption>
             ))}
-          </NativeSelect>
+          </SelectField>
         </FormItem>
         {/* 账号一样限制同时进行的请求 */}
         <ConcurrencyField form={form} set={set} />

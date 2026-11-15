@@ -1,3 +1,4 @@
+import { Button } from "@/ui/button";
 import { useState, type ReactNode } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -235,13 +236,13 @@ function SecurityHits({ events }: { events: SecurityEventView[] }) {
         const where = whereOf(e);
         return (
           <span key={e.id} className="flex flex-col">
-            <button
+            <Button variant="ghost" size="xs"
               type="button"
               aria-expanded={shown}
               aria-controls={shown ? `request-hit-${e.id}` : undefined}
               onClick={() => toggle(e.id)}
-              className={cn(
-                "-mx-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-0.5 rounded-md px-1.5 py-0.5 text-left break-normal",
+              className={cn("h-auto min-h-6 whitespace-normal",
+                "-mx-1.5 flex flex-wrap justify-start items-center gap-x-1.5 gap-y-0.5 rounded-md px-1.5 py-0.5 text-left break-normal",
                 "outline-none hover:bg-muted/50 focus-visible:ring-3 focus-visible:ring-ring/50",
               )}
             >
@@ -258,7 +259,7 @@ function SecurityHits({ events }: { events: SecurityEventView[] }) {
                 <EventDetail e={e} codepoints={byCodepoints(e)} />
               </span>
               <ActionBadge action={e.action} />
-            </button>
+            </Button>
             {shown && (
               <HitDetail
                 stacked

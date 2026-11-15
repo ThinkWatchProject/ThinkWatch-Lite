@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { CopyIcon } from "lucide-react";
 import {
@@ -126,9 +127,9 @@ function Field({
 }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      <label className="tw-body font-medium" htmlFor={htmlFor}>
+      <Label className="tw-body font-medium" htmlFor={htmlFor}>
         {label}
-      </label>
+      </Label>
       {children}
       {error ? (
         <p className="tw-label text-destructive">{error}</p>
@@ -537,7 +538,7 @@ export function RuleDialog({
                   }}
                 />
                 {/* 开 / 关两态用开关；码位不分大小写，置灰 */}
-                <label className="flex items-center gap-2 tw-body">
+                <Label className="flex items-center gap-2 tw-body">
                   <Switch
                     size="sm"
                     checked={cased && !codepoints}
@@ -548,7 +549,7 @@ export function RuleDialog({
                     }}
                   />
                   <span className={cn(codepoints && "text-muted-foreground")}>{t.caseSensitive}</span>
-                </label>
+                </Label>
               </div>
             </Field>
           )}

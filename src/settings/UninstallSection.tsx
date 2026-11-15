@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { NetworkIcon, PowerOffIcon, RotateCcwIcon } from "lucide-react";
 import {
@@ -220,7 +221,7 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
                 disabled={running}
                 onCheckedChange={(c) => setDrop(c === true)}
               />
-              <label htmlFor="uninstall-drop-data" className="min-w-0">
+              <Label htmlFor="uninstall-drop-data" className="min-w-0">
                 <span className={drop ? "text-destructive" : undefined}>{t.dropData}</span>
                 {info.data ? (
                   <code className="block font-mono tw-label break-all text-muted-foreground">{info.data.data_dir}</code>
@@ -228,7 +229,7 @@ function UninstallDialog({ onClose, onDone }: { onClose: () => void; onDone: (lo
                   <Skeleton className="my-1 h-2.5 w-36 rounded-sm" />
                 )}
                 <span className="block tw-label text-muted-foreground">{t.dropDataWhat}</span>
-              </label>
+              </Label>
             </li>
           </ul>
         )}

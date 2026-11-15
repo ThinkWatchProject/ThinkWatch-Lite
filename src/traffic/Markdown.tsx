@@ -1,3 +1,4 @@
+import { Table as DataTable, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/ui/table";
 import { memo, useMemo, type ReactNode } from "react";
 import { lexer, type Token, type Tokens } from "marked";
 import { cn } from "@/lib/utils";
@@ -144,12 +145,12 @@ const ALIGN = { left: "text-left", center: "text-center", right: "text-right" } 
 
 function Table({ t }: { t: Tokens.Table }) {
   const cell = (c: Tokens.TableCell, i: number, head: boolean) => {
-    const Tag = head ? "th" : "td";
+    const Tag = head ? TableHead : TableCell;
     return (
       <Tag
         key={i}
         className={cn(
-          "border border-border px-2 py-1 align-top",
+          "h-auto whitespace-normal border border-border px-2 py-1 align-top",
           head && "bg-surface font-medium",
           c.align ? ALIGN[c.align] : "text-left",
         )}
@@ -160,16 +161,16 @@ function Table({ t }: { t: Tokens.Table }) {
   };
   return (
     <div className="max-w-full overflow-x-auto">
-      <table className="border-collapse">
-        <thead>
-          <tr>{t.header.map((c, i) => cell(c, i, true))}</tr>
-        </thead>
-        <tbody>
+      <DataTable className="w-auto border-collapse">
+        <TableHeader>
+          <TableRow>{t.header.map((c, i) => cell(c, i, true))}</TableRow>
+        </TableHeader>
+        <TableBody>
           {t.rows.map((row, r) => (
-            <tr key={r}>{row.map((c, i) => cell(c, i, false))}</tr>
+            <TableRow key={r}>{row.map((c, i) => cell(c, i, false))}</TableRow>
           ))}
-        </tbody>
-      </table>
+        </TableBody>
+      </DataTable>
     </div>
   );
 }

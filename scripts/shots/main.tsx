@@ -40,14 +40,22 @@ async function main() {
 
   for (const [k, v] of Object.entries(scene.storage ?? {})) localStorage.setItem(k, v);
   const { command } = await import("./mock/commands");
-  mockWindows("main");
+  mockWindows(scene.window ?? "main");
   // **答不上来的调用都报出来。**界面多半会接住失败、画一个「—」或一行报错，页面照样说
   // 「可以拍了」—— 不报的话，拍下来的就是一张缺了一块的图。报了，截图程序就停在这一张
+  let settingUp = false;
   mockIPC(
     (cmd, args) =>
       track(
         command(cmd, (args ?? {}) as Record<string, unknown>).catch((e: unknown) => {
-          console.error(`IPC ${cmd === "call" ? `call ${String((args as { endpoint?: unknown }).endpoint)}` : cmd} failed:`, e);
+          // Editing dry-run inputs may cross the app's debounce before the recorded
+          // request is complete. Keep the rejection visible to the app, but let the
+          // scene finish editing; its setup must then verify a successful result.
+          const interimPreview = settingUp && scene.id === "dry-run" && cmd === "call"
+            && (args as { endpoint?: unknown })?.endpoint === "DryRun"
+            && typeof e === "object" && e !== null && "text" in e
+            && e.text === "This dry run is not in the screenshot data.";
+          if (!interimPreview) console.error(`IPC ${cmd === "call" ? `call ${String((args as { endpoint?: unknown }).endpoint)}` : cmd} failed:`, e);
           throw e;
         }),
       ),
@@ -69,7 +77,8 @@ async function main() {
   await idle();
   await document.fonts.ready;
   if (scene.setup) {
-    await scene.setup();
+    settingUp = true;
+    try { await scene.setup(); } finally { settingUp = false; }
     await idle();
   }
   // 进场动画、数字滚动走完

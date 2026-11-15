@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { Suspense, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { FileCodeIcon } from "lucide-react";
 import {
@@ -633,9 +634,9 @@ function SettingsPane({
 
         <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
           <div>
-            <label className="tw-body font-medium" htmlFor={switchId}>
+            <Label className="tw-body font-medium" htmlFor={switchId}>
               {t.enabled}
-            </label>
+            </Label>
             <p className="tw-label text-muted-foreground">{t.enabledHint}</p>
           </div>
           <Switch id={switchId} checked={enabled} onCheckedChange={onEnabled} />
@@ -742,7 +743,7 @@ function CodePane({
           <FileCodeIcon />
           {t.importFile}
         </Button>
-        <input
+        <Input
           ref={picker}
           type="file"
           accept=".js,.mjs,text/javascript,application/javascript"

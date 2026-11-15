@@ -17,6 +17,8 @@ export interface Scene {
   id: string;
   /** 打开哪一页（`take_pending_view` 认的写法） */
   page: string;
+  /** Auxiliary desktop window, when the scene is outside the main workspace. */
+  window?: "picker";
   /** 连着远程 core（`homelab`），不是本机 */
   remote?: boolean;
   /** `homelab` 这条连接还没存：拍的就是添加它的那一刻 */
@@ -47,7 +49,7 @@ export const SCENES: Scene[] = [
     id: "web-tools", page: "routing",
     setup: async () => {
       click(await waitFor(() => byText(textOf(routingPageText).probes)));
-      const title = await waitFor(() => byText(textOf(webToolsText).title, "section div"));
+      const title = await waitFor(() => byText(textOf(webToolsText).title, "td div"));
       title.scrollIntoView({ block: "center" });
     },
   },
@@ -73,6 +75,8 @@ export const SCENES: Scene[] = [
   { id: "security", page: "security" },
   { id: "mcp", page: "mcp" },
   { id: "settings", page: "settings" },
+  { id: "plugins", page: "plugins" },
+  { id: "connection-picker", page: "dashboard", window: "picker" },
   {
     // 路由页的试算：Cursor 那把密钥用 OpenAI 的格式要 Sonnet，会走到哪儿、为什么、
     // 要不要转换格式（它走自己的路由，Sonnet 进按价格排的「budget」组，打折的中转排在
@@ -82,12 +86,16 @@ export const SCENES: Scene[] = [
     setup: async () => {
       click(await waitFor(() => byText(textOf(routingText).dryRun)));
       const dialog = await waitFor<HTMLElement>("[role=dialog]");
-      choose(await waitFor<HTMLSelectElement>(() => dialog.querySelector<HTMLSelectElement>("select[id$='-key']")), "cursor");
-      choose(await waitFor<HTMLSelectElement>(() => dialog.querySelector<HTMLSelectElement>("select[id$='-dialect']")), "openai-chat");
+      // Wait for the modal scale animation before opening a measured popup.
+      await Promise.all(dialog.getAnimations().map((animation) => animation.finished.catch(() => {})));
+      await choose(await waitFor<HTMLElement>(() => dialog.querySelector<HTMLElement>("button[id$='-key']")), "cursor");
+      await choose(await waitFor<HTMLElement>(() => dialog.querySelector<HTMLElement>("button[id$='-dialect']")), "openai-chat");
       const model = await waitFor<HTMLInputElement>(() => dialog.querySelector<HTMLInputElement>("input[id$='-model']"));
       type(model, "claude-sonnet-5");
       model.blur();
       await idle();
+      // A captured trace must replace every transient preview error before ready.
+      await waitFor(() => dialog.querySelector('[aria-busy="true"], [data-tone="error"]') ? null : dialog.querySelector('[aria-live="polite"] .tw-title'));
     },
   },
   {

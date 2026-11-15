@@ -507,7 +507,7 @@ function CellButton({
   children: ReactNode;
 }) {
   return (
-    <button
+    <Button variant="ghost" size="xs"
       type="button"
       aria-label={label}
       title={title}
@@ -515,7 +515,7 @@ function CellButton({
       className="-mx-1.5 inline-flex h-6 items-center gap-1.5 rounded-md px-1.5 whitespace-nowrap text-muted-foreground transition-colors duration-(--motion-fast) hover:bg-muted hover:text-foreground focus-visible:bg-muted focus-visible:text-foreground focus-visible:outline-none"
     >
       {children}
-    </button>
+    </Button>
   );
 }
 

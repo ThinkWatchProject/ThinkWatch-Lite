@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ChevronRightIcon, PencilIcon, PlusIcon, SearchIcon, Trash2Icon } from "lucide-react";
 import {
@@ -602,14 +603,14 @@ export function PriceSheetDialog({
                                   ) : (
                                     <>
                                       {LONG_KEYS.map((key) => (
-                                        <label key={key} className="flex items-center gap-2 tw-label">
+                                        <Label key={key} className="flex items-center gap-2 tw-label">
                                           {t.long[key]}
                                           <PriceInput
                                             value={o[key] ?? 0}
                                             onChange={(v) => editPrice(r.model, key, v)}
                                             label={`${r.model} ${t.long[key]}`}
                                           />
-                                        </label>
+                                        </Label>
                                       ))}
                                       <Button variant="ghost" size="xs" onClick={() => setLongTier(r.model, false)}>
                                         {t.noTiers}

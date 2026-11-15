@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { FormRow } from "@/settings/form";
 import { SecretInput } from "@/ui/secret-input";
@@ -47,10 +48,10 @@ export function PassphraseRow({ p, disabled }: { p: Passphrase; disabled?: boole
   const shown = p.on && p.problem && (p.first !== "" || p.again !== "") && !typing ? p.problem : null;
   return (
     <FormRow label={t.encrypt} hint={shown ? <span className="text-destructive">{shown}</span> : t.encryptHint}>
-      <label className="flex items-center gap-2.5 pt-0.5 tw-body">
+      <Label className="flex items-center gap-2.5 pt-0.5 tw-body">
         <Switch checked={p.on} disabled={disabled} onCheckedChange={p.setOn} />
         {t.encryptWhat}
-      </label>
+      </Label>
       {p.on && (
         <div className="mt-1.5 grid w-full max-w-[360px] grid-cols-2 gap-2">
           <SecretInput

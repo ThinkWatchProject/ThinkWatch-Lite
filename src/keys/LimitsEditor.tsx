@@ -1,10 +1,11 @@
+import { Label } from "@/ui/label";
 import { useState, type ReactNode } from "react";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { Checkbox } from "@/ui/checkbox";
 import { Input } from "@/ui/input";
 import { rowMotion, usePresentList } from "@/ui/motion";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { StatusLabel } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
@@ -198,17 +199,17 @@ function LimitLine({
             }}
           />
         )}
-        <NativeSelect
+        <SelectField
           aria-label={t.perLabel(n)}
           value={r.per}
-          onChange={(e) => onChange({ per: e.target.value as LimitRow["per"] })}
+          onValueChange={(nextValue) => onChange({ per: nextValue as LimitRow["per"] })}
         >
           {PERS.map((p) => (
-            <NativeSelectOption key={p} value={p}>
+            <SelectOption key={p} value={p}>
               {w.unit(p, isRolling(p) ? (every ?? 1) : 1)}
-            </NativeSelectOption>
+            </SelectOption>
           ))}
-        </NativeSelect>
+        </SelectField>
         <span className="tw-body">{t.atMost}</span>
         <Input
           aria-label={t.maxLabel(n)}
@@ -226,23 +227,23 @@ function LimitLine({
             if (e.key === "Enter") e.preventDefault();
           }}
         />
-        <NativeSelect
+        <SelectField
           aria-label={t.measureLabel(n)}
           value={r.measure}
           // 换了量，数的东西就换了：5 美元和 5 次请求不是一回事，原来填的数不留
-          onChange={(e) => onChange({ measure: e.target.value as LimitRow["measure"], max: "", cacheReads: false })}
+          onValueChange={(nextValue) => onChange({ measure: nextValue as LimitRow["measure"], max: "", cacheReads: false })}
         >
           {MEASURES.map((m) => (
-            <NativeSelectOption key={m} value={m}>
+            <SelectOption key={m} value={m}>
               {w.measure[m]}
-            </NativeSelectOption>
+            </SelectOption>
           ))}
-        </NativeSelect>
+        </SelectField>
         {r.measure === "tokens" && (
-          <label className="flex items-center gap-1.5 tw-body">
+          <Label className="flex items-center gap-1.5 tw-body">
             <Checkbox checked={r.cacheReads} onCheckedChange={(v) => onChange({ cacheReads: v === true })} />
             {t.cacheReads}
-          </label>
+          </Label>
         )}
         <Button
           type="button"

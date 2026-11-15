@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { useResource } from "@/lib/resource";
@@ -102,10 +103,10 @@ export function ShareDialog({
             label={t.secrets}
             hint={secrets && keyCarried ? <span className="text-warning-foreground">{t.secretsNote}</span> : undefined}
           >
-            <label className="flex items-center gap-2.5 pt-0.5 tw-body">
+            <Label className="flex items-center gap-2.5 pt-0.5 tw-body">
               <Switch checked={secrets && holdsSecrets} disabled={!holdsSecrets} onCheckedChange={setSecrets} />
               {t.secretsWhat}
-            </label>
+            </Label>
           </FormRow>
           <FormRow label={t.link} hint={ready ? t.webHint : undefined}>
             {error !== undefined ? (

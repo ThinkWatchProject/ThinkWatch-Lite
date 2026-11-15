@@ -5,7 +5,7 @@ import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, A
 import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { Banner } from "@/ui/banner";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
 import { useText } from "@/i18n";
@@ -237,25 +237,25 @@ export function ListenSection({
                 nics === null && nicList.error !== undefined ? (
                   <RowError error={nicList.error} onRetry={() => void nicList.reload()} />
                 ) : (
-                  <NativeSelect
+                  <SelectField
                     id="listen-nic"
                     size="sm"
                     className="w-60 font-mono"
                     value={selected}
                     disabled={busy || !nics?.length}
-                    onChange={(e) => set({ nic: e.target.value })}
+                    onValueChange={(nextValue) => set({ nic: nextValue })}
                   >
                     {/* 配置里写着一张当前枚举不到的网卡 —— 网线拔了、换了网络。
                         **必须列出来**，否则选单会显示成别的网卡，看起来像是它变了 */}
                     {selected && !known && (
-                      <NativeSelectOption value={selected}>{t.nicMissing(selected)}</NativeSelectOption>
+                      <SelectOption value={selected}>{t.nicMissing(selected)}</SelectOption>
                     )}
                     {nics?.map((n) => (
-                      <NativeSelectOption key={`${n.name}-${n.addr}`} value={n.name}>
+                      <SelectOption key={`${n.name}-${n.addr}`} value={n.name}>
                         {t.nicOption(n.name, n.addr)}
-                      </NativeSelectOption>
+                      </SelectOption>
                     ))}
-                  </NativeSelect>
+                  </SelectField>
                 )
               }
             />

@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useEffect, useMemo, useState } from "react";
 import { ActivityIcon, ZapIcon } from "lucide-react";
 import { ms } from "@/format";
@@ -11,7 +12,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/ui/dialog";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Skeleton } from "@/ui/skeleton";
 import { TableSkeleton } from "@/ui/states";
 import { StatusLabel } from "@/ui/status-dot";
@@ -351,21 +352,21 @@ export function SpeedTestDialog({
             ) : models.length === 0 ? (
               <Note>{t.speed.noModels}</Note>
             ) : (
-              <NativeSelect
+              <SelectField
                 id="speed-model"
                 className="w-full font-mono"
                 value={model}
-                onChange={(e) => {
-                  setModel(e.target.value);
+                onValueChange={(nextValue) => {
+                  setModel(nextValue);
                   setResults(null);
                 }}
               >
                 {models.map((m) => (
-                  <NativeSelectOption key={m} value={m}>
+                  <SelectOption key={m} value={m}>
                     {m}
-                  </NativeSelectOption>
+                  </SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
             )}
           </FormItem>
 
@@ -375,7 +376,7 @@ export function SpeedTestDialog({
                 const item = items.find((i) => i.provider === p.name);
                 const skipped = item?.skipped;
                 return (
-                  <label
+                  <Label
                     key={p.name}
                     className="flex h-9 items-center gap-2.5 border-b border-border px-3 last:border-b-0 has-[:disabled]:opacity-50"
                   >
@@ -397,7 +398,7 @@ export function SpeedTestDialog({
                     <span className="tw-label text-muted-foreground">
                       {skipped ? skipLabel(skipped) : billingSummary(p)}
                     </span>
-                  </label>
+                  </Label>
                 );
               })}
             </Boxed>
