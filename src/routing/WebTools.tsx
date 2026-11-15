@@ -1,4 +1,5 @@
 import { Label } from "@/ui/label";
+import { ChevronRightIcon } from "lucide-react";
 import { useId, useRef, useEffect, useState } from "react";
 import { call } from "@/control";
 import { useResource } from "@/lib/resource";
@@ -46,17 +47,17 @@ export function WebTools({ overview }: { overview: Overview }) {
   return <>
     <TableRow>
       <TableCell className="whitespace-normal align-top px-3.5 py-3">
-        <div className="tw-body font-medium">{t.title}</div>
+        <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+          <div className="tw-body font-medium">{t.title}</div>
+          {view && <div className="flex gap-1"><Button variant="ghost" size="sm" onClick={() => { setError(null); setDialog("config"); }}>{t.configure}</Button><Button variant="ghost" size="sm" onClick={() => { setError(null); setDialog("test"); }}>{t.test}</Button></div>}
+        </div>
         <p className="mt-1 tw-label text-muted-foreground">{view?.config.mode === "core" ? t.coreHelp : t.upstreamHelp}</p>
         {view?.config.mode === "core" && <p className="mt-1 tw-label text-muted-foreground">{remote ? t.remote(remote.name) : t.local}</p>}
         {!view && <p className="mt-1 tw-label text-muted-foreground">{resource.error ? <>{t.unavailable} <Button variant="ghost" size="sm" onClick={() => void resource.reload()}>{t.retry}</Button></> : t.loading}</p>}
         <DialogError error={dialog ? null : error} />
       </TableCell>
-      <TableCell className="align-top py-3">
-        {view && <Segmented label={t.title} value={view.config.mode} disabled={busy} options={[{ id: "core", label: t.core }, { id: "upstream", label: t.upstream }]} onChange={(mode) => void save({ ...view.config, mode })} />}
-      </TableCell>
       <TableCell className="align-top py-3 pr-3.5">
-        {view && <div className="flex justify-end gap-1"><Button variant="ghost" size="sm" onClick={() => { setError(null); setDialog("config"); }}>{t.configure}</Button><Button variant="ghost" size="sm" onClick={() => { setError(null); setDialog("test"); }}>{t.test}</Button></div>}
+        {view && <div className="flex justify-end"><Segmented label={t.title} value={view.config.mode} disabled={busy} options={[{ id: "core", label: t.core }, { id: "upstream", label: t.upstream }]} onChange={(mode) => void save({ ...view.config, mode })} /></div>}
       </TableCell>
     </TableRow>
     <Dialog open={dialog !== null && !!view} onOpenChange={(open) => { if (!open && !busy) setDialog(null); }}>
@@ -97,7 +98,10 @@ function Configuration({ view, overview, busy, error, save, close }: { view: Web
       <p className="tw-label text-muted-foreground sm:col-span-2">{t.domainsHelp}</p>
       {draft.allowed_domains.some((domain) => draft.blocked_domains.includes(domain)) && <p className="tw-label text-warning sm:col-span-2">{t.domainConflict(draft.allowed_domains.filter((domain) => draft.blocked_domains.includes(domain)).join(", "))}</p>}
       {numeric.slice(0, 2).map(([key, label]) => <FormItem key={key} label={label} htmlFor={`${id}-${key}`}><Input id={`${id}-${key}`} type="number" min={WEB_LIMITS[key][0]} max={WEB_LIMITS[key][1]} step={1} value={config[key]} onChange={(e) => set(key, Number(e.target.value))} /></FormItem>)}
-      <Collapsible className="sm:col-span-2"><CollapsibleTrigger asChild><Button type="button" variant="ghost" size="sm">{t.advanced}</Button></CollapsibleTrigger><CollapsibleContent className="mt-3 grid gap-4 sm:grid-cols-2">
+      <Collapsible className="border-t border-border sm:col-span-2"><CollapsibleTrigger asChild><Button type="button" variant="ghost" className="group h-9 w-full justify-start gap-2 rounded-none px-0 font-normal hover:bg-transparent aria-expanded:bg-transparent">
+        <ChevronRightIcon aria-hidden className="size-3.5 text-muted-foreground transition-transform duration-(--motion-fast) ease-(--motion-ease) group-aria-expanded:rotate-90 motion-reduce:transition-none" />
+        <span className="font-medium">{t.advanced}</span>
+      </Button></CollapsibleTrigger><CollapsibleContent className="mt-3 grid gap-4 sm:grid-cols-2">
         {numeric.slice(2).map(([key, label]) => <FormItem key={key} label={label} htmlFor={`${id}-${key}`}><Input id={`${id}-${key}`} type="number" min={WEB_LIMITS[key][0]} max={WEB_LIMITS[key][1]} step={1} value={config[key]} onChange={(e) => set(key, Number(e.target.value))} /></FormItem>)}
       </CollapsibleContent></Collapsible>
       <p className="tw-label text-muted-foreground sm:col-span-2">{t.readHelp}</p>
