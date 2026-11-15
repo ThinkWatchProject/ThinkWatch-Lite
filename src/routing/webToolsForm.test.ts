@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { domains, domainList, engineChoice, chosenEngines, validWebConfig } from "./webToolsForm";
+import { domains, domainList, selectedEngines, validWebConfig } from "./webToolsForm";
 import type { WebToolsConfig } from "@/types";
 
 const config: WebToolsConfig = {
@@ -13,12 +13,16 @@ describe("web tool configuration", () => {
     expect(validWebConfig({ ...config, allowed_domains: domainList([], "example.org bad/path") })).toBe(false);
     expect(validWebConfig({ ...config, blocked_domains: Array.from({ length: 101 }, (_, i) => `host${i}.org`) })).toBe(false);
   });
-  it("represents automatic selection or one named engine", () => {
-    expect(engineChoice([])).toBe("auto");
-    expect(engineChoice(["duckduckgo", "bing"])).toBe("auto");
-    expect(chosenEngines(engineChoice(["bing", "duckduckgo"]))).toEqual([]);
-    for (const engine of ["bing", "duckduckgo"] as const) expect(chosenEngines(engineChoice([engine]))).toEqual([engine]);
-    expect(chosenEngines("auto")).toEqual([]);
+  it("makes Automatic exclusive without treating explicit all-engine selection as automatic", () => {
+    expect(selectedEngines([], ["auto", "bing"])).toEqual(["bing"]);
+    expect(selectedEngines(["bing"], ["bing", "duckduckgo"])).toEqual(["bing", "duckduckgo"]);
+    expect(selectedEngines(["duckduckgo"], ["duckduckgo", "bing"])).toEqual(["duckduckgo", "bing"]);
+    expect(selectedEngines(["duckduckgo", "bing"], ["duckduckgo", "bing", "auto"])).toEqual([]);
+  });
+  it("returns to Automatic after deselecting the last engine or Automatic itself", () => {
+    expect(selectedEngines(["bing", "duckduckgo"], ["duckduckgo"])).toEqual(["duckduckgo"]);
+    expect(selectedEngines(["duckduckgo"], [])).toEqual([]);
+    expect(selectedEngines([], [])).toEqual([]);
   });
   it("accepts hostnames and rejects URLs and wildcard filters", () => {
     expect(domains(" SQLite.org, docs.example.org\nsqlite.org ")).toEqual(["sqlite.org", "docs.example.org"]);

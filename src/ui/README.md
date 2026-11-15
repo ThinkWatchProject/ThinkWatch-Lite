@@ -15,7 +15,8 @@ All standard interactive controls come from the shadcn components in `src/ui`
 (`components.json`: `radix-nova`). Pages compose them rather than implementing native
 selects, buttons, details, tab lists, or radio groups themselves. Use `SelectField`
 with `SelectOption` and `onValueChange` for fixed choices (including empty/default
-values); use `Combobox` for searchable choices. Never simulate a DOM change event.
+values); use `Combobox` for searchable choices and its `multiple` mode for a multi-select
+dropdown. Never simulate a DOM change event.
 `DialogContent`, `SheetContent`, and `AlertDialogContent` provide the popup container
 for Base UI comboboxes and let Escape close their list before the modal. Avoid clipping
 that container with `overflow-hidden`; scroll the form body instead.

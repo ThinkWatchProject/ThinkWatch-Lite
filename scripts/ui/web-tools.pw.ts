@@ -23,7 +23,7 @@ async function acceptSaves(page: Page) {
 test("locale menus scroll and select in the real config dialog; drafts survive Save", async ({ page }) => {
   await open(page);
   await acceptSaves(page);
-  const dialog = page.getByRole("dialog");
+  const dialog = page.getByRole("dialog", { name: "联网搜索与网页读取", exact: true });
   const language = dialog.getByRole("combobox", { name: "搜索语言", exact: true });
   await language.click();
   const list = page.getByRole("listbox");
@@ -45,6 +45,8 @@ test("locale menus scroll and select in the real config dialog; drafts survive S
   await engine.click();
   await expect(page.getByRole("option")).toHaveCount(3);
   await page.getByRole("option", { name: "Bing", exact: true }).click();
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await page.keyboard.press("Escape");
   const allowed = dialog.getByRole("textbox", { name: "允许的域名", exact: true });
   await allowed.fill("EXAMPLE.ORG, docs.example.org example.org");
   await allowed.press("Enter");
@@ -65,6 +67,80 @@ test("locale menus scroll and select in the real config dialog; drafts survive S
   await expect(language).toHaveValue("英语");
   await expect(region).toHaveValue("日本");
   await expect(engine).toHaveText("Bing");
+});
+
+test("one engine menu keeps multiple choices and their order across saves, with exclusive Automatic", async ({ page }, testInfo) => {
+  await open(page);
+  await acceptSaves(page);
+  const dialog = page.getByRole("dialog", { name: "联网搜索与网页读取", exact: true });
+  const engine = dialog.getByRole("combobox", { name: "搜索引擎", exact: true });
+  const automatic = page.getByRole("option", { name: "自动", exact: true });
+  const bing = page.getByRole("option", { name: "Bing", exact: true });
+  const duck = page.getByRole("option", { name: "DuckDuckGo", exact: true });
+  await expect(engine).toHaveText("自动");
+  await engine.click();
+  await expect(page.getByRole("listbox")).toHaveAttribute("aria-multiselectable", "true");
+  await expect(automatic).toHaveAttribute("aria-selected", "true");
+  await duck.click();
+  await expect(automatic).toHaveAttribute("aria-selected", "false");
+  await bing.click();
+  await expect(bing).toHaveAttribute("aria-selected", "true");
+  await expect(duck).toHaveAttribute("aria-selected", "true");
+  await expect(engine).toHaveText("DuckDuckGo, Bing");
+  await page.screenshot({ path: testInfo.outputPath("engines-multiple.png"), animations: "disabled" });
+  await page.keyboard.press("Escape");
+  await expect(dialog).toBeVisible();
+  await expect(engine).toBeFocused();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { savedWebConfig?: unknown }).savedWebConfig)).toMatchObject({ engines: ["duckduckgo", "bing"] });
+
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await expect(engine).toHaveText("DuckDuckGo, Bing");
+  await engine.click();
+  await expect(bing).toHaveAttribute("aria-selected", "true");
+  await expect(duck).toHaveAttribute("aria-selected", "true");
+  await automatic.click();
+  await expect(automatic).toHaveAttribute("aria-selected", "true");
+  await expect(bing).toHaveAttribute("aria-selected", "false");
+  await expect(duck).toHaveAttribute("aria-selected", "false");
+  await automatic.click();
+  await expect(automatic).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(engine).toHaveText("自动");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { savedWebConfig?: unknown }).savedWebConfig)).toMatchObject({ engines: [] });
+});
+
+test("engine choices support keyboard search and return to Automatic when the last choice is removed", async ({ page }) => {
+  await open(page);
+  await acceptSaves(page);
+  const dialog = page.getByRole("dialog", { name: "联网搜索与网页读取", exact: true });
+  const engine = dialog.getByRole("combobox", { name: "搜索引擎", exact: true });
+  await engine.focus();
+  await page.keyboard.press("ArrowDown");
+  const input = page.getByRole("combobox", { name: "查找引擎", exact: true });
+  await expect(input).toBeFocused();
+  await input.fill("Bing");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await input.press("ArrowDown");
+  await input.press("Enter");
+  await expect(engine).toHaveText("Bing");
+  await expect(page.getByRole("listbox")).toBeVisible();
+  await input.fill("no-such-engine");
+  await expect(page.getByText("没有匹配的引擎", { exact: true })).toBeVisible();
+  await input.fill("Bing");
+  await input.press("ArrowDown");
+  await input.press("Enter");
+  await expect(engine).toHaveText("自动");
+  await input.fill("");
+  await expect(page.getByRole("option", { name: "自动", exact: true })).toHaveAttribute("aria-selected", "true");
+  await page.keyboard.press("Escape");
+  await expect(engine).toBeFocused();
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { savedWebConfig?: unknown }).savedWebConfig)).toMatchObject({ engines: [] });
 });
 
 test("invalid domains block saving; failed save retains edits; Escape closes the menu first", async ({ page }) => {
@@ -94,13 +170,25 @@ for (const lang of ["zh", "en"]) for (const colorScheme of ["light", "dark"] as 
     await open(page, lang);
     for (const size of [{ width: 1100, height: 720 }, { width: 820, height: 560 }]) {
       await page.setViewportSize(size);
-      const dialog = page.getByRole("dialog");
+      const dialog = page.getByRole("dialog", { name: lang === "zh" ? "联网搜索与网页读取" : "Web search and page reading", exact: true });
       await expect.poll(async () => {
         const box = await dialog.boundingBox();
         return !!box && box.x >= 0 && box.y >= 0 && box.x + box.width <= size.width && box.y + box.height <= size.height;
       }).toBe(true);
       await expect(dialog.getByRole("button", { name: lang === "zh" ? "保存" : "Save", exact: true })).toBeInViewport();
-      await page.screenshot({ path: testInfo.outputPath(`config-${size.width}.png`) });
+      const engine = dialog.getByRole("combobox", { name: lang === "zh" ? "搜索引擎" : "Search engines", exact: true });
+      await engine.click();
+      await expect(page.getByRole("option", { name: "DuckDuckGo", exact: true })).toBeInViewport();
+      await page.screenshot({ path: testInfo.outputPath(`config-${size.width}.png`), animations: "disabled" });
+      await page.keyboard.press("Escape");
+      const fallback = dialog.getByRole("checkbox", { name: lang === "zh" ? "独立搜索失败时允许回退上游" : "Allow upstream fallback if a standalone search fails", exact: true });
+      await fallback.scrollIntoViewIfNeeded();
+      await expect(fallback).toBeInViewport();
+      await expect.poll(async () => {
+        const box = await fallback.boundingBox();
+        const footer = await dialog.locator('[data-slot="dialog-footer"]').boundingBox();
+        return !!box && !!footer && box.y + box.height <= footer.y;
+      }).toBe(true);
     }
   });
 }

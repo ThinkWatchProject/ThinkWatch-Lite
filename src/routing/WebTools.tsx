@@ -10,6 +10,7 @@ import { Checkbox } from "@/ui/checkbox";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collapsible";
 import { TableRow, TableCell } from "@/ui/table";
 import { DomainList } from "./DomainList";
+import { EnginePicker } from "./EnginePicker";
 import { Segmented } from "@/ui/segmented";
 import { SelectField, SelectOption } from "@/ui/select-field";
 import { Combobox, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty } from "@/ui/combobox";
@@ -18,7 +19,7 @@ import { DialogError, FormItem } from "@/upstreams/parts";
 import { errorText } from "@/upstreams/labels";
 import type { Overview, WebToolsConfig, WebToolsView, WebToolResult, WebToolRequest } from "@/types";
 import { webToolsText } from "./WebTools.i18n";
-import { domainList, engineChoice, chosenEngines, validWebConfig, WEB_LIMITS } from "./webToolsForm";
+import { domainList, validWebConfig, WEB_LIMITS } from "./webToolsForm";
 import { localeName, localeOptions, type LocaleKind, type LocaleOption } from "./webToolsLocale";
 
 export function WebTools({ overview }: { overview: Overview }) {
@@ -72,7 +73,7 @@ function Configuration({ view, overview, busy, error, save, close }: { view: Web
   const remote = useRemote();
   const id = useId();
   const [baseVersion] = useState(view.config_version);
-  const [config, setConfig] = useState(() => ({ ...view.config, engines: chosenEngines(engineChoice(view.config.engines)) }));
+  const [config, setConfig] = useState(view.config);
   const [allowed, setAllowed] = useState("");
   const [blocked, setBlocked] = useState("");
   const set = <K extends keyof WebToolsConfig>(key: K, value: WebToolsConfig[K]) => setConfig((c) => ({ ...c, [key]: value }));
@@ -84,10 +85,8 @@ function Configuration({ view, overview, busy, error, save, close }: { view: Web
   ] as const;
   return <>
     <DialogHeader><DialogTitle>{t.title}</DialogTitle><DialogDescription>{t.intro}</DialogDescription></DialogHeader>
-    <fieldset disabled={busy} className="grid min-h-0 min-w-0 gap-4 overflow-y-auto border-0 p-0 sm:grid-cols-2">
-      <FormItem label={t.engines} htmlFor={`${id}-engines`}><SelectField className="w-full" id={`${id}-engines`} value={engineChoice(config.engines)} onValueChange={(nextValue) => set("engines", chosenEngines(nextValue))}>
-        <SelectOption value="auto">{t.auto}</SelectOption><SelectOption value="bing">Bing</SelectOption><SelectOption value="duckduckgo">DuckDuckGo</SelectOption>
-      </SelectField></FormItem>
+    <div className="min-h-0 overflow-y-auto"><fieldset disabled={busy} className="grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
+      <FormItem label={t.engines} htmlFor={`${id}-engines`}><EnginePicker id={`${id}-engines`} value={config.engines} disabled={busy} onChange={(value) => set("engines", value)} /></FormItem>
       <FormItem label={t.proxy} htmlFor={`${id}-proxy`}><SelectField className="w-full" id={`${id}-proxy`} value={config.proxy} onValueChange={(nextValue) => set("proxy", nextValue)}><SelectOption value="system">{t.system}</SelectOption><SelectOption value="direct">{t.direct}</SelectOption>{overview.proxies.map((p) => <SelectOption key={p.name} value={p.name}>{p.name}</SelectOption>)}</SelectField></FormItem>
       <p className="tw-label text-muted-foreground sm:col-span-2">{t.engineHelp}</p>
       <LocalePicker id={`${id}-language`} kind="language" value={config.language} detected={view.system_locale.language} disabled={busy} onChange={(value) => set("language", value)} />
@@ -104,7 +103,7 @@ function Configuration({ view, overview, busy, error, save, close }: { view: Web
       <p className="tw-label text-muted-foreground sm:col-span-2">{t.readHelp}</p>
       <Label className="flex items-center gap-2 tw-body sm:col-span-2"><Checkbox checked={config.fallback_to_upstream} onCheckedChange={(value) => set("fallback_to_upstream", value === true)} />{t.fallback}</Label>
       <p className="tw-label text-muted-foreground sm:col-span-2">{t.fallbackHelp}</p>
-    </fieldset>
+    </fieldset></div>
     <DialogError error={error ?? (!valid ? t.invalid : null)} />
     <DialogFooter><Button variant="outline" disabled={busy} onClick={close}>{t.cancel}</Button><Button pending={busy} disabled={!valid} onClick={() => void save(draft, baseVersion)}>{t.save}</Button></DialogFooter>
   </>;

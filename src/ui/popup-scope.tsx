@@ -16,7 +16,9 @@ export const usePopupContainer = () => useContext(PopupContainer);
 export function keepPopupEscape(event: KeyboardEvent): boolean {
   const target = event.target;
   if (!(target instanceof Element)) return false;
-  const dialog = target.closest('[role="dialog"], [role="alertdialog"]');
+  // A combobox with its input inside the popup is itself role="dialog".
+  // Find the enclosing modal, including when Escape comes from that input.
+  const dialog = target.closest('[data-slot="dialog-content"], [data-slot="sheet-content"], [data-slot="alert-dialog-content"]');
   if (!dialog?.querySelector('[data-slot="combobox-content"][data-open]')) return false;
   event.preventDefault();
   return true;

@@ -11,8 +11,13 @@ export function domains(text: string): string[] {
 
 export const domainList = (saved: string[], draft: string): string[] => domains([...saved, draft].join("\n"));
 export const validDomain = (value: string): boolean => value.length > 0 && value.length <= 253 && value.split(".").every((label) => /^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$/i.test(label));
-export const engineChoice = (engines: SearchEngine[]): SearchEngine | "auto" => engines.length === 1 ? engines[0]! : "auto";
-export const chosenEngines = (choice: string): SearchEngine[] => choice === "bing" || choice === "duckduckgo" ? [choice] : [];
+export type EngineChoice = SearchEngine | "auto";
+
+export function selectedEngines(previous: SearchEngine[], choices: EngineChoice[]): SearchEngine[] {
+  // Adding Automatic clears explicit choices; adding an engine replaces Automatic.
+  if (previous.length && choices.includes("auto")) return [];
+  return choices.filter((choice): choice is SearchEngine => choice !== "auto");
+}
 
 export function validWebConfig(c: WebToolsConfig): boolean {
   return Object.entries(WEB_LIMITS).every(([key, [min, max]]) => {
