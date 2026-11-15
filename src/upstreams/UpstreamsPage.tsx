@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { ActivityIcon, NetworkIcon, PlusIcon, RefreshCwIcon, ServerIcon, ZapIcon } from "lucide-react";
 import { ExportDialog } from "@/backup/ExportDialog";
@@ -396,7 +397,7 @@ export default function UpstreamsPage({
       </>
     ) : (
       <>
-        <label className="mr-1 flex items-center gap-2 tw-body">
+        <Label className="mr-1 flex items-center gap-2 tw-body">
           <Switch
             checked={autoUpdate ?? pricing.data?.auto_update ?? true}
             pending={autoUpdate !== null}
@@ -404,7 +405,7 @@ export default function UpstreamsPage({
             onCheckedChange={(on) => void setAutoUpdate(on)}
           />
           {t.autoUpdate}
-        </label>
+        </Label>
         <HeaderAction
           icon={<RefreshCwIcon />}
           label={t.updateNow}

@@ -1,8 +1,9 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { notify } from "@/ui/notify";
 import { Table, TableBody, TableCell, TableRow } from "@/ui/table";
 import { CopyButton } from "@/ui/copy-button";
@@ -141,26 +142,26 @@ export function ManualDialog({
           <div className="border-t border-border" />
           <div className="flex items-center justify-between gap-3 px-3 py-2.5">
             <div className="flex min-w-0 flex-col gap-1.5">
-              <label className="tw-label text-muted-foreground" htmlFor="manual-key">
+              <Label className="tw-label text-muted-foreground" htmlFor="manual-key">
                 {t.keyLabel}
-              </label>
-              <NativeSelect
+              </Label>
+              <SelectField
                 id="manual-key"
                 size="sm"
                 className="w-72 max-w-full"
                 value={choice}
-                onChange={(e) => setChoice(e.target.value)}
+                onValueChange={(nextValue) => setChoice(nextValue)}
               >
-                {own == null && <NativeSelectOption value={NEW}>{t.newKeyFor(target.name)}</NativeSelectOption>}
+                {own == null && <SelectOption value={NEW}>{t.newKeyFor(target.name)}</SelectOption>}
                 {own != null && !keys.some((k) => k.name === own) && (
-                  <NativeSelectOption value={own}>{own}</NativeSelectOption>
+                  <SelectOption value={own}>{own}</SelectOption>
                 )}
                 {keys.map((k) => (
-                  <NativeSelectOption key={k.name} value={k.name}>
+                  <SelectOption key={k.name} value={k.name}>
                     {k.name}
-                  </NativeSelectOption>
+                  </SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </div>
             <CopyButton label={choice === NEW ? t.createAndCopy : undefined} onCopy={copyKey} />
           </div>

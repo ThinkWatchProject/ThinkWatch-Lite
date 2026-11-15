@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useCallback, useEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from "react";
 import { Input } from "@/ui/input";
 import { cn } from "@/lib/utils";
@@ -32,7 +33,7 @@ export function FormRow({
     <>
       {/* 控件高 28px、文字 13px：标签往下挪一点，和控件里的字落在同一条线上 */}
       <dt className="pt-1 tw-body text-muted-foreground">
-        {htmlFor ? <label htmlFor={htmlFor}>{label}</label> : label}
+        {htmlFor ? <Label htmlFor={htmlFor}>{label}</Label> : label}
       </dt>
       <dd className="flex min-w-0 flex-col items-start gap-1">
         {children}

@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import {
   createContext,
   Fragment,
@@ -34,7 +35,7 @@ import { kitText } from "./kit.i18n";
  *   <SettingsShell items={[{ id: "general", label: t.general }, …]} header={<PageHeader … />}>
  *     <SettingsGroup id="general" title={t.general}>
  *       <SettingsCard>
- *         <SettingsRow label={t.language} control={<NativeSelect … />} />
+ *         <SettingsRow label={t.language} control={<SelectField … />} />
  *       </SettingsCard>
  *     </SettingsGroup>
  *   </SettingsShell>
@@ -417,7 +418,7 @@ export function SettingsRow({
 }) {
   const head = (
     <div className="min-w-0 flex-1 basis-56">
-      <div className="tw-body text-foreground">{htmlFor ? <label htmlFor={htmlFor}>{label}</label> : label}</div>
+      <div className="tw-body text-foreground">{htmlFor ? <Label htmlFor={htmlFor}>{label}</Label> : label}</div>
       {description && <div className="mt-0.5 tw-label text-muted-foreground">{description}</div>}
     </div>
   );

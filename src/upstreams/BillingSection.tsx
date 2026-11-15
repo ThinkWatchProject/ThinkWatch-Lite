@@ -1,6 +1,6 @@
 import { CircleAlertIcon, PencilIcon } from "lucide-react";
 import { Button } from "@/ui/button";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Segmented } from "@/ui/segmented";
 import {
   Table,
@@ -80,31 +80,31 @@ export function BillingSection({
         {/* 不计费时价目表用不上，整个藏起来，而不是摆一个灰掉的下拉 */}
         {perToken && (
           <FormItem label={t.sheet} htmlFor="up-sheet">
-            <NativeSelect
+            <SelectField
               id="up-sheet"
               className="w-full"
               value={linkSheet ? LINK_SHEET : form.pricing}
-              onChange={(e) => {
-                const v = e.target.value;
+              onValueChange={(nextValue) => {
+                const v = nextValue;
                 if (v === NEW_SHEET) onNewSheet();
                 else if (v === LINK_SHEET) set({ newSheet: form.newSheet && { ...form.newSheet, chosen: true } });
                 else set({ pricing: v, newSheet: form.newSheet && { ...form.newSheet, chosen: false } });
               }}
             >
-              <NativeSelectOption value="">{t.defaultSheet}</NativeSelectOption>
+              <SelectOption value="">{t.defaultSheet}</SelectOption>
               {ov.price_sheets.map((s) => (
-                <NativeSelectOption key={s.name} value={s.name}>
+                <SelectOption key={s.name} value={s.name}>
                   {s.name}
-                </NativeSelectOption>
+                </SelectOption>
               ))}
               {form.pricing && !sheet && !ov.price_sheets.some((s) => s.name === form.pricing) && (
-                <NativeSelectOption value={form.pricing}>{form.pricing}</NativeSelectOption>
+                <SelectOption value={form.pricing}>{form.pricing}</SelectOption>
               )}
               {form.newSheet && (
-                <NativeSelectOption value={LINK_SHEET}>{t.linkSheet(newSheetName(form) || t.unnamed)}</NativeSelectOption>
+                <SelectOption value={LINK_SHEET}>{t.linkSheet(newSheetName(form) || t.unnamed)}</SelectOption>
               )}
-              <NativeSelectOption value={NEW_SHEET}>{t.newSheet}</NativeSelectOption>
-            </NativeSelect>
+              <SelectOption value={NEW_SHEET}>{t.newSheet}</SelectOption>
+            </SelectField>
           </FormItem>
         )}
       </div>

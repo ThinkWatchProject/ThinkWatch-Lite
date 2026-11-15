@@ -294,3 +294,18 @@ What it writes:
 | `docs/screenshots/menubar-{light,dark}.png` | The menu bar item: the mark and today's tokens and cost |
 | `docs/screenshots/{zh,en}/menubar-menu-{light,dark}.png` | The menu it opens (standard items are drawn approximately) |
 | `docs/screenshots/web/` | What the website uses: the dark variant as WebP at quality 85, `-en` for the English interface |
+
+## Browser interaction checks
+
+`pnpm test:ui` runs real mouse, wheel and keyboard tests in Chromium and WebKit
+against the app with mock IPC, including modal menus and web-tool configuration.
+It never connects to a running Core or changes local application settings.
+
+```bash
+pnpm exec playwright install chromium webkit
+pnpm test:ui
+```
+
+To use an already installed Chrome locally, set `PLAYWRIGHT_CHROMIUM_CHANNEL=chrome`.
+Test outputs are disposable and live under `node_modules/.cache/ui-results`.
+The frontend source check also prevents pages from bypassing the shadcn UI kit.

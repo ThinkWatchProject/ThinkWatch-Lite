@@ -19,7 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/ui/dropdown-menu";
 import { Input } from "@/ui/input";
-import { NativeSelect, NativeSelectOptGroup, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOptionGroup, SelectOption } from "@/ui/select-field";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -225,32 +225,32 @@ export function RuleDialog({
                   known={models}
                 />
               ) : (
-                <NativeSelect
+                <SelectField
                   id="rule-to"
                   aria-label={t.forwardTo}
                   className="w-80"
                   value={d.to}
-                  onChange={(e) =>
-                    e.target.value === NEW_GROUP ? setNewGroup(true) : set({ to: e.target.value })
+                  onValueChange={(nextValue) =>
+                    nextValue === NEW_GROUP ? setNewGroup(true) : set({ to: nextValue })
                   }
                 >
-                  {!d.to && <NativeSelectOption value="">{t.chooseTarget}</NativeSelectOption>}
-                  <NativeSelectOptGroup label={t.groups}>
+                  {!d.to && <SelectOption value="">{t.chooseTarget}</SelectOption>}
+                  <SelectOptionGroup label={t.groups}>
                     {ov.groups.map((g) => (
-                      <NativeSelectOption key={g.name} value={g.name}>
+                      <SelectOption key={g.name} value={g.name}>
                         {targetLabel(g.name)}
-                      </NativeSelectOption>
+                      </SelectOption>
                     ))}
-                    <NativeSelectOption value={NEW_GROUP}>{t.newGroupMenu}</NativeSelectOption>
-                  </NativeSelectOptGroup>
-                  <NativeSelectOptGroup label={t.upstreams}>
+                    <SelectOption value={NEW_GROUP}>{t.newGroupMenu}</SelectOption>
+                  </SelectOptionGroup>
+                  <SelectOptionGroup label={t.upstreams}>
                     {ov.providers.map((p) => (
-                      <NativeSelectOption key={p.name} value={p.name}>
+                      <SelectOption key={p.name} value={p.name}>
                         {p.name}
-                      </NativeSelectOption>
+                      </SelectOption>
                     ))}
-                  </NativeSelectOptGroup>
-                </NativeSelect>
+                  </SelectOptionGroup>
+                </SelectField>
               )}
             </FormItem>
           )}
@@ -459,17 +459,17 @@ function ConditionRow({
       const [op, amount] = splitCompare(v0);
       control = (
         <>
-          <NativeSelect
+          <SelectField
             aria-label={t.compareOp(name)}
             value={op}
-            onChange={(e) => onChange({ ...c, values: [`${e.target.value}${amount}`] })}
+            onValueChange={(nextValue) => onChange({ ...c, values: [`${nextValue}${amount}`] })}
           >
             {compareOps().map((o) => (
-              <NativeSelectOption key={o.id} value={o.id}>
+              <SelectOption key={o.id} value={o.id}>
                 {o.label}
-              </NativeSelectOption>
+              </SelectOption>
             ))}
-          </NativeSelect>
+          </SelectField>
           <Input
             aria-label={t.compareAmount(name)}
             className="w-28 font-mono"
@@ -496,22 +496,22 @@ function ConditionRow({
     case "one":
       control =
         c.field === "dialect" ? (
-          <NativeSelect aria-label={name} value={v0} onChange={(e) => onChange({ ...c, values: [e.target.value] })}>
+          <SelectField aria-label={name} value={v0} onValueChange={(nextValue) => onChange({ ...c, values: [nextValue] })}>
             {DIALECTS.map((d) => (
-              <NativeSelectOption key={d} value={d}>
+              <SelectOption key={d} value={d}>
                 {formatLabel(d)}
-              </NativeSelectOption>
+              </SelectOption>
             ))}
-          </NativeSelect>
+          </SelectField>
         ) : (
-          <NativeSelect aria-label={name} value={v0} onChange={(e) => onChange({ ...c, values: [e.target.value] })}>
-            {!v0 && <NativeSelectOption value="">{t.chooseKey}</NativeSelectOption>}
+          <SelectField aria-label={name} value={v0} onValueChange={(nextValue) => onChange({ ...c, values: [nextValue] })}>
+            {!v0 && <SelectOption value="">{t.chooseKey}</SelectOption>}
             {ov.clients.map((k) => (
-              <NativeSelectOption key={k.name} value={k.name}>
+              <SelectOption key={k.name} value={k.name}>
                 {k.name}
-              </NativeSelectOption>
+              </SelectOption>
             ))}
-          </NativeSelect>
+          </SelectField>
         );
       break;
     case "many":

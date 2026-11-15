@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useEffect, useState } from "react";
 import {
   AlertDialog,
@@ -151,9 +152,9 @@ export function LocationsDialog({
             <div className="flex flex-col gap-4">
               {rows.map((r, i) => (
                 <div key={r.roles.join()} className="flex flex-col gap-1.5">
-                  <label htmlFor={`loc-${i}`} className="tw-body font-medium">
+                  <Label htmlFor={`loc-${i}`} className="tw-body font-medium">
                     {label(r.roles)}
-                  </label>
+                  </Label>
                   <Input
                     id={`loc-${i}`}
                     className="font-mono"

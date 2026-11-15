@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Label } from "@/ui/label";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { CircleAlertIcon, InfoIcon, TriangleAlertIcon } from "lucide-react";
 import { call } from "@/control";
 import { invalidate, useResource } from "@/lib/resource";
@@ -373,28 +374,28 @@ function Body({
           <FormItem label={t.sameModel} desc={t.sameModelWhat} className="motion-fade">
             <Boxed>
               {sameModel.map((s) => (
-                <label
+                <Label
                   key={`${s.provider}:${s.model}`}
                   className="flex h-8 cursor-default items-center gap-2.5 border-b border-border px-3 last:border-b-0"
                 >
                   <Checkbox checked={false} onCheckedChange={(on) => on === true && add(s.model)} />
                   <span className="min-w-0 flex-1 truncate font-mono tw-body">{s.model}</span>
                   <span className="shrink-0 tw-label text-muted-foreground">{s.provider}</span>
-                </label>
+                </Label>
               ))}
             </Boxed>
           </FormItem>
         )}
 
         <div className="flex flex-col gap-1.5">
-          <label className="flex items-center gap-2 tw-body">
+          <Label className="flex items-center gap-2 tw-body">
             <Checkbox
               checked={hideOriginals}
               disabled={discoverySupport !== true || loading}
               onCheckedChange={(v) => setDraft((d) => ({ ...d, hideOriginals: v === true }))}
             />
             {t.hideOriginals}
-          </label>
+          </Label>
           <p className="tw-label text-muted-foreground">{t.hideOriginalsHint}</p>
           {discoverySupport === false && <p className="tw-label text-warning">{t.hideOriginalsUpgrade}</p>}
           {hideOriginals && fresh && p && (
@@ -565,25 +566,8 @@ function ModelInput({
 }) {
   const t = useText(aliasDialogText);
   const [draft, setDraft] = useState("");
-  // **建议列表挂进所在的对话框，不挂在 body 上**：Radix 的模态对话框把 body 设成
-  // pointer-events: none，挂在 body 上的列表看得见、点不中（见路由的 `ModelInput`）
-  const anchor = useRef<HTMLDivElement>(null);
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => {
-    setContainer(anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null);
-  }, []);
   const [open, setOpen] = useState(false);
-  // **Esc 只收起列表**，不连同对话框（和里面没保存的改动）一起关掉
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.isComposing) return;
-      e.stopPropagation();
-      setOpen(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
+
   /** 方向键选中了一条建议：回车交给列表（加那一条），不是加输入的原样 */
   const highlighted = useRef<string | undefined>(undefined);
   const notes = useMemo(() => new Map(candidates.map((k) => [k.id, k.providers.join(t.sep)])), [candidates, t.sep]);
@@ -600,7 +584,7 @@ function ModelInput({
   }
 
   return (
-    <div ref={anchor} className="flex h-8 items-center gap-2.5 bg-background px-3">
+    <div className="flex h-8 items-center gap-2.5 bg-background px-3">
       <Autocomplete
         items={items}
         filteredItems={shown}
@@ -637,7 +621,7 @@ function ModelInput({
             if (!open) commit(draft);
           }}
         />
-        <ComboboxContent container={container ?? undefined}>
+        <ComboboxContent>
           <ComboboxList>
             {(v: string) => (
               <ComboboxItem key={v} value={v} className="pr-2">

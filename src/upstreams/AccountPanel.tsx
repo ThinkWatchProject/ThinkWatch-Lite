@@ -574,14 +574,13 @@ function LinkButton({
   children: ReactNode;
 }) {
   return (
-    <button
+    <Button variant="link" size="xs"
       type="button"
       onClick={onClick}
-      disabled={pending}
-      className="inline-flex items-center gap-1.5 rounded-sm tw-body text-foreground/85 underline decoration-foreground/30 underline-offset-4 outline-none hover:text-foreground hover:decoration-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
+      pending={pending}
+      className="h-auto min-h-6 whitespace-normal inline-flex items-center gap-1.5 rounded-sm tw-body text-foreground/85 underline decoration-foreground/30 underline-offset-4 outline-none hover:text-foreground hover:decoration-foreground/50 focus-visible:ring-2 focus-visible:ring-ring/50 disabled:opacity-50"
     >
-      {pending && <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />}
       {children}
-    </button>
+    </Button>
   );
 }

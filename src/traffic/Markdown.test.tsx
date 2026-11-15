@@ -12,7 +12,7 @@ describe("Markdown", () => {
     expect(out).toContain(">499 个</strong>");
     expect(out).toMatch(/<ul[^>]*><li[^>]*><div[^>]*><span>业务代码<\/span>/);
     expect(out).toContain("<table");
-    expect(out).toMatch(/<td class="[^"]*text-right[^"]*">2<\/td>/);
+    expect(out).toMatch(/<td[^>]* class="[^"]*text-right[^"]*">2<\/td>/);
     expect(out).toContain("const a = 1;</pre>");
     expect(out).not.toContain("**");
   });

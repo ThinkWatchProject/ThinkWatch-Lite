@@ -11,6 +11,20 @@ something about state (ok / warning / error) and in data visualisation (`--chart
 a page outside the Overview. The premium feel comes from the material (translucent sidebar
 on macOS), consistent hierarchy, motion and complete states — not from decoration.
 
+All standard interactive controls come from the shadcn components in `src/ui`
+(`components.json`: `radix-nova`). Pages compose them rather than implementing native
+selects, buttons, details, tab lists, or radio groups themselves. Use `SelectField`
+with `SelectOption` and `onValueChange` for fixed choices (including empty/default
+values); use `Combobox` for searchable choices and its `multiple` mode for a multi-select
+dropdown. Never simulate a DOM change event.
+`DialogContent`, `SheetContent`, and `AlertDialogContent` provide the popup container
+for Base UI comboboxes and let Escape close their list before the modal. Avoid clipping
+that container with `overflow-hidden`; scroll the form body instead.
+
+Charts, canvas/SVG visualizations, and the native desktop menu remain specialized
+renderers; their standard controls still use this kit. HTML inside the shadcn
+primitives is expected. New primitives should use the official shadcn registry.
+
 House rules that also apply (from the product owner, binding):
 
 - UI copy is written, declarative Chinese: no 你/我, amounts are 费用, titles are not
@@ -19,9 +33,10 @@ House rules that also apply (from the product owner, binding):
 - The UI never explains internal mechanics (intervals, data sources, why). One line of
   state, not a paragraph of reasons.
 - Pick-one-of-several is always `Segmented` (`@/ui/segmented`), never a row of buttons
-  or radio dots. On/off is `Switch`; multi-select is `Toggle`.
+  for a compact value choice. A vertical list of connection cards uses `RadioGroup`
+  with `Label`; switching views uses `Tabs`. On/off is `Switch`; multi-select is `Toggle`.
 - Everything in one toolbar row is **28px**: `Segmented`, `Button size="sm"`,
-  `Toggle size="sm"`, `NativeSelect size="sm"`, `Input variant="sm"`, `InputGroup
+  `Toggle size="sm"`, `SelectField size="sm"`, `Input variant="sm"`, `InputGroup
   className="h-7"`. Form fields in dialogs use the default 32px.
 - Config objects (upstreams, proxies, keys, routes…) are created and edited in dialogs,
   never inline on the page.

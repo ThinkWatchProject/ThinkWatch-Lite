@@ -1,3 +1,5 @@
+import { RadioGroup, RadioGroupItem } from "@/ui/radio-group";
+import { Label } from "@/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -66,7 +68,7 @@ export default function PickerWindow() {
   }, [view]);
 
   async function go(then: string | null) {
-    if (!chosen) return;
+    if (!chosen || busy) return;
     setBusy(true);
     setFailed(null);
     try {
@@ -76,25 +78,6 @@ export default function PickerWindow() {
       setBusy(false);
     }
   }
-
-  // 回车等于「连接」，上下键挪选中
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (!view) return;
-      const ids = view.profiles.map((p) => p.id);
-      const i = ids.indexOf(chosen ?? "");
-      if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-        e.preventDefault();
-        const next = ids[Math.min(ids.length - 1, Math.max(0, i + (e.key === "ArrowDown" ? 1 : -1)))];
-        if (next) setChosen(next);
-      } else if (e.key === "Enter" && !busy) {
-        e.preventDefault();
-        void go(null);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  });
 
   if (!view) return null;
   const why = window.__TW_PICK__ === "option" ? t.pickOption : t.pickUnfinished;
@@ -106,23 +89,20 @@ export default function PickerWindow() {
           <h1 className="tw-title font-semibold">{t.pickTitle}</h1>
           <p className="mt-1 tw-body text-muted-foreground">{why}</p>
         </div>
-        <div role="radiogroup" aria-label={t.pickTitle} className="flex flex-col gap-1">
+        <RadioGroup value={chosen ?? ""} onValueChange={setChosen} disabled={busy} aria-label={t.pickTitle} className="flex flex-col gap-1">
           {view.profiles.map((p) => {
             const on = p.id === chosen;
             const Icon = p.local ? IconLocal : IconRemote;
             return (
-              <button
+              <Label
                 key={p.id}
-                type="button"
-                role="radio"
-                aria-checked={on}
-                onClick={() => setChosen(p.id)}
                 onDoubleClick={() => void go(null)}
                 className={cn(
-                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left outline-none",
+                  "flex items-center gap-2.5 rounded-lg border px-3 py-2 text-left has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-ring/50",
                   on ? "border-primary/60 bg-primary/5" : "border-border hover:bg-muted/50",
                 )}
               >
+                <RadioGroupItem value={p.id} autoFocus={on} onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); if (!busy) void go(null); } }} />
                 <Icon className="size-4 shrink-0 opacity-70" />
                 <span className="min-w-0 flex-1">
                   <span className="block truncate tw-body font-medium">{profileName(p)}</span>
@@ -131,10 +111,10 @@ export default function PickerWindow() {
                   </span>
                 </span>
                 {p.id === view.last_used && <Badge variant="secondary">{t.lastUsed}</Badge>}
-              </button>
+              </Label>
             );
           })}
-        </div>
+        </RadioGroup>
         {failed && <p className="tw-body text-destructive">{failed}</p>}
         <div className="flex items-center gap-2 pt-1">
           <Button variant="ghost" disabled={busy} onClick={() => void go("settings")}>

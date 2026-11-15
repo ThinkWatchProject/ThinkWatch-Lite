@@ -1,7 +1,7 @@
 /**
  * 路由页几个对话框共用的小件：带建议的模型输入、一排可切换的名称标签。
  */
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { AliasMark } from "@/aliases/AliasMark";
 import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
@@ -67,29 +67,10 @@ export function ModelInput({
     return byId;
   }, [models]);
   const valueIsAlias = useMemo(() => aliasNamed(value, options) != null, [value, options]);
-  // **建议列表挂进所在的对话框，不挂在 body 上。**Radix 的模态对话框把 body
-  // 设成 pointer-events: none，并把对话框外的点击当成「点在外面」，滚轮也
-  // 只放行对话框内部 —— 挂在 body 上的列表看得见、点不中也滚不动
-  const anchor = useRef<HTMLDivElement>(null);
-  const [container, setContainer] = useState<HTMLElement | null>(null);
-  useLayoutEffect(() => {
-    setContainer(anchor.current?.closest<HTMLElement>('[role="dialog"]') ?? null);
-  }, []);
-  // **Esc 只收起列表。**对话框的 Esc 监听在 document 的捕获阶段，比输入框先
-  // 拿到这一下；不在 window 上先截住，就连对话框带没保存的编辑一起关掉了
   const [open, setOpen] = useState(false);
-  useEffect(() => {
-    if (!open) return;
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key !== "Escape" || e.isComposing) return;
-      e.stopPropagation();
-      setOpen(false);
-    };
-    window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
-  }, [open]);
+
   return (
-    <div ref={anchor} className="contents">
+    <div className="contents">
       <Autocomplete
         items={items}
         value={value}
@@ -104,7 +85,7 @@ export function ModelInput({
           {valueIsAlias && <AliasMark className="pointer-events-none mr-1" />}
         </ComboboxInput>
         {/* 带灰字时列表至少这么宽：放在窄的输入框（「模型改为」）下面，名称和灰字都挤不下 */}
-        <ComboboxContent container={container ?? undefined} className={options.size > 0 ? "min-w-80" : undefined}>
+        <ComboboxContent className={options.size > 0 ? "min-w-80" : undefined}>
           <ComboboxEmpty>{t.noMatch}</ComboboxEmpty>
           <ComboboxList>
             {(m: string) => {

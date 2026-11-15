@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { ActivityIcon } from "lucide-react";
 import { ms } from "@/format";
@@ -166,10 +167,10 @@ export function ProxyDialog({
               />
             </div>
           </FormItem>
-          <label className="flex items-center gap-2.5 tw-body font-medium">
+          <Label className="flex items-center gap-2.5 tw-body font-medium">
             <Switch checked={auth} onCheckedChange={setAuth} />
             {t.needsAuth}
-          </label>
+          </Label>
           {auth && (
             <div className="grid grid-cols-2 gap-4">
               <FormItem label={t.user} htmlFor="px-user">
