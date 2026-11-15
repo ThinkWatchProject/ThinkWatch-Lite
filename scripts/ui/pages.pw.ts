@@ -6,6 +6,14 @@ for (const scene of ["overview", "traffic", "clients", "keys", "upstreams", "rou
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));
     page.on("console", (message) => { if (message.type() === "error") errors.push(message.text()); });
+    if (scene === "dry-run") {
+      // Force the initial preview to run before setup completes, as on slower CI.
+      await page.addInitScript(() => document.addEventListener("DOMContentLoaded", () => {
+        const style = document.createElement("style");
+        style.textContent = '[data-slot="dialog-content"] { animation-duration: 400ms !important; }';
+        document.head.append(style);
+      }));
+    }
     await page.goto(`/scripts/shots/index.html?scene=${scene}&lang=zh`);
     await page.waitForFunction(() => window.__shot?.state !== "loading");
     expect(await page.evaluate(() => window.__shot)).toEqual({ state: "ready" });

@@ -94,6 +94,8 @@ export const SCENES: Scene[] = [
       type(model, "claude-sonnet-5");
       model.blur();
       await idle();
+      // A captured trace must replace every transient preview error before ready.
+      await waitFor(() => dialog.querySelector('[aria-busy="true"], [data-tone="error"]') ? null : dialog.querySelector("table"));
     },
   },
   {
