@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { GripVerticalIcon } from "lucide-react";
 import { Badge } from "@/ui/badge";
@@ -250,7 +251,7 @@ export function GroupDialog({
                             />
                           </TableCell>
                           <TableCell className="py-1.5">
-                            <label htmlFor={id} className="flex min-w-0 cursor-pointer items-center gap-2">
+                            <Label htmlFor={id} className="flex min-w-0 cursor-pointer items-center gap-2">
                               <TargetIcon name={n} providers={ov.providers} size={16} />
                               <span className="min-w-0">
                                 <span
@@ -269,7 +270,7 @@ export function GroupDialog({
                                   </span>
                                 )}
                               </span>
-                            </label>
+                            </Label>
                           </TableCell>
                           {kind === "select" && (
                             <TableCell className="text-right">

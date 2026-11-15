@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { domains, validWebConfig } from "./webToolsForm";
+import { domains, domainList, engineChoice, chosenEngines, validWebConfig } from "./webToolsForm";
 import type { WebToolsConfig } from "@/types";
 
 const config: WebToolsConfig = {
@@ -8,6 +8,18 @@ const config: WebToolsConfig = {
 };
 
 describe("web tool configuration", () => {
+  it("keeps unfinished input when saving, normalizes and deduplicates pasted lists", () => {
+    expect(domainList(["example.org"], "EXAMPLE.org, docs.example.org\napi.example.org")).toEqual(["example.org", "docs.example.org", "api.example.org"]);
+    expect(validWebConfig({ ...config, allowed_domains: domainList([], "example.org bad/path") })).toBe(false);
+    expect(validWebConfig({ ...config, blocked_domains: Array.from({ length: 101 }, (_, i) => `host${i}.org`) })).toBe(false);
+  });
+  it("represents automatic selection or one named engine", () => {
+    expect(engineChoice([])).toBe("auto");
+    expect(engineChoice(["duckduckgo", "bing"])).toBe("auto");
+    expect(chosenEngines(engineChoice(["bing", "duckduckgo"]))).toEqual([]);
+    for (const engine of ["bing", "duckduckgo"] as const) expect(chosenEngines(engineChoice([engine]))).toEqual([engine]);
+    expect(chosenEngines("auto")).toEqual([]);
+  });
   it("accepts hostnames and rejects URLs and wildcard filters", () => {
     expect(domains(" SQLite.org, docs.example.org\nsqlite.org ")).toEqual(["sqlite.org", "docs.example.org"]);
     expect(validWebConfig({ ...config, allowed_domains: ["sqlite.org"] })).toBe(true);

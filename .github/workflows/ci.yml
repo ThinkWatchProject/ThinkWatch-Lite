@@ -81,6 +81,26 @@ jobs:
         # pnpm build's typecheck for local/release builds; CI only needs Vite here.
         run: pnpm exec vite build
 
+  browser:
+    name: Browser interactions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm exec playwright install --with-deps chromium webkit
+      - run: pnpm test:ui
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: node_modules/.cache/ui-results
+          retention-days: 5
+
   # Formatting doesn't depend on the platform, so it is checked once, here,
   # and the three platform jobs below only compile and test. It needs no
   # build and no cache: rustfmt only reads the source.

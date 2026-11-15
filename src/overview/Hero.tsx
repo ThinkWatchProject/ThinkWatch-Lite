@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useId, useState, type KeyboardEvent, type ReactNode } from "react";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/ui/tabs";
+import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { ArrowDownRightIcon, ArrowRightIcon, ArrowUpRightIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { AnimatedNumber } from "@/ui/motion";
@@ -85,7 +86,6 @@ export function Hero({
 }) {
   const t = useText(overviewText);
   const rt = useText(rangeText);
-  const uid = useId();
   const live = range.live === true;
   // 多留一个核宽的样本：最左边那一格的鼓包有一半来自图外
   const win = useLiveWindow(live, range.ms + LIVE_REACH_MS);
@@ -222,48 +222,28 @@ export function Hero({
   const clear = useCallback(() => setHover(null), []);
   useHoverOff(cursor !== null, clear);
 
-  const tabId = (m: Metric) => `${uid}-tab-${m}`;
-  const panelId = `${uid}-panel`;
-  const onTabKey = (e: KeyboardEvent<HTMLDivElement>) => {
-    const k = METRICS.indexOf(metric);
-    const next =
-      e.key === "ArrowRight" ? (k + 1) % METRICS.length
-      : e.key === "ArrowLeft" ? (k - 1 + METRICS.length) % METRICS.length
-      : e.key === "Home" ? 0
-      : e.key === "End" ? METRICS.length - 1
-      : null;
-    if (next === null) return;
-    e.preventDefault();
-    const m = METRICS[next]!;
-    onMetric(m);
-    document.getElementById(tabId(m))?.focus();
-  };
-
   return (
+    <Tabs value={metric} onValueChange={(next) => onMetric(next as Metric)} asChild>
     <section
       aria-label={t.usageLabel}
       data-slot="overview-hero"
-      className="min-w-0 rounded-[10px] border border-border bg-panel"
+      className="min-w-0 gap-0 rounded-[10px] border border-border bg-panel"
     >
-      <div
-        role="tablist"
+      <TabsList variant="line"
         aria-label={t.metricsLabel}
-        onKeyDown={onTabKey}
-        className="grid grid-cols-3 border-b border-border @min-[760px]/page:grid-cols-6"
+        className="grid h-auto w-full grid-cols-3 gap-0 rounded-none border-b border-border p-0 group-data-horizontal/tabs:h-auto @min-[760px]/page:grid-cols-6"
       >
         {METRICS.map((m, i) => (
           <Tile
             key={m}
-            id={tabId(m)}
-            panel={panelId}
+            value={m}
             on={m === metric}
             index={i}
             spec={tiles[m]}
-            onPick={() => onMetric(m)}
           />
         ))}
-      </div>
-      <div role="tabpanel" id={panelId} aria-labelledby={tabId(metric)} className="pt-3.5 pr-5 pb-3.5 pl-3">
+      </TabsList>
+      <TabsContent key={metric} value={metric} className="pt-3.5 pr-5 pb-3.5 pl-3">
         <div className="flex min-h-5 flex-wrap items-center gap-x-4 gap-y-1 pl-11">
           <div className="min-w-0 tw-body text-foreground/85">{detail[metric]}</div>
           <div className="ml-auto flex shrink-0 items-center gap-3.5 tw-label whitespace-nowrap text-muted-foreground">
@@ -291,8 +271,9 @@ export function Hero({
           live={live}
           label={t.chartOf(tiles[metric].label)}
         />
-      </div>
+      </TabsContent>
     </section>
+    </Tabs>
   );
 }
 
@@ -310,33 +291,23 @@ interface TileSpec {
  * 的圆角跟着换。选中的那个底色升一档、下沿一道 `--data-1`。
  */
 function Tile({
-  id,
-  panel,
+  value,
   on,
   index,
   spec,
-  onPick,
 }: {
-  id: string;
-  panel: string;
+  value: Metric;
   on: boolean;
   index: number;
   spec: TileSpec;
-  onPick: () => void;
 }) {
   return (
-    <button
-      type="button"
-      role="tab"
-      id={id}
-      aria-selected={on}
-      aria-controls={panel}
-      tabIndex={on ? 0 : -1}
-      onClick={onPick}
+    <TabsTrigger
+      value={value}
       className={cn(
-        "relative flex min-w-0 cursor-pointer flex-col items-start gap-px border-border px-4 pt-3 pb-[11px] text-left outline-none",
+        "relative flex h-auto min-w-0 cursor-pointer flex-col items-start gap-px rounded-none border-0 border-border text-foreground after:hidden px-4 pt-3 pb-[11px] text-left outline-none",
         "transition-colors duration-(--motion-fast) ease-(--motion-ease) focus-visible:ring-2 focus-visible:ring-ring/40 focus-visible:ring-inset",
-        on ? "bg-foreground/[0.04]" : "hover:bg-foreground/[0.02]",
+        on ? "group-data-[variant=line]/tabs-list:data-active:bg-foreground/[0.04]" : "hover:bg-foreground/[0.02]",
         // 分隔线：一排六个时左边一道；3 × 2 时第二排上面一道、每排第一个左边没有
         index === 1 || index === 2 ? "border-l" : "",
         index === 3 && "border-t @min-[760px]/page:border-t-0 @min-[760px]/page:border-l",
@@ -363,7 +334,7 @@ function Tile({
           on ? "bg-data-1" : "bg-transparent",
         )}
       />
-    </button>
+    </TabsTrigger>
   );
 }
 

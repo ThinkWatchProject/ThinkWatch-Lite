@@ -40,7 +40,7 @@ async function main() {
 
   for (const [k, v] of Object.entries(scene.storage ?? {})) localStorage.setItem(k, v);
   const { command } = await import("./mock/commands");
-  mockWindows("main");
+  mockWindows(scene.window ?? "main");
   // **答不上来的调用都报出来。**界面多半会接住失败、画一个「—」或一行报错，页面照样说
   // 「可以拍了」—— 不报的话，拍下来的就是一张缺了一块的图。报了，截图程序就停在这一张
   mockIPC(

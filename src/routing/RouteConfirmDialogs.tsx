@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/ui/alert-dialog";
 import { Banner } from "@/ui/banner";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -142,21 +142,21 @@ export function DeleteRouteDialog({
           <>
             <KeyList rows={ov.clients.filter((c) => users.includes(c.name)).map((k) => ({ key: k }))} />
             <FormItem label={t.reassignTo} htmlFor="reassign-to">
-              <NativeSelect
+              <SelectField
                 id="reassign-to"
                 className="w-full"
                 value={target}
-                onChange={(e) => setTarget(e.target.value)}
+                onValueChange={(nextValue) => setTarget(nextValue)}
               >
-                <NativeSelectOption value="">
+                <SelectOption value="">
                   {fallback ? t.defaultOption(fallback.name) : t.defaultRoute}
-                </NativeSelectOption>
+                </SelectOption>
                 {others.map((r) => (
-                  <NativeSelectOption key={r.name} value={r.name}>
+                  <SelectOption key={r.name} value={r.name}>
                     {r.name}
-                  </NativeSelectOption>
+                  </SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </FormItem>
           </>
         )}

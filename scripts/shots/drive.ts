@@ -1,8 +1,8 @@
 // 场景里的动作：等页面取完数、点开弹层、往输入框里填字，最后告诉截图程序「可以拍了」。
 //
-// **点击照真的鼠标那样发一串事件**（pointerdown → mousedown → pointerup → mouseup →
+// 截图摆场景使用合成事件（pointerdown → mousedown → pointerup → mouseup →
 // click）。Radix 的下拉菜单在 pointerdown 上打开，对话框里的按钮认 click —— 只发其中一个，
-// 有的弹层打不开，而且打不开时不报错，拍出来的是一张少了弹层的图。
+// 有的弹层打不开。它不验证命中区域、遮挡或滚轮；这些由 scripts/ui 的真实浏览器测试覆盖。
 
 /** 还没答复的 IPC 调用有几个。页面「取完数了」就是它归零之后又静了一会儿 */
 let pending = 0;
@@ -104,10 +104,14 @@ export function type(el: HTMLInputElement | HTMLTextAreaElement, text: string): 
   el.dispatchEvent(new Event("input", { bubbles: true }));
 }
 
-/** 选中下拉框里的一项。和输入框一样走原型上的 setter；React 听的是 change 事件 */
-export function choose(el: HTMLSelectElement, value: string): void {
-  Object.getOwnPropertyDescriptor(HTMLSelectElement.prototype, "value")!.set!.call(el, value);
-  el.dispatchEvent(new Event("change", { bubbles: true }));
+/** Set up a shadcn Select for screenshots. Real input behavior is covered by browser tests. */
+export async function choose(el: HTMLElement, value: string): Promise<void> {
+  el.focus();
+  el.dispatchEvent(new KeyboardEvent("keydown", { key: "ArrowDown", code: "ArrowDown", bubbles: true }));
+  const option = await waitFor<HTMLElement>(() => [...document.querySelectorAll<HTMLElement>("[role=option][data-choice-value]")].find((item) => item.dataset.choiceValue === value));
+  option.focus();
+  option.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", code: "Enter", bubbles: true }));
+  await waitFor(() => el.getAttribute("aria-expanded") === "false" ? el : null);
 }
 
 /** 截图程序读的状态：`ready` 之后拍，`error` 就停下来报出原因 */

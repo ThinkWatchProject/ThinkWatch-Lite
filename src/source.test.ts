@@ -1,3 +1,4 @@
+import ts from "typescript";
 import { readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -41,6 +42,22 @@ function tauriEventMisuse(code: string): string[] {
 }
 
 describe("源码文件", () => {
+  it("业务控件统一使用 shadcn 公共层", () => {
+    const bad: string[] = [];
+    const controls = new Set(["button", "select", "option", "optgroup", "input", "textarea", "label", "details", "summary", "table"]);
+    for (const file of sources("src").filter((f) => f.endsWith(".tsx") && !f.endsWith(".test.tsx") && !f.startsWith(join("src", "ui") + "/"))) {
+      const source = ts.createSourceFile(file, readFileSync(file, "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+      const visit = (node: ts.Node) => {
+        if ((ts.isJsxOpeningElement(node) || ts.isJsxSelfClosingElement(node)) && controls.has(node.tagName.getText(source))) {
+          bad.push(`${file}:${source.getLineAndCharacterOfPosition(node.getStart()).line + 1}: ${node.tagName.getText(source)}`);
+        }
+        ts.forEachChild(node, visit);
+      };
+      visit(source);
+    }
+    expect(bad).toEqual([]);
+  });
+
   /**
    * **下拉框里的占位值曾经是一个字面的 NUL 字节。**编译和运行都没问题，
    * 但 git 从此把整个文件当二进制：PR 里看不到这个文件的 diff，评审时等于

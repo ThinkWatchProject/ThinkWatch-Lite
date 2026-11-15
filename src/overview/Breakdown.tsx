@@ -1,3 +1,5 @@
+import { Table, TableHeader, TableHead, TableBody, TableRow, TableCell } from "@/ui/table";
+import { Button } from "@/ui/button";
 import { useState } from "react";
 import { ChevronDownIcon, ChevronRightIcon, KeyRoundIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -40,10 +42,6 @@ export function ItemLogo({ dim, name, ov }: { dim: Dim; name: string; ov?: Overv
     <KeyRoundIcon aria-hidden className="size-4 shrink-0 text-muted-foreground" />
   );
 }
-
-/** 一行里名字以外那几列。**表头和每一行用同一套**，列才对得齐 */
-const COLS =
-  "grid grid-cols-[minmax(0,1fr)_3.5rem_4rem_4.5rem_4rem_4rem_4rem] gap-x-3 @min-[760px]:grid-cols-[minmax(0,1fr)_4.5rem_repeat(5,5.25rem)] @min-[760px]:gap-x-4";
 
 /**
  * 页面最下面的明细表（一张卡片，标题「明细」，和上面几块同一副外框）：按模型、上游、密钥
@@ -116,34 +114,34 @@ export function Breakdown({
         />
         {range.live && <span className="tw-label text-muted-foreground">{rt.preset["1d"]}</span>}
         {rows.length > ROWS && (
-          <button
+          <Button variant="ghost" size="xs"
             type="button"
             onClick={() => setOpen(all ? null : dim)}
             aria-expanded={all}
-            className="ml-auto inline-flex items-center gap-1 rounded-sm tw-label text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
+            className="h-auto min-h-6 whitespace-normal ml-auto inline-flex items-center gap-1 rounded-sm tw-label text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/40"
           >
             {all ? t.less : t.more(rows.length - ROWS)}
             <ChevronDownIcon aria-hidden className={cn("size-3 transition-transform motion-reduce:transition-none", all && "rotate-180")} />
-          </button>
+          </Button>
         )}
       </div>
 
-      <div role="table" aria-label={head} className="mt-2">
-        <div role="row" className={cn(COLS, "h-7 items-center border-b border-border tw-label text-muted-foreground")}>
-          <span role="columnheader" className="truncate">
+      <Table aria-label={head} className="mt-2 table-fixed [&_th]:h-7 [&_th]:px-1.5 [&_th:first-child]:pl-0 [&_td]:px-1.5 [&_td]:py-1 [&_td:first-child]:pl-0">
+        <TableHeader><TableRow className="tw-label text-muted-foreground">
+          <TableHead className="w-auto truncate">
             {head}
-          </span>
-          <span role="columnheader" className="text-right">{t.colRequests}</span>
-          <span role="columnheader" className="text-right">{t.colTokens}</span>
-          <span role="columnheader" className="text-right">{t.colCost}</span>
-          <span role="columnheader" className="truncate text-right">{t.colCache}</span>
-          <span role="columnheader" className="truncate text-right">{t.colLatency}</span>
-          <span role="columnheader" className="truncate text-right">{t.colSpeed}</span>
-        </div>
-        {groups === null ? (
-          <p className="flex h-8 items-center tw-body text-muted-foreground">{t.tableUnavailable}</p>
+          </TableHead>
+          <TableHead className="w-16 @min-[760px]:w-24 text-right">{t.colRequests}</TableHead>
+          <TableHead className="w-16 @min-[760px]:w-24 text-right">{t.colTokens}</TableHead>
+          <TableHead className="w-16 @min-[760px]:w-24 text-right">{t.colCost}</TableHead>
+          <TableHead className="w-16 @min-[760px]:w-24 truncate text-right">{t.colCache}</TableHead>
+          <TableHead className="w-16 @min-[760px]:w-24 truncate text-right">{t.colLatency}</TableHead>
+          <TableHead className="w-16 @min-[760px]:w-24 truncate text-right">{t.colSpeed}</TableHead>
+        </TableRow></TableHeader>
+        <TableBody>{groups === null ? (
+          <TableRow><TableCell colSpan={7} className="h-8 tw-body text-muted-foreground">{t.tableUnavailable}</TableCell></TableRow>
         ) : rows.length === 0 ? (
-          <p className="flex h-8 items-center tw-body text-muted-foreground">{t.tableEmpty}</p>
+          <TableRow><TableCell colSpan={7} className="h-8 tw-body text-muted-foreground">{t.tableEmpty}</TableCell></TableRow>
         ) : (
           shown.map((r) => (
             <Row
@@ -160,14 +158,14 @@ export function Breakdown({
               }
             />
           ))
-        )}
-      </div>
+        )}</TableBody>
+      </Table>
     </section>
   );
 }
 
 /**
- * 一行。能点的行悬停压暗一档、行尾出现箭头；读屏读作链接，Enter 和空格都能打开。
+ * 一行。名称按钮支持键盘操作；整行也能点击，保留表格的行与列语义。
  */
 function Row({
   r,
@@ -191,30 +189,16 @@ function Row({
   const t = useText(overviewText);
   const cost = rankCost(r, t);
   const hit = r.ctx > 0 ? r.read / r.ctx : null;
-  const link = onOpen
-    ? {
-        role: "link",
-        tabIndex: 0,
-        onClick: onOpen,
-        onKeyDown: (e: React.KeyboardEvent) => {
-          if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            onOpen();
-          }
-        },
-      }
-    : { role: "row" };
   return (
-    <div
-      {...link}
+    <TableRow
+      onClick={onOpen}
       className={cn(
-        COLS,
         "group/row h-[31px] items-center border-b border-border tw-body tw-num last:border-b-0",
         onOpen &&
           "cursor-pointer outline-none transition-colors duration-(--motion-fast) ease-(--motion-ease) hover:bg-foreground/[0.03] focus-visible:bg-foreground/[0.045] focus-visible:ring-2 focus-visible:ring-ring/40",
       )}
     >
-      <span className="flex min-w-0 items-center gap-1">
+      <TableCell><Button variant="ghost" size="xs" disabled={!onOpen} onClick={(event) => { event.stopPropagation(); onOpen?.(); }} className="flex h-auto w-full min-w-0 justify-start gap-1 p-0 font-normal disabled:opacity-100">
         <span className="mr-1 flex shrink-0">{logo}</span>
         <span className={cn("min-w-0 truncate", mono && "font-mono", !onOpen && "text-muted-foreground")} title={label}>
           {label}
@@ -228,32 +212,32 @@ function Row({
             />
           </>
         )}
-      </span>
-      <span className="text-right">{r.requests.toLocaleString()}</span>
-      <Tip text={t.tokens(r.tokens.toLocaleString(), r.tokens)}>
+      </Button></TableCell>
+      <TableCell className="text-right">{r.requests.toLocaleString()}</TableCell>
+      <TableCell className="text-right"><Tip text={t.tokens(r.tokens.toLocaleString(), r.tokens)}>
         <span className="text-right">{compact(r.tokens)}</span>
-      </Tip>
-      <span className="min-w-0 truncate text-right">
+      </Tip></TableCell>
+      <TableCell className="min-w-0 truncate text-right">
         <CostCell c={cost} amount={r.cost} unpriced={r.unpriced > 0 ? onUnpriced : undefined} />
-      </span>
-      <span className={cn("text-right", hit === null && "text-muted-foreground")}>
+      </TableCell>
+      <TableCell className={cn("text-right", hit === null && "text-muted-foreground")}>
         {hit === null ? "—" : `${Math.round(hit * 100)}%`}
-      </span>
-      {latency ? (
+      </TableCell>
+      <TableCell className="text-right">{latency ? (
         <Tip text={t.latencyCellTip(msShort(latency.p50), msShort(latency.p95), latency.samples)}>
           <span className="text-right">{msShort(latency.p50)}</span>
         </Tip>
       ) : (
         <span className="text-right text-muted-foreground">—</span>
-      )}
-      {speed ? (
+      )}</TableCell>
+      <TableCell className="text-right">{speed ? (
         <Tip text={t.speedTip(Math.round(speed.p50).toLocaleString(), speed.samples)}>
           <span className="text-right">{t.speedCell(Math.round(speed.p50).toLocaleString())}</span>
         </Tip>
       ) : (
         <span className="text-right text-muted-foreground">—</span>
-      )}
-    </div>
+      )}</TableCell>
+    </TableRow>
   );
 }
 

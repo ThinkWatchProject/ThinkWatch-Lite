@@ -4,7 +4,7 @@ import { Badge } from "@/ui/badge";
 import { Button } from "@/ui/button";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
 import { rowMotion, usePresentList } from "@/ui/motion";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
@@ -516,7 +516,7 @@ function ActionCell({
     a === "replace" ? t.replaceWith(clipped(r.replacement ?? DEFAULT_REPLACEMENT)) : (lt.ruleActions[a] ?? a);
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <NativeSelect
+      <SelectField
         size="inline"
         className={cn(
           "min-w-0 shrink",
@@ -525,14 +525,14 @@ function ActionCell({
         value={action}
         disabled={actions.pending(r)}
         aria-label={t.actionFor(name)}
-        onChange={(e) => actions.setAction(r, e.target.value as RuleAction)}
+        onValueChange={(nextValue) => actions.setAction(r, nextValue as RuleAction)}
       >
         {ACTIONS[guard].map((a) => (
-          <NativeSelectOption key={a} value={a} disabled={!actionAllowed(guard, a, scope)}>
+          <SelectOption key={a} value={a} disabled={!actionAllowed(guard, a, scope)}>
             {label(a)}
-          </NativeSelectOption>
+          </SelectOption>
         ))}
-      </NativeSelect>
+      </SelectField>
       {mode === "observe" && (
         <span className="shrink-0 tw-label text-muted-foreground">{lt.monitoring}</span>
       )}

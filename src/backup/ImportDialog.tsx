@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { invalidate } from "@/lib/resource";
@@ -434,14 +435,14 @@ function ActionCell({
   }
   if (r.status === "new") {
     return (
-      <label className="flex items-center gap-2 tw-body whitespace-nowrap">
+      <Label className="flex items-center gap-2 tw-body whitespace-nowrap">
         <Checkbox
           checked={choice?.action === "import"}
           disabled={disabled}
           onCheckedChange={(v) => onChange({ action: v === true ? "import" : "skip" })}
         />
         {t.doImport}
-      </label>
+      </Label>
     );
   }
   const label: Record<ImportAction, string> = {

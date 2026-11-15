@@ -1,8 +1,9 @@
+import { Label } from "@/ui/label";
 import { useState, type ReactNode } from "react";
 import { ChevronRightIcon, CircleAlertIcon, CircleCheckIcon, PlugIcon } from "lucide-react";
 import { Button, DISCLOSURE } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel } from "@/ui/status-dot";
@@ -374,44 +375,44 @@ function AdvancedSettings({
           {/* 只有中转站和自定义的服务会只接受特定客户端；各家官方的接口不看这个 */}
           {rules.clientIdentity && (
             <div className="flex flex-col gap-1.5">
-              <label className="flex items-center gap-2.5 tw-body font-medium">
+              <Label className="flex items-center gap-2.5 tw-body font-medium">
                 <Switch
                   checked={form.forwardClientIdentity}
                   onCheckedChange={(c) => set({ forwardClientIdentity: c === true })}
                 />
                 {t.clientIdentity}
-              </label>
+              </Label>
               <p className="tw-label text-muted-foreground">{t.clientIdentityDesc}</p>
             </div>
           )}
           <div className="grid grid-cols-2 gap-4">
             <FormItem label={t.onProxyFail} htmlFor="up-proxy-fail">
-              <NativeSelect
+              <SelectField
                 id="up-proxy-fail"
                 className="w-full"
                 value={form.onProxyFail}
                 disabled={form.proxy === "direct"}
-                onChange={(e) => set({ onProxyFail: e.target.value === "direct" ? "direct" : "fail" })}
+                onValueChange={(nextValue) => set({ onProxyFail: nextValue === "direct" ? "direct" : "fail" })}
               >
-                <NativeSelectOption value="fail">{t.failWithError}</NativeSelectOption>
-                <NativeSelectOption value="direct">{t.fallBackDirect}</NativeSelectOption>
-              </NativeSelect>
+                <SelectOption value="fail">{t.failWithError}</SelectOption>
+                <SelectOption value="direct">{t.fallBackDirect}</SelectOption>
+              </SelectField>
             </FormItem>
             <ConcurrencyField form={form} set={set} />
             {rules.balance && (
               <FormItem label={t.balanceSource} htmlFor="up-balance">
-                <NativeSelect
+                <SelectField
                   id="up-balance"
                   className="w-full"
                   value={form.balance ?? "auto"}
-                  onChange={(e) => set({ balance: e.target.value as BalanceSetting })}
+                  onValueChange={(nextValue) => set({ balance: nextValue as BalanceSetting })}
                 >
                   {BALANCE_SETTINGS.map((b) => (
-                    <NativeSelectOption key={b} value={b}>
+                    <SelectOption key={b} value={b}>
                       {b === "auto" ? t.balanceAuto : b === "off" ? t.balanceOff : sourceLabel(b)}
-                    </NativeSelectOption>
+                    </SelectOption>
                   ))}
-                </NativeSelect>
+                </SelectField>
               </FormItem>
             )}
           </div>
@@ -448,25 +449,25 @@ export function ProxyField({
   const proxies = ov.proxies;
   return (
     <FormItem label={t.proxy} htmlFor="up-proxy" desc={desc}>
-      <NativeSelect
+      <SelectField
         id="up-proxy"
         className="w-full"
         value={value}
         disabled={disabled}
-        onChange={(e) => (e.target.value === NEW_PROXY ? onNewProxy?.() : onChange(e.target.value))}
+        onValueChange={(nextValue) => (nextValue === NEW_PROXY ? onNewProxy?.() : onChange(nextValue))}
       >
-        <NativeSelectOption value="direct">{egressLabel("direct")}</NativeSelectOption>
-        <NativeSelectOption value="system">{systemProxy}</NativeSelectOption>
+        <SelectOption value="direct">{egressLabel("direct")}</SelectOption>
+        <SelectOption value="system">{systemProxy}</SelectOption>
         {proxies.map((x) => (
-          <NativeSelectOption key={x.name} value={x.name}>
+          <SelectOption key={x.name} value={x.name}>
             {x.name} · {proxyKindLabel(x.kind)} {x.addr}
-          </NativeSelectOption>
+          </SelectOption>
         ))}
         {value !== "direct" && value !== "system" && !proxies.some((x) => x.name === value) && (
-          <NativeSelectOption value={value}>{value}</NativeSelectOption>
+          <SelectOption value={value}>{value}</SelectOption>
         )}
-        {onNewProxy && <NativeSelectOption value={NEW_PROXY}>{t.newProxy}</NativeSelectOption>}
-      </NativeSelect>
+        {onNewProxy && <SelectOption value={NEW_PROXY}>{t.newProxy}</SelectOption>}
+      </SelectField>
     </FormItem>
   );
 }
@@ -585,19 +586,19 @@ function ProtocolSelect({
 }) {
   const list = options === "all" ? PROTOCOLS : PROTOCOLS.filter((p) => options.includes(p.id));
   return (
-    <NativeSelect
+    <SelectField
       id="up-protocol"
       className="w-full"
       value={form.protocol}
-      onChange={(e) => set({ protocol: list.find((p) => p.id === e.target.value)?.id ?? "" })}
+      onValueChange={(nextValue) => set({ protocol: list.find((p) => p.id === nextValue)?.id ?? "" })}
     >
-      {options === "all" && <NativeSelectOption value="">{auto}</NativeSelectOption>}
+      {options === "all" && <SelectOption value="">{auto}</SelectOption>}
       {list.map((p) => (
-        <NativeSelectOption key={p.id} value={p.id}>
+        <SelectOption key={p.id} value={p.id}>
           {p.label}
-        </NativeSelectOption>
+        </SelectOption>
       ))}
-    </NativeSelect>
+    </SelectField>
   );
 }
 
@@ -649,20 +650,20 @@ function RegionSelect({ value, onChange }: { value: string; onChange: (region: s
   const t = useText(connectionSectionText);
   const known = (BEDROCK_REGIONS as readonly string[]).includes(value);
   return (
-    <NativeSelect
+    <SelectField
       id="up-region"
       className="w-full font-mono"
       value={value}
-      onChange={(e) => e.target.value && onChange(e.target.value)}
+      onValueChange={(nextValue) => nextValue && onChange(nextValue)}
     >
-      {value === "" && <NativeSelectOption value="">{t.pickRegion}</NativeSelectOption>}
-      {!known && value !== "" && <NativeSelectOption value={value}>{value}</NativeSelectOption>}
+      {value === "" && <SelectOption value="">{t.pickRegion}</SelectOption>}
+      {!known && value !== "" && <SelectOption value={value}>{value}</SelectOption>}
       {BEDROCK_REGIONS.map((r) => (
-        <NativeSelectOption key={r} value={r}>
+        <SelectOption key={r} value={r}>
           {r}
-        </NativeSelectOption>
+        </SelectOption>
       ))}
-    </NativeSelect>
+    </SelectField>
   );
 }
 

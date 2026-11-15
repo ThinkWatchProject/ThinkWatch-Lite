@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import {
   AlertDialog,
@@ -301,7 +302,7 @@ export function ExcludeDialog({
         ) : (
           <div className="min-h-0 overflow-y-auto rounded-lg border border-border">
             {all.map((name) => (
-              <label
+              <Label
                 key={name}
                 className="flex h-9 cursor-pointer items-center gap-2.5 border-b border-border px-3 tw-body last:border-b-0 hover:bg-muted/40"
               >
@@ -317,7 +318,7 @@ export function ExcludeDialog({
                   }
                 />
                 <span className="min-w-0 truncate">{name}</span>
-              </label>
+              </Label>
             ))}
           </div>
         )}

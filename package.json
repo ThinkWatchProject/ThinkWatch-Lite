@@ -8,10 +8,11 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts/shots",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p scripts/shots && tsc --noEmit -p scripts/ui",
     "tauri": "tauri",
     "test": "vitest run",
-    "shots": "bash scripts/shots/shots.sh"
+    "shots": "bash scripts/shots/shots.sh",
+    "test:ui": "playwright test --config scripts/ui/playwright.config.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.8.0",
@@ -37,6 +38,7 @@
     "tw-animate-css": "^1.4.0"
   },
   "devDependencies": {
+    "@playwright/test": "^1.65.1",
     "@tailwindcss/vite": "^4.1.0",
     "@tauri-apps/cli": "^2.12.1",
     "@types/node": "^26.5.1",

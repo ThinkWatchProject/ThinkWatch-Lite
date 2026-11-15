@@ -15,7 +15,7 @@ import {
 import { Field, FieldLabel } from "@/ui/field";
 import { IconDenied, IconRoute } from "@/ui/icons";
 import { Input } from "@/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Skeleton } from "@/ui/skeleton";
 import { StatusDot, type StatusTone } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
@@ -194,36 +194,36 @@ export function DryRunDialog({
               htmlFor={`${uid}-key`}
               desc={target.kind === "key" ? t.usesRoute(routeName) : t.keyConditions}
             >
-              <NativeSelect
+              <SelectField
                 id={`${uid}-key`}
                 className="w-full"
                 value={client}
-                onChange={(e) => setClient(e.target.value)}
+                onValueChange={(nextValue) => setClient(nextValue)}
               >
-                {target.kind !== "key" && <NativeSelectOption value="">{t.noKey}</NativeSelectOption>}
+                {target.kind !== "key" && <SelectOption value="">{t.noKey}</SelectOption>}
                 {ov.clients.map((c) => (
-                  <NativeSelectOption key={c.name} value={c.name}>
+                  <SelectOption key={c.name} value={c.name}>
                     {c.name}
-                  </NativeSelectOption>
+                  </SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </FormItem>
             <FormItem label={t.model} htmlFor={`${uid}-model`}>
               <ModelInput id={`${uid}-model`} value={model} onChange={setModel} models={models} />
             </FormItem>
             <FormItem label={t.dialect} htmlFor={`${uid}-dialect`}>
-              <NativeSelect
+              <SelectField
                 id={`${uid}-dialect`}
                 className="w-full"
                 value={dialect}
-                onChange={(e) => setDialect(DIALECTS.find((d) => d === e.target.value) ?? dialect)}
+                onValueChange={(nextValue) => setDialect(DIALECTS.find((d) => d === nextValue) ?? dialect)}
               >
                 {DIALECTS.map((d) => (
-                  <NativeSelectOption key={d} value={d}>
+                  <SelectOption key={d} value={d}>
                     {formatLabel(d)}
-                  </NativeSelectOption>
+                  </SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </FormItem>
             <div className="grid grid-cols-2 gap-3">
               <FormItem label={t.inputTokens} htmlFor={`${uid}-tokens`}>
@@ -275,19 +275,19 @@ export function DryRunDialog({
               </FormItem>
             )}
             <FormItem label={t.intent} htmlFor={`${uid}-intent`}>
-              <NativeSelect
+              <SelectField
                 id={`${uid}-intent`}
                 className="w-full"
                 value={intent}
-                onChange={(e) => setIntent(e.target.value)}
+                onValueChange={(nextValue) => setIntent(nextValue)}
               >
-                <NativeSelectOption value="">{t.userRequest}</NativeSelectOption>
+                <SelectOption value="">{t.userRequest}</SelectOption>
                 {PROBES.map((p) => (
-                  <NativeSelectOption key={p.id} value={p.id}>
+                  <SelectOption key={p.id} value={p.id}>
                     {p.label}
-                  </NativeSelectOption>
+                  </SelectOption>
                 ))}
-              </NativeSelect>
+              </SelectField>
             </FormItem>
           </div>
 
