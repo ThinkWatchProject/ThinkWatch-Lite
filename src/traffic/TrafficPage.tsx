@@ -12,7 +12,7 @@ import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { IconCopy, IconFlow } from "@/ui/icons";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/ui/input-group";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { usePending } from "@/ui/notify";
 import { PageHeader } from "@/ui/page";
 import { Segmented } from "@/ui/segmented";
@@ -384,32 +384,32 @@ export default function TrafficPage({
           </Toggle>
           {/* 下拉里只列出现过的：配了三个而只有一个在收流量时，另外两个只会让人以为筛错了 */}
           {facet.clients.length > 1 && (
-            <NativeSelect
+            <SelectField
               size="sm"
               value={filter.client}
-              onChange={(e) => setFilter((f) => ({ ...f, client: e.target.value }))}
+              onValueChange={(nextValue) => setFilter((f) => ({ ...f, client: nextValue }))}
             >
-              <NativeSelectOption value="">{t.allClients}</NativeSelectOption>
+              <SelectOption value="">{t.allClients}</SelectOption>
               {facet.clients.map((c) => (
-                <NativeSelectOption key={c} value={c}>
+                <SelectOption key={c} value={c}>
                   {c}
-                </NativeSelectOption>
+                </SelectOption>
               ))}
-            </NativeSelect>
+            </SelectField>
           )}
           {facet.providers.length > 1 && (
-            <NativeSelect
+            <SelectField
               size="sm"
               value={filter.provider}
-              onChange={(e) => setFilter((f) => ({ ...f, provider: e.target.value }))}
+              onValueChange={(nextValue) => setFilter((f) => ({ ...f, provider: nextValue }))}
             >
-              <NativeSelectOption value="">{t.allUpstreams}</NativeSelectOption>
+              <SelectOption value="">{t.allUpstreams}</SelectOption>
               {facet.providers.map((c) => (
-                <NativeSelectOption key={c} value={c}>
+                <SelectOption key={c} value={c}>
                   {c}
-                </NativeSelectOption>
+                </SelectOption>
               ))}
-            </NativeSelect>
+            </SelectField>
           )}
           {/*
             模型只在筛着的时候出现（从概览点一个模型进来）：平时按模型找用搜索框就够，
@@ -417,18 +417,18 @@ export default function TrafficPage({
             已读到的行里 —— 照样列出来，筛子不能藏着。
           */}
           {filter.model !== "" && (
-            <NativeSelect
+            <SelectField
               size="sm"
               value={filter.model}
-              onChange={(e) => setFilter((f) => ({ ...f, model: e.target.value }))}
+              onValueChange={(nextValue) => setFilter((f) => ({ ...f, model: nextValue }))}
             >
-              <NativeSelectOption value="">{t.allModels}</NativeSelectOption>
+              <SelectOption value="">{t.allModels}</SelectOption>
               {(facet.models.includes(filter.model) ? facet.models : [filter.model, ...facet.models]).map((m) => (
-                <NativeSelectOption key={m} value={m}>
+                <SelectOption key={m} value={m}>
                   {m}
-                </NativeSelectOption>
+                </SelectOption>
               ))}
-            </NativeSelect>
+            </SelectField>
           )}
           {/*
             筛掉了多少要说出来：只写「12 条」不写「共 340 条」，会以为总共就这么多。

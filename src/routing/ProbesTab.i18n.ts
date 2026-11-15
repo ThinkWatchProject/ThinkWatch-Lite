@@ -4,6 +4,7 @@ export const probesTabText = messages(
   {
     intro:
       "配置客户端辅助请求及联网工具的执行方式。设为转发的请求继续按路由规则选择上游。",
+    kind: "请求／工具", mode: "处理方式", actions: "操作",
     intercept: "本地应答",
     interceptWhat: "由网关直接应答，不发送到上游，不产生费用。",
     forward: "转发",
@@ -13,6 +14,7 @@ export const probesTabText = messages(
   {
     intro:
       "Choose how client auxiliary requests and web tools are handled. Forwarded requests continue through routing rules.",
+    kind: "Request / tool", mode: "Handling", actions: "Actions",
     intercept: "Answer locally",
     interceptWhat: "The gateway answers directly. Nothing is sent upstream and no cost is incurred.",
     forward: "Forward",

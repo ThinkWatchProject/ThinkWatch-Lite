@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useEffect, useRef, useState } from "react";
 import { InfoIcon, TriangleAlertIcon } from "lucide-react";
 import { Button } from "@/ui/button";
@@ -167,10 +168,10 @@ export function SwitchDialog({
                     <span className="font-medium">{t.adoptedWarn(adopted)}</span>
                     {t.adoptedWarnNext(name)}
                   </p>
-                  <label className="flex items-center gap-2">
+                  <Label className="flex items-center gap-2">
                     <Checkbox checked={retarget} disabled={busy} onCheckedChange={(v) => setRetarget(v === true)} />
                     {t.retarget(name)}
-                  </label>
+                  </Label>
                 </div>
               </li>
             )}

@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useMemo, useState } from "react";
 import { cn } from "@/lib/utils";
 import { useResource } from "@/lib/resource";
@@ -145,10 +146,10 @@ export function ExportDialog({
                 ))}
             </FormRow>
             <FormRow label={t.secrets}>
-              <label className="flex items-center gap-2.5 pt-0.5 tw-body">
+              <Label className="flex items-center gap-2.5 pt-0.5 tw-body">
                 <Switch checked={secrets} disabled={busy} onCheckedChange={setSecrets} />
                 {t.secretsWhat}
-              </label>
+              </Label>
             </FormRow>
             <PassphraseRow p={pass} disabled={busy} />
             <FormRow label={t.omitted}>
@@ -223,7 +224,7 @@ function ItemPicker({
         const head = own === 0 && !keys.some((k) => along.has(k)) ? false : all ? true : "indeterminate";
         return (
           <div key={g.kind} className="border-b border-border last:border-b-0">
-            <label className="flex items-center gap-2.5 bg-muted/40 px-3 py-1.5 tw-label font-medium text-muted-foreground">
+            <Label className="flex items-center gap-2.5 bg-muted/40 px-3 py-1.5 tw-label font-medium text-muted-foreground">
               <Checkbox
                 checked={head}
                 disabled={disabled}
@@ -231,12 +232,12 @@ function ItemPicker({
                 onCheckedChange={(v) => toggle(keys, v === true)}
               />
               {kindLabel(g.kind)}
-            </label>
+            </Label>
             {g.items.map((n) => {
               const k = refKey(n.item);
               const isAlong = along.has(k);
               return (
-                <label
+                <Label
                   key={k}
                   className={cn("flex min-w-0 items-center gap-2.5 px-3 py-1.5 tw-body", isAlong && "text-muted-foreground")}
                 >
@@ -253,7 +254,7 @@ function ItemPicker({
                       </Badge>
                     </Tip>
                   )}
-                </label>
+                </Label>
               );
             })}
           </div>

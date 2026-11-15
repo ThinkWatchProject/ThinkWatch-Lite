@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { invalidate } from "@/lib/resource";
 import { Button } from "@/ui/button";
@@ -11,7 +12,7 @@ import {
 } from "@/ui/dialog";
 import { InputGroup, InputGroupAddon, InputGroupInput, InputGroupText } from "@/ui/input-group";
 import { Checkbox } from "@/ui/checkbox";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Segmented } from "@/ui/segmented";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
@@ -325,19 +326,19 @@ function EffortField({ row, value, onChange, disabled }: {
             <legend className="tw-label text-muted-foreground">{t.supportedLevels}</legend>
             <div className="flex flex-wrap gap-x-4 gap-y-3">
               {REASONING_LEVELS.map((level) => (
-                <label key={level} className="flex cursor-pointer items-center gap-1.5 tw-body">
+                <Label key={level} className="flex cursor-pointer items-center gap-1.5 tw-body">
                   <Checkbox checked={value.levels.includes(level)} onCheckedChange={() => onChange(toggleEffortLevel(value, level))} />
                   <span>{level}</span>
-                </label>
+                </Label>
               ))}
             </div>
             {value.levels.length === 0 && <p className="tw-label text-destructive">{t.chooseLevel}</p>}
           </fieldset>
           <FormItem label={t.defaultLevel} htmlFor="spec-effort-default" desc={t.defaultHelp}>
-            <NativeSelect id="spec-effort-default" value={value.defaultLevel} onChange={(e) => onChange({ ...value, defaultLevel: e.target.value as ReasoningLevel | "auto" })}>
-              <NativeSelectOption value="auto">{t.table}</NativeSelectOption>
-              {REASONING_LEVELS.filter((level) => value.levels.includes(level)).map((level) => <NativeSelectOption key={level} value={level}>{level}</NativeSelectOption>)}
-            </NativeSelect>
+            <SelectField id="spec-effort-default" value={value.defaultLevel} onValueChange={(nextValue) => onChange({ ...value, defaultLevel: nextValue as ReasoningLevel | "auto" })}>
+              <SelectOption value="auto">{t.table}</SelectOption>
+              {REASONING_LEVELS.filter((level) => value.levels.includes(level)).map((level) => <SelectOption key={level} value={level}>{level}</SelectOption>)}
+            </SelectField>
           </FormItem>
         </>
       )}

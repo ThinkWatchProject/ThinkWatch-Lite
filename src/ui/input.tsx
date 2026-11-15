@@ -24,7 +24,7 @@ const inputVariants = cva(
     variants: {
       variant: {
         default: "h-8 rounded-lg border-input bg-transparent px-2.5 py-1 dark:bg-input/30",
-        // 高度、圆角、上下留白照 `NativeSelect` 的 `sm` 档
+        // 高度、圆角、上下留白照 `SelectField` 的 `sm` 档
         sm: "h-7 rounded-[min(var(--radius-md),10px)] border-input bg-transparent px-2.5 py-0.5 dark:bg-input/30",
         inline:
           "h-6 rounded-md border-transparent bg-transparent px-1 hover:border-input focus-visible:border-ring",

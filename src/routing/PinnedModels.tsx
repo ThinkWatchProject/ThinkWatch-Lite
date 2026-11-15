@@ -1,6 +1,6 @@
 import { PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { useResource } from "@/lib/resource";
@@ -105,21 +105,21 @@ function PinnedRow({
   return (
     <div className="flex items-center gap-2">
       <span className="w-3.5 shrink-0 text-right tw-num text-muted-foreground">{n}</span>
-      <NativeSelect
+      <SelectField
         aria-label={t.provider(n)}
         className="w-36 shrink-0"
         value={p.provider}
-        onChange={(e) => onProvider(e.target.value)}
+        onValueChange={(nextValue) => onProvider(nextValue)}
       >
-        {!p.provider && <NativeSelectOption value="">{t.chooseProvider}</NativeSelectOption>}
+        {!p.provider && <SelectOption value="">{t.chooseProvider}</SelectOption>}
         {/* 配置里写着、却已经不在的上游：照样显示出来，保存时由 core 说它不存在 */}
-        {p.provider && !pv && <NativeSelectOption value={p.provider}>{t.missing(p.provider)}</NativeSelectOption>}
+        {p.provider && !pv && <SelectOption value={p.provider}>{t.missing(p.provider)}</SelectOption>}
         {providers.map((x) => (
-          <NativeSelectOption key={x.name} value={x.name}>
+          <SelectOption key={x.name} value={x.name}>
             {x.disabled ? t.disabled(x.name) : x.name}
-          </NativeSelectOption>
+          </SelectOption>
         ))}
-      </NativeSelect>
+      </SelectField>
       <ModelInput
         className="min-w-0 flex-1"
         value={p.model}

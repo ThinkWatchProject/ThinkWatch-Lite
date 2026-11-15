@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Reveal } from "@/ui/motion";
 import { Segmented } from "@/ui/segmented";
 import { Switch } from "@/ui/switch";
@@ -84,21 +84,21 @@ function LanguageRow() {
       control={
         <Loaded r={r} width="w-48">
           {(v) => (
-            <NativeSelect
+            <SelectField
               id="settings-language"
               size="sm"
               className="w-48"
               value={v.setting ?? "system"}
-              onChange={(e) => {
-                const x = e.target.value;
+              onValueChange={(nextValue) => {
+                const x = nextValue;
                 const setting: Lang | null = x === "zh" || x === "en" ? x : null;
                 void set({ ...v, setting, current: setting ?? v.system });
               }}
             >
-              <NativeSelectOption value="system">{t.languageSystem(LANG_NAMES[v.system])}</NativeSelectOption>
-              <NativeSelectOption value="zh">{LANG_NAMES.zh}</NativeSelectOption>
-              <NativeSelectOption value="en">{LANG_NAMES.en}</NativeSelectOption>
-            </NativeSelect>
+              <SelectOption value="system">{t.languageSystem(LANG_NAMES[v.system])}</SelectOption>
+              <SelectOption value="zh">{LANG_NAMES.zh}</SelectOption>
+              <SelectOption value="en">{LANG_NAMES.en}</SelectOption>
+            </SelectField>
           )}
         </Loaded>
       }

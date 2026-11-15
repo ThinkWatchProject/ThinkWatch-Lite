@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { Button } from "@/ui/button";
 import { Input } from "@/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { SecretInput } from "@/ui/secret-input";
 import { Segmented } from "@/ui/segmented";
 import { cn } from "@/lib/utils";
@@ -170,26 +170,26 @@ export function TargetFields({
           label: t.proxy,
           htmlFor: "sync-proxy",
           control: (
-            <NativeSelect
+            <SelectField
               id="sync-proxy"
               size={dense ? "sm" : "default"}
               className="w-48"
               value={draft.proxy}
               disabled={disabled}
-              onChange={(e) => onChange({ proxy: e.target.value })}
+              onValueChange={(nextValue) => onChange({ proxy: nextValue })}
             >
-              <NativeSelectOption value="direct">{t.direct}</NativeSelectOption>
-              <NativeSelectOption value="system">{t.system}</NativeSelectOption>
+              <SelectOption value="direct">{t.direct}</SelectOption>
+              <SelectOption value="system">{t.system}</SelectOption>
               {/* 配置里写着一个已经删掉的代理：照样列出来，不显示成直连 */}
               {draft.proxy !== "direct" && draft.proxy !== "system" && !proxies.includes(draft.proxy) && (
-                <NativeSelectOption value={draft.proxy}>{draft.proxy}</NativeSelectOption>
+                <SelectOption value={draft.proxy}>{draft.proxy}</SelectOption>
               )}
               {proxies.map((p) => (
-                <NativeSelectOption key={p} value={p}>
+                <SelectOption key={p} value={p}>
                   {p}
-                </NativeSelectOption>
+                </SelectOption>
               ))}
-            </NativeSelect>
+            </SelectField>
           ),
         })}
     </>

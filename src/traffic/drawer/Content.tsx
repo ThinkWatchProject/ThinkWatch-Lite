@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useMemo, useRef, useState } from "react";
 import { useText } from "@/i18n";
 import { errorText } from "@/i18n/core.i18n";
@@ -143,7 +144,7 @@ export function Content({
           )}
           <span className="flex-1" />
           {view === "raw" && streaming && growing && (
-            <label className="flex h-7 cursor-pointer items-center gap-2 text-muted-foreground select-none">
+            <Label className="flex h-7 cursor-pointer items-center gap-2 text-muted-foreground select-none">
               <Checkbox
                 checked={follow}
                 onCheckedChange={(v) => {
@@ -152,7 +153,7 @@ export function Content({
                 }}
               />
               {t.follow}
-            </label>
+            </Label>
           )}
           {streaming && (
             <StatusLabel tone="pending" muted className="tw-label">

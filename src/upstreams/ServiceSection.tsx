@@ -1,3 +1,4 @@
+import { Button } from "@/ui/button";
 import { SearchIcon, ServerIcon } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useText } from "@/i18n";
@@ -86,16 +87,15 @@ function Group({
   return (
     <section className="flex flex-col gap-1.5" aria-label={title}>
       <h3 className="tw-label font-medium text-muted-foreground">{title}</h3>
-      <div role="listbox" aria-label={title} className="grid grid-cols-4 gap-2">
+      <div role="group" aria-label={title} className="grid grid-cols-4 gap-2">
         {entries.map((p) => (
-          <button
+          <Button variant="outline"
             key={p.id}
             type="button"
-            role="option"
-            aria-selected={p.id === value}
+            aria-pressed={p.id === value}
             onClick={() => onPick(p.id)}
             className={cn(
-              "flex h-13 min-w-0 cursor-pointer items-center gap-2.5 rounded-lg border border-border px-3 text-left outline-none transition-colors duration-(--motion-fast)",
+              "flex h-13 min-w-0 justify-start whitespace-normal cursor-pointer items-center gap-2.5 rounded-lg border border-border px-3 text-left outline-none transition-colors duration-(--motion-fast)",
               "hover:border-foreground/20 hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-ring/50",
               p.id === value && "border-foreground/40 bg-muted",
             )}
@@ -105,7 +105,7 @@ function Group({
               <span className="truncate tw-body font-medium">{p.label}</span>
               <span className="truncate tw-label text-muted-foreground">{p.desc}</span>
             </span>
-          </button>
+          </Button>
         ))}
       </div>
     </section>

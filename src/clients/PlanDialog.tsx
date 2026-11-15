@@ -1,10 +1,11 @@
+import { Label } from "@/ui/label";
 import { useId, useMemo, useState } from "react";
 import { ChevronRightIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
 import { Button, DISCLOSURE } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
 import { Reveal } from "@/ui/motion";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/ui/table";
 import { Tile } from "@/ui/tile";
 import { useDialogFocus } from "@/ui/dialog-focus";
@@ -118,26 +119,26 @@ export function PlanDialog({
           <div className="flex flex-col gap-4">
             {pick && (
               <div className="flex flex-col gap-2 rounded-lg border border-border bg-surface px-3.5 py-3">
-                <label className="tw-head" htmlFor={modelId}>
+                <Label className="tw-head" htmlFor={modelId}>
                   {t.desktopModel}
-                </label>
+                </Label>
                 <p className="tw-label text-muted-foreground">
                   {choices.length > 0 ? t.desktopModelHint : t.desktopNoModels}
                 </p>
                 {choices.length > 0 && (
-                  <NativeSelect
+                  <SelectField
                     id={modelId}
                     className="w-[360px] max-w-full"
                     value={choice?.model ?? ""}
                     disabled={pending}
-                    onChange={(e) => setPicked(e.target.value)}
+                    onValueChange={(nextValue) => setPicked(nextValue)}
                   >
                     {choices.map((c) => (
-                      <NativeSelectOption key={c.model} value={c.model}>
+                      <SelectOption key={c.model} value={c.model}>
                         {t.desktopChoice(c.model, c.providers)}
-                      </NativeSelectOption>
+                      </SelectOption>
                     ))}
-                  </NativeSelect>
+                  </SelectField>
                 )}
               </div>
             )}

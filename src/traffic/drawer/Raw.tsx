@@ -373,7 +373,7 @@ function EventLog({ log, scroller }: { log: Events; scroller: RefObject<HTMLDivE
   return (
     <>
       {hidden > 0 && (
-        <button
+        <Button variant="ghost" size="xs"
           type="button"
           className="-mx-1 mb-1 flex items-center gap-1 rounded px-1 font-sans text-muted-foreground transition-colors duration-(--motion-fast) hover:bg-muted hover:text-foreground"
           onClick={() => {
@@ -389,7 +389,7 @@ function EventLog({ log, scroller }: { log: Events; scroller: RefObject<HTMLDivE
         >
           <ChevronRightIcon className="size-3.5" />
           {t.earlierEvents(hidden)}
-        </button>
+        </Button>
       )}
       <pre className="break-all whitespace-pre-wrap text-foreground">
         {blocks.map((b) => (

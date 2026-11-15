@@ -4,6 +4,7 @@ import {
   Combobox as ComboboxPrimitive,
 } from "@base-ui/react"
 import { cn } from "@/lib/utils"
+import { usePopupContainer } from "./popup-scope"
 
 import { Button } from "@/ui/button"
 import { Input } from "@/ui/input"
@@ -131,9 +132,10 @@ function ComboboxContent({
     "side" | "align" | "sideOffset" | "alignOffset" | "anchor"
   > &
   Pick<ComboboxPrimitive.Portal.Props, "container">) {
+  const modal = usePopupContainer()
   return (
     // 挂进别的容器时不占位：容器可能是 flex / grid，多一个子项就多一道 gap
-    <ComboboxPrimitive.Portal container={container} className="contents">
+    <ComboboxPrimitive.Portal container={container ?? modal ?? undefined} className="contents">
       <ComboboxPrimitive.Positioner
         side={side}
         sideOffset={sideOffset}

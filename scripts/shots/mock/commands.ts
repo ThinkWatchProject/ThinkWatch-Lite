@@ -11,7 +11,7 @@
 import type { WebviewEndpoint } from "@/control";
 import type { Notice } from "@/Notices";
 import type { Adopted, ConnView, Tested } from "@/connection/api";
-import type { AppInfo, LanguageView, MenubarStyle, NoticeMode, ThemeView } from "@/settings/api";
+import type { AppInfo, HotkeyView, LanguageView, MenubarStyle, NoticeMode, ThemeView, UiZoom } from "@/settings/api";
 import type { Offer, UpdateView } from "@/updateFlow";
 import type { UpstreamStats } from "@/upstreams/api";
 import type { ClientsResponse, CoreStatus, Dashboard, ImportLink, KeyUsage, McpTargetView, PlanView, ScanReport } from "@/types";
@@ -66,6 +66,8 @@ interface Commands {
   app_info: [void, AppInfo];
   app_language: [void, LanguageView];
   app_theme: [void, ThemeView];
+  ui_zoom: [void, UiZoom];
+  hotkey_state: [void, HotkeyView];
   menubar_style: [void, MenubarStyle];
   autostart_enabled: [void, boolean];
   update_state: [void, UpdateView];
@@ -157,6 +159,8 @@ const COMMANDS: Table = {
   }),
   app_language: langView,
   app_theme: themeView,
+  ui_zoom: () => 100,
+  hotkey_state: () => ({ combo: { ctrl: true, alt: true, shift: false, meta: false, code: "KeyH" }, default: { ctrl: true, alt: true, shift: false, meta: false, code: "KeyH" }, active: true, supported: true }),
   menubar_style: () => menubar,
   autostart_enabled: () => autostart,
   update_state: updateView,

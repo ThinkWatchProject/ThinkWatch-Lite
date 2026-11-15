@@ -2,7 +2,7 @@ import { useMemo, useState } from "react";
 import { Banner } from "@/ui/banner";
 import { Button } from "@/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/ui/dialog";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Segmented } from "@/ui/segmented";
 import { Skeleton } from "@/ui/skeleton";
 import { ErrorState } from "@/ui/states";
@@ -77,18 +77,18 @@ export function TrialDialog({ plugin, onClose }: { plugin: PluginView; onClose: 
           ) : (
             <FormItem label={t.request} htmlFor="trial-request" desc={candidates.outOfScope ? t.noneInScope : undefined}>
               <div className="flex items-center gap-2">
-                <NativeSelect
+                <SelectField
                   id="trial-request"
                   className="min-w-0 flex-1"
                   value={selected ?? ""}
-                  onChange={(e) => setChosen(Number(e.target.value))}
+                  onValueChange={(nextValue) => setChosen(Number(nextValue))}
                 >
                   {candidates.rows.map((h) => (
-                    <NativeSelectOption key={h.id} value={h.id}>
+                    <SelectOption key={h.id} value={h.id}>
                       {t.option(h.id, when(h.at_ms), h.client_hint ? appLabel(h.client_hint) : h.client, h.model)}
-                    </NativeSelectOption>
+                    </SelectOption>
                   ))}
-                </NativeSelect>
+                </SelectField>
                 <Button onClick={() => void run()} pending={running} disabled={selected == null}>
                   {result ? t.runAgain : t.run}
                 </Button>

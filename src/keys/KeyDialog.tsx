@@ -1,3 +1,4 @@
+import { Label } from "@/ui/label";
 import { useState } from "react";
 import { RotateCwIcon } from "lucide-react";
 import { Banner } from "@/ui/banner";
@@ -11,7 +12,7 @@ import {
   DialogTitle,
 } from "@/ui/dialog";
 import { Input } from "@/ui/input";
-import { NativeSelect, NativeSelectOption } from "@/ui/native-select";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Switch } from "@/ui/switch";
 import { CopyButton } from "@/ui/copy-button";
 import { focusSelf, useDialogFocus } from "@/ui/dialog-focus";
@@ -182,9 +183,9 @@ export function KeyDialog({
 
           <div className="grid grid-cols-2 gap-4">
             <div className="flex min-w-0 flex-col gap-1.5">
-              <label className="tw-body font-medium" htmlFor="k-name">
+              <Label className="tw-body font-medium" htmlFor="k-name">
                 {t.name}
-              </label>
+              </Label>
               <Input
                 id="k-name"
                 className="font-mono"
@@ -196,28 +197,28 @@ export function KeyDialog({
               <p className="tw-label text-muted-foreground">{t.nameHint}</p>
             </div>
             <div className="flex min-w-0 flex-col gap-1.5">
-              <label className="tw-body font-medium" htmlFor="k-route">
+              <Label className="tw-body font-medium" htmlFor="k-route">
                 {t.route}
-              </label>
-              <NativeSelect id="k-route" value={route} onChange={(e) => setRoute(e.target.value)}>
+              </Label>
+              <SelectField id="k-route" value={route} onValueChange={(nextValue) => setRoute(nextValue)}>
                 {/* 不绑就是走默认路由 —— 写出来，而不是留一个空白 */}
-                <NativeSelectOption value="">{routeLabel(null, defaultRoute)}</NativeSelectOption>
+                <SelectOption value="">{routeLabel(null, defaultRoute)}</SelectOption>
                 {routes
                   .filter((r) => r.name !== defaultRoute)
                   .map((r) => (
-                    <NativeSelectOption key={r.name} value={r.name}>
+                    <SelectOption key={r.name} value={r.name}>
                       {r.name}
-                    </NativeSelectOption>
+                    </SelectOption>
                   ))}
-              </NativeSelect>
+              </SelectField>
               <p className="tw-label text-muted-foreground">{t.routeHint}</p>
             </div>
           </div>
 
           <div className="flex min-w-0 flex-col gap-1.5 sm:w-1/2 sm:pr-2">
-            <label className="tw-body font-medium" htmlFor="k-limit">
+            <Label className="tw-body font-medium" htmlFor="k-limit">
               {t.limit}
-            </label>
+            </Label>
             <Input
               id="k-limit"
               className="font-mono"
@@ -240,9 +241,9 @@ export function KeyDialog({
 
           <div className="flex items-center justify-between gap-3 rounded-lg border border-border px-3 py-2.5">
             <div>
-              <label className="tw-body font-medium" htmlFor="k-enabled">
+              <Label className="tw-body font-medium" htmlFor="k-enabled">
                 {t.enabled}
-              </label>
+              </Label>
               <p className="tw-label text-muted-foreground">
                 {editing?.default ? t.defaultAlwaysOn : t.disabledRejects}
               </p>
