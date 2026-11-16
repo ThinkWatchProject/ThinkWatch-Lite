@@ -1,24 +1,24 @@
 import { useRef } from "react";
 import { useText } from "@/i18n";
-import type { SearchEngine } from "@/types";
+import type { SearchEngine, WebSearchEngine } from "@/types";
+import { engineName, legacyEngines } from "@/webToolsCompat";
 import { Button } from "@/ui/button";
 import { Combobox, ComboboxTrigger, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty, ComboboxSeparator } from "@/ui/combobox";
 import { webToolsText } from "./WebTools.i18n";
 import { selectedEngines, type EngineChoice } from "./webToolsForm";
 
-const engines: Record<SearchEngine, string> = { bing: "Bing", duckduckgo: "DuckDuckGo" };
-const choices: EngineChoice[] = ["auto", ...Object.keys(engines) as SearchEngine[]];
-
 /** Automatic is exclusive; an empty saved list continues to follow Core defaults. */
-export function EnginePicker({ id, value, disabled, onChange }: {
+export function EnginePicker({ id, value, available = legacyEngines, disabled, onChange }: {
   id: string;
   value: SearchEngine[];
+  available?: WebSearchEngine[];
   disabled: boolean;
   onChange: (value: SearchEngine[]) => void;
 }) {
   const t = useText(webToolsText);
   const trigger = useRef<HTMLButtonElement | null>(null);
-  const label = (choice: EngineChoice) => choice === "auto" ? t.auto : engines[choice];
+  const choices: EngineChoice[] = ["auto", ...new Set([...available.map((engine) => engine.id), ...value])];
+  const label = (choice: EngineChoice) => choice === "auto" ? t.auto : engineName(choice, available);
   const names = value.map(label).join(", ");
   const summary = value.length > 2 ? t.engineCount(value.length) : names || t.auto;
   return <Combobox<EngineChoice, true> multiple items={choices} value={value.length ? value : ["auto"]} disabled={disabled}
