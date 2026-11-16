@@ -61,7 +61,7 @@ export function ProbesTab({ ov }: { ov: Overview }) {
     <div className="flex flex-col gap-3">
       <p className="tw-body text-muted-foreground">{t.intro}</p>
       <div className="overflow-hidden rounded-lg border border-border"><Table>
-        <TableHeader><TableRow><TableHead className="px-3.5">{t.kind}</TableHead><TableHead className="w-1">{t.mode}</TableHead><TableHead className="w-1 pr-3.5 text-right">{t.actions}</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead className="px-3.5">{t.kind}</TableHead><TableHead className="w-1 pr-3.5 text-right">{t.mode}</TableHead></TableRow></TableHeader>
         <TableBody>
         {ov.client_probes.map((p) => {
           const kind = PROBES.find((x) => x.id === p.id);
@@ -78,7 +78,13 @@ export function ProbesTab({ ov }: { ov: Overview }) {
                   {modes.find((m) => m.id === mode)?.what}
                 </p>
               </TableCell>
-              <TableCell className="align-top py-3"><div className="flex items-center gap-2">
+              <TableCell className="align-top py-3 pr-3.5"><div className="flex items-center justify-end gap-2">
+                {/* 转圈的位置一直留着：出现、消失时分段控件不左右挪 */}
+                {busy ? (
+                  <Spinner aria-hidden className="size-3.5 shrink-0 text-muted-foreground motion-fade" />
+                ) : (
+                  <span aria-hidden className="size-3.5 shrink-0" />
+                )}
                 <Segmented<ProbeMode>
                   label={label}
                   value={mode}
@@ -86,15 +92,7 @@ export function ProbesTab({ ov }: { ov: Overview }) {
                   options={modes.map((m) => ({ id: m.id, label: m.label }))}
                   onChange={(v) => v !== mode && void set(p.id, v)}
                 />
-                {/* 转圈的位置一直留着：出现、消失时分段控件不左右挪 */}
-                {busy ? (
-                  <Spinner aria-hidden className="size-3.5 text-muted-foreground motion-fade" />
-                ) : (
-                  <span aria-hidden className="size-3.5" />
-                )}
-
               </div></TableCell>
-              <TableCell />
             </TableRow>
           );
         })}
