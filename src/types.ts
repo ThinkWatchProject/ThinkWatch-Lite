@@ -2,7 +2,8 @@
 //
 // **控制面契约的类型不在这里写。**它们由钉着的那版 tw-api 生成，提交在
 // `./generated/tw-api.ts`（`src-tauri/tests/ts_bindings.rs` 核对它和钉着的
-// core 一致），这里原样转出去。以前这里是手抄的镜像，和 Rust 那边对不对得
+// core 一致），这里转出去。搜索引擎 ID 经 webToolsCompat 扩展，跟随连接的 Core。
+// 以前这里是手抄的镜像，和 Rust 那边对不对得
 // 上全靠人记得改两遍。**不经过 core 的那几样**（客户端接管、MCP、扫描、这台
 // 机器上的事件）同样是生成的：`./generated/lite-api.ts`，源头是 `src-tauri/src/wire.rs`。
 //
@@ -29,6 +30,8 @@ import type { LocalEvent } from "./generated/lite-api";
 
 export type * from "./generated/tw-api";
 export type * from "./generated/lite-api";
+// Engine IDs and capabilities are supplied by the connected Core.
+export type { SearchEngine, WebSearchEngine, WebToolsConfig, WebToolsSave, WebSource, WebToolResult, WebToolsView, Endpoints } from "./webToolsCompat";
 
 /** core 的事件流上的一条 */
 export type CoreEvent = Event;

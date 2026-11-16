@@ -3,7 +3,8 @@
 //! **只是转发的端点不再各有一个命令。**以前一个端点在这一层要写一个命令，
 //! 参数名、路径、请求类型各写一遍，前端再按命令名和参数名调一遍 —— 参数名
 //! 拼错是运行时才知道的事。现在界面按端点名调（类型来自生成的 `tw-api.ts`），
-//! 这里按名字找到 `tw_api::ep` 里那一个端点，把请求按它的类型读一遍再发出去。
+//! 这里按名字找到 `tw_api::ep` 里那一个端点。搜索能力可随 Core 扩展，三个搜索
+//! 端点直接转发 JSON 交给 Core 校验；其余端点先按钉住的协议类型校验。
 //!
 //! **界面够得着的端点只有 [`ALLOWED`] 里这些。**不在里面的有意不给：密钥明文
 //! （`KeyValue`，复制走 Rust 这边直接写剪贴板）、让 core 退出、诊断包的正文、
@@ -207,9 +208,14 @@ webview_endpoints![
     SyncRepublish,
 ];
 
-/// 请求按这个端点的类型读一遍再发：**界面发来的形状不对，在这里就停下**，
-/// 不把一个 core 读不了的请求送过去。
+/// 搜索端点保留 Core 的可扩展能力字段，其余请求先按端点类型校验。
 async fn relay<E: Endpoint>(c: &ControlClient, params: &[&str], req: Value) -> Out<Value> {
+    // Search capabilities evolve on Core independently of the bundled API.
+    // Only these already-allowlisted routes accept extensible JSON. Core still
+    // validates every request, with the same authenticated transport and paths.
+    if matches!(E::NAME, "WebTools" | "SaveWebTools" | "TestWebTool") {
+        return Ok(c.call::<SearchEndpoint<E>>(params, &req).await?);
+    }
     let req: E::Req = serde_json::from_value(req).map_err(|e| {
         CmdError::plain(format!(
             "The request for `{}` has the wrong shape: {e}",
@@ -220,9 +226,190 @@ async fn relay<E: Endpoint>(c: &ControlClient, params: &[&str], req: Value) -> O
     serde_json::to_value(res).map_err(|e| CmdError::plain(e.to_string()))
 }
 
+struct SearchEndpoint<E>(std::marker::PhantomData<E>);
+
+impl<E: Endpoint> Endpoint for SearchEndpoint<E> {
+    const METHOD: tw_api::Method = E::METHOD;
+    const PATH: &'static str = E::PATH;
+    const PARAMS: &'static [&'static str] = E::PARAMS;
+    const FORMAT: tw_api::Format = E::FORMAT;
+    const NAME: &'static str = E::NAME;
+    type Req = Value;
+    type Res = Value;
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Use the real authenticated transport to catch enum decoding in either
+    /// direction, including adapters added after this Lite version was built.
+    async fn search_roundtrip<E: Endpoint>(req: Value, reply: Value) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let dir = tempfile::tempdir().unwrap();
+        let config = dir.path().join("config.yaml");
+        std::fs::write(
+            &config,
+            format!("listen:\n  control:\n    key: \"{}\"\n", "ab".repeat(32)),
+        )
+        .unwrap();
+        let key = tw_link::read_key(&config).unwrap();
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let port_file = dir.path().join("control.port");
+        std::fs::write(
+            &port_file,
+            listener.local_addr().unwrap().port().to_string(),
+        )
+        .unwrap();
+        let expected_req = req.clone();
+        let expected_reply = reply.clone();
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let acceptor = tw_link::Acceptor::new(move || Some(key.clone()), "test");
+            let mut stream = acceptor.accept(tcp).await.unwrap().stream;
+            let mut head = Vec::new();
+            while !head.ends_with(b"\r\n\r\n") {
+                head.push(stream.read_u8().await.unwrap());
+            }
+            let head = String::from_utf8(head).unwrap();
+            assert!(head.starts_with(&format!("{} {} HTTP/1.1", E::METHOD.as_str(), E::PATH)));
+            let len = head
+                .lines()
+                .find_map(|line| {
+                    let (key, value) = line.split_once(':')?;
+                    key.eq_ignore_ascii_case("content-length")
+                        .then(|| value.trim().parse::<usize>().unwrap())
+                })
+                .unwrap_or(0);
+            if len > 0 {
+                let mut body = vec![0; len];
+                stream.read_exact(&mut body).await.unwrap();
+                assert_eq!(
+                    serde_json::from_slice::<Value>(&body).unwrap(),
+                    expected_req
+                );
+            } else {
+                assert!(expected_req.is_null());
+            }
+            let body = reply.to_string();
+            stream.write_all(format!("HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).as_bytes()).await.unwrap();
+            stream.flush().await.unwrap();
+        });
+        let client = ControlClient::new(tw_api::control::Address::Loopback { port_file }, config);
+        assert_eq!(relay::<E>(&client, &[], req).await.unwrap(), expected_reply);
+        server.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn search_capabilities_cross_the_pinned_native_bridge() {
+        use serde_json::json;
+        search_roundtrip::<ep::WebTools>(Value::Null, json!({
+            "config": {"engines": ["google_docs", "future_engine"]},
+            "available_engines": [{"id": "future_engine", "name": "Future", "min_interval_ms": 6000}]
+        })).await;
+        search_roundtrip::<ep::SaveWebTools>(
+            json!({
+                "base_version": "test", "config": {"engines": ["google_docs", "future_engine"]}
+            }),
+            json!({"version": "saved"}),
+        )
+        .await;
+        search_roundtrip::<ep::TestWebTool>(
+            json!({"action": "search", "query": "Rust"}),
+            json!({
+                "sources": [{"engine": "future_engine", "url": "https://www.rust-lang.org/"}]
+            }),
+        )
+        .await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires a Google Docs-capable resources/twcore and live Google access"]
+    async fn live_search_through_native_relay_and_isolated_core() {
+        use serde_json::json;
+        use std::time::Duration;
+        struct Process(std::process::Child);
+        impl Drop for Process {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let home = tempfile::Builder::new()
+            .prefix("tw-search-")
+            .tempdir()
+            .unwrap();
+        let config_path = home.path().join("config.yaml");
+        let _process = Process(
+            std::process::Command::new(
+                std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+                    .join("resources")
+                    .join(crate::gateway::CORE_EXE),
+            )
+            .args(["serve", "--config"])
+            .arg(&config_path)
+            .args(["--port", "0"])
+            .env("THINKWATCH_HOME", home.path())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .unwrap(),
+        );
+        let client = ControlClient::new(tw_api::control::Address::in_dir(home.path()), config_path);
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while client.ping(Duration::from_millis(500)).await.is_err() {
+                tokio::time::sleep(Duration::from_millis(100)).await;
+            }
+        })
+        .await
+        .unwrap();
+        let view = relay::<ep::WebTools>(&client, &[], Value::Null)
+            .await
+            .unwrap();
+        assert!(
+            view["available_engines"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|e| e["id"] == "google_docs")
+        );
+        let mut config = view["config"].clone();
+        config["engines"] = json!(["google_docs"]);
+        config["read_pages"] = json!(0);
+        relay::<ep::SaveWebTools>(
+            &client,
+            &[],
+            json!({"base_version": view["config_version"], "config": config}),
+        )
+        .await
+        .unwrap();
+        let saved = relay::<ep::WebTools>(&client, &[], Value::Null)
+            .await
+            .unwrap();
+        assert_eq!(saved["config"]["engines"], json!(["google_docs"]));
+        let request = json!({"action": "search", "query": "Python asyncio TaskGroup documentation", "allowed_domains": ["python.org"], "blocked_domains": []});
+        let result = relay::<ep::TestWebTool>(&client, &[], request.clone())
+            .await
+            .unwrap();
+        assert!(
+            result["sources"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|s| s["engine"] == "google_docs"
+                    && s["url"]
+                        .as_str()
+                        .unwrap()
+                        .contains("docs.python.org/3/library/asyncio-task.html")),
+            "{result}"
+        );
+        let cached = relay::<ep::TestWebTool>(&client, &[], request)
+            .await
+            .unwrap();
+        assert_eq!(cached["cached"], true);
+        let invalid = relay::<ep::SaveWebTools>(&client, &[], json!({"base_version": saved["config_version"], "config": {"engines": ["unsupported_engine"]}})).await;
+        assert!(invalid.is_err(), "Core must still reject unknown engines");
+    }
 
     /// 这些是有意不给界面的，见模块说明。
     #[test]
