@@ -88,7 +88,7 @@ export const CORE: { [N in WebviewEndpoint]: Handler<N> } = {
   ConfigRepairPlan: () => ({ base_version: configVersion(), fixes: [] }),
   RepairConfig: refuse,
   SaveListen: refuse,
-  WebTools: () => ({ config_version: configVersion(), system_locale: { language: "zh-Hans", region: "CN" }, config: {
+  WebTools: () => ({ available_engines: [{ id: "google_docs", name: "Google (Docs)", min_interval_ms: 6000 }, { id: "duckduckgo", name: "DuckDuckGo", min_interval_ms: 0 }, { id: "bing", name: "Bing", min_interval_ms: 0 }], config_version: configVersion(), system_locale: { language: "zh-Hans", region: "CN" }, config: {
     mode: "upstream", engines: [], proxy: "system", language: "", region: "", allowed_domains: [], blocked_domains: [],
     max_results: 8, read_pages: 2, max_page_chars: 12000, timeout_secs: 30, max_concurrent: 4, interval_ms: 1000, cache_secs: 600, max_tool_calls: 8, fallback_to_upstream: false,
   } }),

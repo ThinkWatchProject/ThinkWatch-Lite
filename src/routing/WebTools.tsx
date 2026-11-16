@@ -12,6 +12,7 @@ import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/ui/collap
 import { TableRow, TableCell } from "@/ui/table";
 import { DomainList } from "./DomainList";
 import { EnginePicker } from "./EnginePicker";
+import { engineName } from "@/webToolsCompat";
 import { Segmented } from "@/ui/segmented";
 import { SelectField, SelectOption } from "@/ui/select-field";
 import { Combobox, ComboboxInput, ComboboxContent, ComboboxList, ComboboxItem, ComboboxEmpty } from "@/ui/combobox";
@@ -63,7 +64,7 @@ export function WebTools({ overview }: { overview: Overview }) {
     <Dialog open={dialog !== null && !!view} onOpenChange={(open) => { if (!open && !busy) setDialog(null); }}>
       <DialogContent className="flex max-h-[90dvh] flex-col sm:max-w-[640px]" onInteractOutside={(e) => e.preventDefault()}>
         {view && dialog === "config" && <Configuration view={view} overview={overview} busy={busy} error={error} save={save} close={() => setDialog(null)} />}
-        {view && dialog === "test" && <Tester />}
+        {view && dialog === "test" && <Tester view={view} />}
       </DialogContent>
     </Dialog>
   </>;
@@ -87,9 +88,10 @@ function Configuration({ view, overview, busy, error, save, close }: { view: Web
   return <>
     <DialogHeader><DialogTitle>{t.title}</DialogTitle><DialogDescription>{t.intro}</DialogDescription></DialogHeader>
     <div className="min-h-0 overflow-y-auto"><fieldset disabled={busy} className="grid min-w-0 gap-4 border-0 p-0 sm:grid-cols-2">
-      <FormItem label={t.engines} htmlFor={`${id}-engines`}><EnginePicker id={`${id}-engines`} value={config.engines} disabled={busy} onChange={(value) => set("engines", value)} /></FormItem>
+      <FormItem label={t.engines} htmlFor={`${id}-engines`}><EnginePicker id={`${id}-engines`} value={config.engines} available={view.available_engines} disabled={busy} onChange={(value) => set("engines", value)} /></FormItem>
       <FormItem label={t.proxy} htmlFor={`${id}-proxy`}><SelectField className="w-full" id={`${id}-proxy`} value={config.proxy} onValueChange={(nextValue) => set("proxy", nextValue)}><SelectOption value="system">{t.system}</SelectOption><SelectOption value="direct">{t.direct}</SelectOption>{overview.proxies.map((p) => <SelectOption key={p.name} value={p.name}>{p.name}</SelectOption>)}</SelectField></FormItem>
       <p className="tw-label text-muted-foreground sm:col-span-2">{t.engineHelp}</p>
+      {view.available_engines?.some((engine) => engine.id === "google_docs") && (!config.engines.length || config.engines.includes("google_docs")) && <p className="tw-label text-muted-foreground sm:col-span-2">{t.googleDocsHelp}</p>}
       <LocalePicker id={`${id}-language`} kind="language" value={config.language} detected={view.system_locale.language} disabled={busy} onChange={(value) => set("language", value)} />
       <LocalePicker id={`${id}-region`} kind="region" value={config.region} detected={view.system_locale.region} disabled={busy} onChange={(value) => set("region", value)} />
       <p className="tw-label text-muted-foreground sm:col-span-2">{remote ? t.localeRemote(remote.name) : t.localeLocal} {t.localeHelp}</p>
@@ -127,7 +129,7 @@ function LocalePicker({ id, kind, value, detected, disabled, onChange }: { id: s
   </FormItem>;
 }
 
-function Tester() {
+function Tester({ view }: { view: WebToolsView }) {
   const id = useId();
   const t = useText(webToolsText);
   const [action, setAction] = useState<WebToolRequest["action"]>("search");
@@ -152,7 +154,7 @@ function Tester() {
       <p className="tw-label text-muted-foreground">{result.cached ? t.cached : t.fetched} · {t.elapsed(result.elapsed_ms)}{result.truncated ? ` · ${t.truncated}` : ""}</p>
       {result.warnings.map((warning, i) => <p key={i} className="tw-label text-muted-foreground">{t.partial}: {errorText(warning)}</p>)}
       {!result.sources.length && <p className="tw-body">{t.noResults}</p>}
-      {result.sources.map((source, i) => <article key={`${source.url}-${i}`} className="rounded-md border border-border p-3"><a className="tw-body font-medium break-all underline" href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a><p className="tw-label text-muted-foreground break-all">{source.url}{source.engine ? ` · ${source.engine}` : ""}</p><p className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words tw-body">{source.text}</p></article>)}
+      {result.sources.map((source, i) => <article key={`${source.url}-${i}`} className="rounded-md border border-border p-3"><a className="tw-body font-medium break-all underline" href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a><p className="tw-label text-muted-foreground break-all">{source.url}{source.engine ? ` · ${engineName(source.engine, view.available_engines)}` : ""}</p><p className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words tw-body">{source.text}</p></article>)}
     </div>}
     <DialogFooter><Button disabled={busy || !input.trim() || (action === "find_in_page" && !pattern.trim())} onClick={() => void run()}>{busy ? t.testing : t.run}</Button></DialogFooter>
   </>;

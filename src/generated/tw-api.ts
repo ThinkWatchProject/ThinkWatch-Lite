@@ -5118,7 +5118,7 @@ export type SavedSource = { kind: SavedSourceKind, name: string, };
  */
 export type SavedSourceKind = "upstream-key" | "upstream-header" | "access-key" | "proxy-password" | "control-key" | "sync-credential";
 
-export type SearchEngine = "bing" | "duckduckgo";
+export type SearchEngine = "bing" | "duckduckgo" | "google_docs";
 
 /**
  * 一页搜索停在哪儿的原因。
@@ -6590,6 +6590,12 @@ export type UsageView = { input: number, output: number, cache_read: number, cac
  */
 cache_1h?: boolean, };
 
+export type WebSearchEngine = { id: SearchEngine, name: string, 
+/**
+ * The engine's minimum applies even if the user's configured interval is lower.
+ */
+min_interval_ms: number, };
+
 export type WebSearchLocale = { language: string, region: string, };
 
 export type WebSource = { url: string, title: string, text: string, engine: SearchEngine | null, published_at: string | null, };
@@ -6636,7 +6642,11 @@ export type WebToolsView = { config: WebToolsConfig, config_version: string,
 /**
  * Detected on the Core host, which may be remote. Empty fields mean unavailable.
  */
-system_locale: WebSearchLocale, };
+system_locale: WebSearchLocale, 
+/**
+ * Engine capabilities advertised by the connected Core.
+ */
+available_engines: Array<WebSearchEngine>, };
 
 /**
  * 聚合类端点的时间窗（`GET /summary`、`/latency`）。**缺省是「今天」而不是

@@ -1185,6 +1185,7 @@
     "wsl.stopped": "WSL · {distro} 已停止。启动发行版后才能检查网关连通性。",
     "wsl.listener_cleanup_failed": "客户端配置已还原，但未能移除闲置的 WSL 监听或来源规则：{detail}。请检查网关监听设置；清理记录已保留。",
     "gw.web_tools.failed": "联网工具：{detail}",
+    "gw.web_tools.query_mismatch": "搜索引擎返回的结果与查询内容不匹配。",
     "config.web_tools.invalid": "联网工具配置无效：{detail}"
   }
 }
