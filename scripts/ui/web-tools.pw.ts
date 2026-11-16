@@ -43,7 +43,7 @@ test("locale menus scroll and select in the real config dialog; drafts survive S
   await expect(region).toHaveValue("日本");
   const engine = dialog.getByRole("combobox", { name: "搜索引擎", exact: true });
   await engine.click();
-  await expect(page.getByRole("option")).toHaveCount(3);
+  await expect(page.getByRole("option")).toHaveCount(4);
   await page.getByRole("option", { name: "Bing", exact: true }).click();
   await expect(page.getByRole("listbox")).toBeVisible();
   await page.keyboard.press("Escape");
@@ -141,6 +141,56 @@ test("engine choices support keyboard search and return to Automatic when the la
   await dialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(dialog).toBeHidden();
   await expect.poll(() => page.evaluate(() => (window as unknown as { savedWebConfig?: unknown }).savedWebConfig)).toMatchObject({ engines: [] });
+});
+
+test("Core-advertised Google search survives saving and reopening", async ({ page }) => {
+  await open(page);
+  await acceptSaves(page);
+  const dialog = page.getByRole("dialog");
+  const engine = dialog.getByRole("combobox", { name: "搜索引擎", exact: true });
+  await expect(dialog).toContainText("请求间隔至少 6 秒");
+  await engine.click();
+  await page.getByRole("option", { name: "Google (Docs)", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await dialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { savedWebConfig?: unknown }).savedWebConfig)).toMatchObject({ engines: ["google_docs"] });
+  await page.getByRole("button", { name: "配置", exact: true }).click();
+  await expect(engine).toHaveText("Google (Docs)");
+  await engine.click();
+  await expect(page.getByRole("option", { name: "Google (Docs)", exact: true })).toHaveAttribute("aria-selected", "true");
+});
+
+test("older Core without capabilities retains its two engines", async ({ page }) => {
+  await page.addInitScript(() => {
+    type Invoke = (command: string, args?: Record<string, unknown>, options?: unknown) => Promise<unknown>;
+    const context = window as unknown as { __TAURI_INTERNALS__: Record<string, unknown> };
+    const internals: Record<string, unknown> = {};
+    let invoke: Invoke;
+    Object.defineProperty(internals, "invoke", {
+      configurable: true,
+      get: () => invoke,
+      set: (original: Invoke) => {
+        invoke = async (command, args, options) => {
+          const result = await original(command, args, options);
+          if (command === "call" && args?.endpoint === "WebTools") {
+            const view = { ...result as Record<string, unknown> };
+            delete view.available_engines;
+            return view;
+          }
+          return result;
+        };
+      },
+    });
+    context.__TAURI_INTERNALS__ = internals;
+  });
+  await open(page);
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).not.toContainText("Google (Docs)");
+  await dialog.getByRole("combobox", { name: "搜索引擎", exact: true }).click();
+  await expect(page.getByRole("option")).toHaveCount(3);
+  await expect(page.getByRole("option", { name: "Bing", exact: true })).toBeVisible();
+  await expect(page.getByRole("option", { name: "DuckDuckGo", exact: true })).toBeVisible();
 });
 
 test("invalid domains block saving; failed save retains edits; Escape closes the menu first", async ({ page }) => {

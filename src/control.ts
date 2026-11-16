@@ -13,7 +13,8 @@
  * 失败时抛出的是一条 `Msg` 形状的对象，交给 `errorText`。
  */
 import { invoke } from "@tauri-apps/api/core";
-import type { ENDPOINTS, Endpoints } from "./generated/tw-api";
+import type { ENDPOINTS } from "./generated/tw-api";
+import type { Endpoints } from "./webToolsCompat";
 
 /**
  * 界面能直接调的端点。**和 `src-tauri/src/call.rs` 的 `ALLOWED` 是同一份**
