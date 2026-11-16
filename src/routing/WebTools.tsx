@@ -1,6 +1,6 @@
 import { Label } from "@/ui/label";
 import { ChevronRightIcon } from "lucide-react";
-import { useId, useRef, useEffect, useState } from "react";
+import { useId, useRef, useEffect, useState, type KeyboardEvent } from "react";
 import { call } from "@/control";
 import { useResource } from "@/lib/resource";
 import { useLang, useText } from "@/i18n";
@@ -138,17 +138,25 @@ function Tester({ view }: { view: WebToolsView }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<WebToolResult | null>(null);
+  const canRun = !busy && !!input.trim() && (action !== "find_in_page" || !!pattern.trim());
   async function run() {
+    if (!canRun) return;
     const request: WebToolRequest = action === "search" ? { action, query: input, allowed_domains: [], blocked_domains: [] }
       : action === "open_page" ? { action, url: input, offset: 0 } : { action, url: input, pattern };
     setBusy(true); setError(null); setResult(null);
     try { setResult(await call("TestWebTool", request)); } catch (e) { setError(errorText(e)); } finally { setBusy(false); }
   }
+  function onInputKeyDown(event: KeyboardEvent<HTMLInputElement>) {
+    // WebKit 确认输入法候选词时可能先结束 composition，仍需检查 229。
+    if (event.key !== "Enter" || event.nativeEvent.isComposing || event.nativeEvent.keyCode === 229) return;
+    event.preventDefault();
+    if (!event.repeat) void run();
+  }
   return <>
     <DialogHeader><DialogTitle>{t.test} · {t.title}</DialogTitle><DialogDescription>{t.testHelp}</DialogDescription></DialogHeader>
     <Segmented label={t.test} disabled={busy} value={action} options={[{ id: "search", label: t.search }, { id: "open_page", label: t.open }, { id: "find_in_page", label: t.find }]} onChange={(value) => { setAction(value); setResult(null); setError(null); }} />
-    <FormItem label={action === "search" ? t.query : t.url} htmlFor={`${id}-input`}><Input id={`${id}-input`} disabled={busy} value={input} onChange={(e) => setInput(e.target.value)} /></FormItem>
-    {action === "find_in_page" && <FormItem label={t.pattern} htmlFor={`${id}-pattern`}><Input id={`${id}-pattern`} disabled={busy} value={pattern} onChange={(e) => setPattern(e.target.value)} /></FormItem>}
+    <FormItem label={action === "search" ? t.query : t.url} htmlFor={`${id}-input`}><Input id={`${id}-input`} disabled={busy} value={input} onChange={(e) => setInput(e.target.value)} onKeyDown={onInputKeyDown} /></FormItem>
+    {action === "find_in_page" && <FormItem label={t.pattern} htmlFor={`${id}-pattern`}><Input id={`${id}-pattern`} disabled={busy} value={pattern} onChange={(e) => setPattern(e.target.value)} onKeyDown={onInputKeyDown} /></FormItem>}
     <DialogError error={error} />
     {result && <div className="grid min-h-0 gap-3 overflow-y-auto">
       <p className="tw-label text-muted-foreground">{result.cached ? t.cached : t.fetched} · {t.elapsed(result.elapsed_ms)}{result.truncated ? ` · ${t.truncated}` : ""}</p>
@@ -156,6 +164,6 @@ function Tester({ view }: { view: WebToolsView }) {
       {!result.sources.length && <p className="tw-body">{t.noResults}</p>}
       {result.sources.map((source, i) => <article key={`${source.url}-${i}`} className="rounded-md border border-border p-3"><a className="tw-body font-medium break-all underline" href={source.url} target="_blank" rel="noopener noreferrer">{source.title || source.url}</a><p className="tw-label text-muted-foreground break-all">{source.url}{source.engine ? ` · ${engineName(source.engine, view.available_engines)}` : ""}</p><p className="mt-2 max-h-56 overflow-auto whitespace-pre-wrap break-words tw-body">{source.text}</p></article>)}
     </div>}
-    <DialogFooter><Button disabled={busy || !input.trim() || (action === "find_in_page" && !pattern.trim())} onClick={() => void run()}>{busy ? t.testing : t.run}</Button></DialogFooter>
+    <DialogFooter><Button disabled={!canRun} onClick={() => void run()}>{busy ? t.testing : t.run}</Button></DialogFooter>
   </>;
 }
