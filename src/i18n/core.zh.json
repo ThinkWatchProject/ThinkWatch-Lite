@@ -457,6 +457,7 @@
     "gw.request.body_declared_too_large": "请求声明的长度为 {size} 字节，超过上限 {max} 字节。",
     "gw.request.body_over_limit": "请求体超过上限 {max} 字节。",
     "gw.request.decoded_body_over_limit": "请求体解码后超过上限 {max} 字节。",
+    "gw.request.body_idle": "请求内容已连续 30 秒没有新数据，请重新发送请求。",
     "gw.request.body_unreadable": "无法读取请求体：{detail}",
     "gw.request.memory_busy": "网关正在处理其他大请求，请稍后重试。",
     "gw.request.bad_encoding": "请求体无法按 {encoding} 解码：{detail}",
