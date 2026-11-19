@@ -197,7 +197,7 @@ export function RuleDialog({
           {d.action === "forward" && (
             <FormItem
               label={t.forwardTo}
-              desc={!pinned && d.to ? describeTarget(d.to, ov.groups, ov.providers) : undefined}
+              desc={!pinned && d.to ? describeTarget(d.to, ov.groups, ov.providers, ov.hard_route_switch) : undefined}
             >
               <Segmented<ToKind>
                 label={t.forwardTo}

@@ -118,7 +118,9 @@ export function GroupDialog({
           : badWeight !== undefined
             ? t.weightInvalid(badWeight)
             : null;
-  const strategy = strategies().find((s) => s.id === kind);
+  const strict = ov.hard_route_switch === true && kind === "select";
+  const preferredLabel = strict ? t.activeUpstream : t.preferred;
+  const strategy = strategies(ov.hard_route_switch).find((s) => s.id === kind);
 
   async function save() {
     setSaving(true);
@@ -174,7 +176,7 @@ export function GroupDialog({
               label={rt.strategy}
               value={kind}
               onChange={setKind}
-              options={strategies().map((s) => ({ id: s.id, label: groupKindLabel(s.id) }))}
+              options={strategies(ov.hard_route_switch).map((s) => ({ id: s.id, label: groupKindLabel(s.id) }))}
             />
             <p key={kind} className="flex flex-wrap items-center gap-x-1.5 tw-label text-muted-foreground motion-fade">
               {strategy?.desc}
@@ -211,7 +213,7 @@ export function GroupDialog({
                       <TableHead className="w-7 px-0" />
                       <TableHead className="w-7 px-0" />
                       <TableHead>{t.upstream}</TableHead>
-                      {kind === "select" && <TableHead className="w-28 text-right">{t.preferred}</TableHead>}
+                      {kind === "select" && <TableHead className="w-28 text-right">{preferredLabel}</TableHead>}
                       {balanced && <TableHead className="w-24 text-right">{t.weight}</TableHead>}
                     </TableRow>
                   </TableHeader>
@@ -235,10 +237,10 @@ export function GroupDialog({
                         >
                           <TableCell
                             className="px-0 pl-2 text-muted-foreground/60"
-                            aria-label={t.dragMember(n)}
-                            {...reorder.handle(i)}
+                            aria-label={strict ? undefined : t.dragMember(n)}
+                            {...(!strict ? reorder.handle(i) : {})}
                           >
-                            <GripVerticalIcon className="size-3.5" />
+                            {!strict && <GripVerticalIcon className="size-3.5" />}
                           </TableCell>
                           <TableCell className="px-0">
                             <Checkbox
@@ -276,7 +278,7 @@ export function GroupDialog({
                             <TableCell className="text-right">
                               {on &&
                                 (preferred === n ? (
-                                  <Badge variant="secondary">{t.preferred}</Badge>
+                                  <Badge variant="secondary">{preferredLabel}</Badge>
                                 ) : (
                                   <Button
                                     variant="ghost"
@@ -284,7 +286,7 @@ export function GroupDialog({
                                     className="text-muted-foreground opacity-0 transition-opacity group-hover/member:opacity-100 focus-visible:opacity-100"
                                     onClick={() => setSelected(n)}
                                   >
-                                    {t.setPreferred}
+                                    {strict ? t.selectUpstream : t.setPreferred}
                                   </Button>
                                 ))}
                             </TableCell>
@@ -312,7 +314,7 @@ export function GroupDialog({
             )}
             <Note>
               {kind === "select"
-                ? t.orderSelect
+                ? (strict ? t.orderSelectOnly : t.orderSelect)
                 : kind === "fallback"
                   ? t.orderFallback
                   : balanced

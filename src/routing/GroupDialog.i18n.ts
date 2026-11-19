@@ -17,6 +17,10 @@ export const groupDialogText = messages(
     toggleMember: (on: boolean, name: string) => `${on ? "移出" : "加入"} ${name}`,
     disabledSuffix: " · 已停用",
     preferred: "优先使用",
+    activeUpstream: "使用中",
+    selectUpstream: "选中",
+    orderSelectOnly: "保存后，下一次请求发往选中的上游。无法读取的加密历史或上游保存的历史会报错。",
+
     setPreferred: "设为优先",
     orderSelect: "拖动调整顺序。选定的上游不可用时，按顺序使用其余成员。",
     orderFallback: "拖动调整顺序：依次使用，前一个不可用时使用下一个。",
@@ -47,6 +51,10 @@ export const groupDialogText = messages(
     toggleMember: (on: boolean, name: string) => `${on ? "Remove" : "Add"} ${name}`,
     disabledSuffix: " · Disabled",
     preferred: "Preferred",
+    activeUpstream: "Active",
+    selectUpstream: "Select",
+    orderSelectOnly: "Once saved, the next request goes to the selected upstream. Unreadable encrypted or upstream-stored history returns an error.",
+
     setPreferred: "Set as preferred",
     orderSelect: "Drag to reorder. When the selected upstream is unavailable, the other members are used in order.",
     orderFallback: "Drag to reorder: members are used in turn, moving to the next when one is unavailable.",

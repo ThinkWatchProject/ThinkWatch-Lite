@@ -18,6 +18,7 @@ export const routingPageText = messages(
     /** 删除确认里接在「删除」后面的那个词 */
     group: "策略组",
     deleteGroupConsequence: "删除后，此策略组将从配置文件中移除，可从备份中恢复。",
+    switched: (group: string, provider: string) => `「${group}」已切换到 ${provider}`,
     preferred: (group: string, provider: string) => `「${group}」优先使用 ${provider}`,
   },
   {
@@ -36,6 +37,7 @@ export const routingPageText = messages(
     group: "group",
     deleteGroupConsequence:
       "Once deleted, this group is removed from the config file. It can be restored from the backups.",
+    switched: (group: string, provider: string) => `“${group}” switched to ${provider}`,
     preferred: (group: string, provider: string) => `“${group}” now prefers ${provider}`,
   },
 );
