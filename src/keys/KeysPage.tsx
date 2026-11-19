@@ -268,6 +268,7 @@ export default function KeysPage({
           usageLoaded={usage.byKey !== undefined}
           routes={ov.routes}
           defaultRoute={ov.default_route}
+          hardRouteSwitch={ov.hard_route_switch === true}
           catalog={catalog.data ?? []}
           rowDays={ov.retention.row_days}
           version={version}

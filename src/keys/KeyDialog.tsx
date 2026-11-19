@@ -1,3 +1,4 @@
+import { routeConfirmText } from "@/routing/RouteConfirmDialogs.i18n";
 import { Label } from "@/ui/label";
 import { useState } from "react";
 import { RotateCwIcon } from "lucide-react";
@@ -45,6 +46,7 @@ export function KeyDialog({
   usageLoaded,
   routes,
   defaultRoute,
+  hardRouteSwitch,
   catalog,
   rowDays,
   version,
@@ -62,6 +64,7 @@ export function KeyDialog({
   usageLoaded: boolean;
   routes: RouteView[];
   defaultRoute: string;
+  hardRouteSwitch: boolean;
   /** 网关知道的全部模型，用来勾选可见范围。取不到时为空 */
   catalog: KnownModel[];
   /** 请求记录留几天（概览里的）。每月的用量上限要求至少 31 天 */
@@ -74,6 +77,7 @@ export function KeyDialog({
   onRotate: (name: string) => void;
 }) {
   const t = useText(keyDialogText);
+  const switchText = useText(routeConfirmText);
   const dialogFocus = useDialogFocus();
   const common = useText(commonText);
   const [name, setName] = useState(editing?.name ?? "");
@@ -203,18 +207,19 @@ export function KeyDialog({
               <SelectField id="k-route" value={route} onValueChange={(nextValue) => setRoute(nextValue)}>
                 {/* 不绑就是走默认路由 —— 写出来，而不是留一个空白 */}
                 <SelectOption value="">{routeLabel(null, defaultRoute)}</SelectOption>
-                {routes
-                  .filter((r) => r.name !== defaultRoute)
-                  .map((r) => (
-                    <SelectOption key={r.name} value={r.name}>
-                      {r.name}
-                    </SelectOption>
-                  ))}
+                {routes.map((r) => (
+                  <SelectOption key={r.name} value={r.name}>
+                    {r.name === defaultRoute ? t.pinRoute(r.name) : r.name}
+                  </SelectOption>
+                ))}
               </SelectField>
               <p className="tw-label text-muted-foreground">{t.routeHint}</p>
             </div>
           </div>
 
+          {hardRouteSwitch && editing && (route || defaultRoute) !== (editing.route || defaultRoute) && (
+            <p className="tw-label text-muted-foreground">{switchText.cutover}</p>
+          )}
           <div className="flex min-w-0 flex-col gap-1.5 sm:w-1/2 sm:pr-2">
             <Label className="tw-body font-medium" htmlFor="k-limit">
               {t.limit}

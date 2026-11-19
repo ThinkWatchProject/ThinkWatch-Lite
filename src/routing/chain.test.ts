@@ -77,6 +77,19 @@ function sample() {
 }
 
 describe("路由图的连线", () => {
+  it("手动选择只连接当前上游，旧版 Core 仍显示可回退成员", () => {
+    const ov = {
+      clients: [key("default")],
+      routes: [route("default", [catchAll("catch-all", "manual")], { default: true })],
+      groups: [{ ...ALL, name: "manual", builtin: false, kind: "select" as const, providers: ["a", "b"], selected: "b" }],
+      providers: [up("a"), up("b")],
+    };
+    const current = buildChain({ ...ov, hard_route_switch: true });
+    expect(edge(current, "group:manual", "up:b")?.idle).toBe(false);
+    expect(edge(current, "group:manual", "up:a")).toBeUndefined();
+    expect(edge(buildChain(ov), "group:manual", "up:a")?.idle).toBe(false);
+  });
+
   it("刚装好：密钥 → 默认路由 → 全部上游 → 每个上游", () => {
     const c = buildChain({
       clients: [key("default")],

@@ -91,6 +91,7 @@ export function SetDefaultDialog({
         {moving.length > 0 && (
           <KeyList rows={moving.map((k) => ({ key: k, note: `${current?.name ?? t.previousDefault} → ${name}` }))} />
         )}
+        {ov.hard_route_switch && moving.length > 0 && <Note>{t.cutover}</Note>}
         {current && <Note>{t.keepsRoute(current.name)}</Note>}
         <Banner layout="inline" tone="error" show={error !== null}>
           {error !== null && errorText(error)}
@@ -158,6 +159,7 @@ export function DeleteRouteDialog({
                 ))}
               </SelectField>
             </FormItem>
+            {ov.hard_route_switch && <Note>{t.cutover}</Note>}
           </>
         )}
         <Banner layout="inline" tone="error" show={error !== null}>

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { FlaskConicalIcon, PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
 import { IconRoute } from "@/ui/icons";
@@ -102,20 +102,7 @@ export default function RoutingPage({
   const known = useResource("known-models", () => api.knownModels(), { deps: [ov.config_version, catalogKey] });
   const models = known.data ?? [];
 
-  // 「优先使用」的乐观值：请求发出去就先画成新的，概览读回来一致了再撤掉
-  const [picks, setPicks] = useState<Record<string, string | null>>({});
   const [busyGroups, setBusyGroups] = useState<ReadonlySet<string>>(new Set());
-  const view = useMemo<Overview>(() => {
-    const names = Object.keys(picks);
-    if (names.length === 0) return ov;
-    return { ...ov, groups: ov.groups.map((g) => (g.name in picks ? { ...g, selected: picks[g.name] } : g)) };
-  }, [ov, picks]);
-  useEffect(() => {
-    setPicks((p) => {
-      const left = Object.entries(p).filter(([name, sel]) => ov.groups.find((g) => g.name === name)?.selected !== sel);
-      return left.length === Object.keys(p).length ? p : Object.fromEntries(left);
-    });
-  }, [ov]);
 
   /**
    * 「优先使用」的写入排成一队，版本号**跟着写入的回执走**：撤销那一下、紧接着改另一个
@@ -136,7 +123,7 @@ export default function RoutingPage({
   };
 
   async function prefer(g: GroupView, provider: string) {
-    const prev = g.selected ?? null;
+    const prev = g.selected ?? g.providers[0] ?? null;
     if (prev === provider) return;
     const mark = (on: boolean) =>
       setBusyGroups((s) => {
@@ -144,12 +131,6 @@ export default function RoutingPage({
         if (on) n.add(g.name);
         else n.delete(g.name);
         return n;
-      });
-    const pick = (sel: string | null) => setPicks((p) => ({ ...p, [g.name]: sel }));
-    const unpick = () =>
-      setPicks((p) => {
-        const { [g.name]: _, ...rest } = p;
-        return rest;
       });
     const write = async (selected: string | null) => {
       await queue((base) =>
@@ -161,20 +142,12 @@ export default function RoutingPage({
     };
     mark(true);
     await undoable({
-      message: t.preferred(targetLabel(g.name), provider),
-      apply: () => {
-        pick(provider);
-        return unpick;
-      },
+      message: (ov.hard_route_switch ? t.switched : t.preferred)(targetLabel(g.name), provider),
       do: () => write(provider),
       undo: async () => {
         mark(true);
-        pick(prev);
         try {
           await write(prev);
-        } catch (e) {
-          unpick();
-          throw e;
         } finally {
           mark(false);
         }
@@ -219,9 +192,9 @@ export default function RoutingPage({
     );
   }
 
-  const ruleCount = view.routes.reduce((n, r) => n + r.rules.length, 0);
-  const shadowed = view.routes.reduce((n, r) => n + r.rules.filter((x) => x.shadowed).length, 0);
-  const noCatchAll = view.routes.filter((r) => !r.has_catch_all).length;
+  const ruleCount = ov.routes.reduce((n, r) => n + r.rules.length, 0);
+  const shadowed = ov.routes.reduce((n, r) => n + r.rules.filter((x) => x.shadowed).length, 0);
+  const noCatchAll = ov.routes.filter((r) => !r.has_catch_all).length;
 
   return (
     <Tabs value={tab} onValueChange={(v) => setTab(v as RoutingTab)} className="gap-0">
@@ -229,9 +202,9 @@ export default function RoutingPage({
         <PageHeader
           summary={
             <>
-              <SummaryItem value={<AnimatedNumber value={view.routes.length} />} label={t.routesUnit(view.routes.length)} />
+              <SummaryItem value={<AnimatedNumber value={ov.routes.length} />} label={t.routesUnit(ov.routes.length)} />
               <SummaryItem value={<AnimatedNumber value={ruleCount} />} label={t.rulesUnit(ruleCount)} />
-              <SummaryItem value={<AnimatedNumber value={view.groups.length} />} label={t.groupsUnit(view.groups.length)} />
+              <SummaryItem value={<AnimatedNumber value={ov.groups.length} />} label={t.groupsUnit(ov.groups.length)} />
               {shadowed > 0 && (
                 <SummaryItem lead={<StatusDot tone="warn" />} value={shadowed} label={t.shadowedUnit(shadowed)} />
               )}
@@ -267,11 +240,11 @@ export default function RoutingPage({
             <TabsList variant="line">
               <TabsTrigger value="routes">
                 {t.routes}
-                <Count n={view.routes.length} />
+                <Count n={ov.routes.length} />
               </TabsTrigger>
               <TabsTrigger value="groups">
                 {t.groups}
-                <Count n={view.groups.length} />
+                <Count n={ov.groups.length} />
               </TabsTrigger>
               {/* 请求先过这一层，剩下的才轮到规则 —— 所以它和规则同页 */}
               <TabsTrigger value="probes">{t.probes}</TabsTrigger>
@@ -283,7 +256,7 @@ export default function RoutingPage({
         {tab !== "probes" && (
           <ChainMap
             className="mt-4"
-            ov={view}
+            ov={ov}
             flights={flights}
             hits={hits}
             focus={hover.focus}
@@ -295,7 +268,7 @@ export default function RoutingPage({
 
         <TabsContent value="routes" className="pt-4">
           <RouteTable
-            ov={view}
+            ov={ov}
             hits={hits}
             focus={hover.focus}
             onEnter={hover.enter}
@@ -314,7 +287,7 @@ export default function RoutingPage({
 
         <TabsContent value="groups" className="pt-4">
           <GroupTable
-            ov={view}
+            ov={ov}
             focus={hover.focus}
             onEnter={hover.enter}
             onLeave={hover.leave}
@@ -333,17 +306,17 @@ export default function RoutingPage({
         </TabsContent>
 
         <TabsContent value="probes" className="pt-4">
-          <ProbesTab ov={view} />
+          <ProbesTab ov={ov} />
         </TabsContent>
       </Page>
 
       {dialog?.kind === "route" && (
         <RouteDialog
           mode={dialog.mode}
-          ov={view}
+          ov={ov}
           models={models}
           hits={hits}
-          configVersion={view.config_version}
+          configVersion={ov.config_version}
           onChanged={onChanged}
           onClose={() => setDialog(null)}
           onSaved={(name) => done({ kind: "route", name })}
@@ -352,22 +325,22 @@ export default function RoutingPage({
       )}
       {dialog?.kind === "set-default" && (
         <SetDefaultDialog
-          ov={view}
+          ov={ov}
           name={dialog.name}
           onClose={() => setDialog(null)}
           onConfirm={async () => {
-            await api.setDefaultRoute(dialog.name, view.config_version);
+            await api.setDefaultRoute(dialog.name, ov.config_version);
             done({ kind: "route", name: dialog.name });
           }}
         />
       )}
       {dialog?.kind === "delete-route" && (
         <DeleteRouteDialog
-          ov={view}
+          ov={ov}
           name={dialog.name}
           onClose={() => setDialog(null)}
           onConfirm={async (reassignTo) => {
-            await api.deleteRoute(dialog.name, view.config_version, reassignTo);
+            await api.deleteRoute(dialog.name, ov.config_version, reassignTo);
             done();
           }}
         />
@@ -375,8 +348,8 @@ export default function RoutingPage({
       {dialog?.kind === "group" && (
         <GroupDialog
           mode={dialog.mode}
-          ov={view}
-          configVersion={view.config_version}
+          ov={ov}
+          configVersion={ov.config_version}
           onClose={() => setDialog(null)}
           onSaved={(name) => done({ kind: "group", name })}
         />
@@ -385,13 +358,13 @@ export default function RoutingPage({
         <DeleteDialog
           what={t.group}
           name={dialog.name}
-          referrers={groupRefs(view, dialog.name).map((r) => ({
+          referrers={groupRefs(ov, dialog.name).map((r) => ({
             kind: "reference" as const,
             ref: { kind: "rule_target" as const, route: r.route, rule: r.rule },
           }))}
           consequence={t.deleteGroupConsequence}
           onDelete={async () => {
-            await api.deleteGroup(dialog.name, view.config_version);
+            await api.deleteGroup(dialog.name, ov.config_version);
             done();
           }}
           onClose={() => setDialog(null)}
@@ -402,7 +375,7 @@ export default function RoutingPage({
           }}
         />
       )}
-      {dryRun && <DryRunDialog target={dryRun} ov={view} models={models} onClose={() => setDryRun(null)} />}
+      {dryRun && <DryRunDialog target={dryRun} ov={ov} models={models} onClose={() => setDryRun(null)} />}
     </Tabs>
   );
 }

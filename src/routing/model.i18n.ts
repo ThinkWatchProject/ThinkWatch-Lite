@@ -33,6 +33,7 @@ export const modelText = messages(
     setMaxTokens: (value: string) => `max_tokens 改为 ${value}`,
     strategies: {
       fallback: "依次使用成员，前一个不可用时使用下一个。",
+      selectOnly: "只使用选定的成员。要自动切换，请选择按顺序或其他自动策略。",
       select: "使用选定的上游；它不可用时，按顺序使用其余成员。",
       loadBalance: "在成员之间轮流分配请求。",
       urlTest: "优先使用首 token 时间最短的上游。",
@@ -74,6 +75,7 @@ export const modelText = messages(
     setMaxTokens: (value: string) => `max_tokens set to ${value}`,
     strategies: {
       fallback: "Uses the members in order, moving to the next when one is unavailable.",
+      selectOnly: "Uses only the selected member. Choose In order or another automatic strategy for failover.",
       select: "Uses the selected upstream; when it is unavailable, uses the other members in order.",
       loadBalance: "Distributes requests across the members in turn.",
       urlTest: "Prefers the upstream with the shortest time to first token.",

@@ -75,12 +75,20 @@ export function focusId(f: ChainFocus): string {
 export const edgeId = (from: string, to: string) => `${from}>${to}`;
 
 /** 策略组的成员，按实际使用的先后：内置的是全部上游，手动选择的选定成员在前 */
-export function membersOf(g: GroupView, providers: readonly string[]): string[] {
+export function membersOf(g: GroupView, providers: readonly string[], hardSwitch = false): string[] {
   if (g.builtin) return [...providers];
+  if (g.kind === "select" && hardSwitch) {
+    const selected = selectedMember(g);
+    return selected ? [selected] : [];
+  }
   if (g.kind === "select" && g.selected && g.providers.includes(g.selected)) {
     return [g.selected, ...g.providers.filter((p) => p !== g.selected)];
   }
   return g.providers;
+}
+
+export function selectedMember(g: Pick<GroupView, "selected" | "providers">): string | undefined {
+  return g.selected && g.providers.includes(g.selected) ? g.selected : g.providers[0];
 }
 
 /** 规则把请求交给的去向 */
@@ -126,7 +134,7 @@ export function orderedRoutes<R extends { default: boolean }>(routes: readonly R
 }
 
 export function buildChain(
-  ov: Pick<Overview, "clients" | "groups" | "providers"> & { routes: readonly RouteView[] },
+  ov: Pick<Overview, "clients" | "groups" | "providers" | "hard_route_switch"> & { routes: readonly RouteView[] },
 ): Chain {
   const routes = orderedRoutes(ov.routes);
   const routeIndex = new Map(routes.map((r, i) => [r.name, i]));
@@ -195,7 +203,7 @@ export function buildChain(
       else if (t.kind === "upstream") out.push({ ids: stationsOf(t), live: !stoppedUpstreams.has(t.name) });
       else {
         const g = groupsByName.get(t.name)!;
-        const ms = membersOf(g, providerNames).filter((m) => providerSet.has(m));
+        const ms = membersOf(g, providerNames, ov.hard_route_switch).filter((m) => providerSet.has(m));
         if (ms.length === 0) out.push({ ids: [chainId.group(t.name)], live: true });
         for (const m of ms)
           out.push({ ids: [chainId.group(t.name), chainId.upstream(m)], live: !stoppedUpstreams.has(m) });
@@ -219,7 +227,7 @@ export function buildChain(
   // 没被任何路由引用的策略组：自己连着成员画出来，悬停时照样亮
   for (const g of shownGroups) {
     if (onPath.has(chainId.group(g.name))) continue;
-    const ms = membersOf(g, providerNames).filter((m) => providerSet.has(m));
+    const ms = membersOf(g, providerNames, ov.hard_route_switch).filter((m) => providerSet.has(m));
     if (ms.length === 0) paths.push({ ids: [chainId.group(g.name)], live: false });
     for (const m of ms) paths.push({ ids: [chainId.group(g.name), chainId.upstream(m)], live: false });
   }
@@ -292,7 +300,7 @@ export function buildChain(
         if (!n.idle) add(`l3live:${n.name}`, at.get(n.id)! + 0.5);
       } else if (n.kind === "group") {
         const g = groupsByName.get(n.name)!;
-        const ms = membersOf(g, providerNames);
+        const ms = membersOf(g, providerNames, ov.hard_route_switch);
         ms.forEach((m, j) => {
           const v = at.get(n.id)! + (j + 1) / (ms.length + 1);
           add(`l3:${m}`, v);
