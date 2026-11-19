@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 import { textOf, useText } from "@/i18n";
 import { groupKindLabel } from "@/labels";
 import type { GroupView, Overview } from "@/types";
-import { membersOf, type ChainFocus } from "./chain";
+import { membersOf, selectedMember, type ChainFocus } from "./chain";
 import { balanceNotes } from "./model";
 import { groupTableText } from "./GroupTable.i18n";
 import { TargetIcon, upstreamState } from "./parts";
@@ -77,7 +77,7 @@ export function GroupTable({
         </TableHeader>
         <TableBody>
           {shown.map(({ item: g, key, presence }) => {
-            const items = menu(g, actions);
+            const items = menu(g, actions, ov.hard_route_switch, busy.has(g.name));
             const refs = groupRefs(ov, g.name);
             // 轮询组的比例（不是平均分时）和分配依据（不是只看比例时），各占一行写在策略下面：
             // 这一列窄，连成一行会从「按速度和稳定性」中间折开
@@ -118,6 +118,9 @@ export function GroupTable({
                   </TableCell>
                   <TableCell className="py-2.5 align-top whitespace-normal">
                     <div>{groupKindLabel(g.kind)}</div>
+                    {g.kind === "select" && ov.hard_route_switch && (
+                      <div className="mt-0.5 tw-label text-muted-foreground">{t.selectedOnly}</div>
+                    )}
                     {notes.map((n) => (
                       <div key={n} className="mt-0.5 tw-label text-muted-foreground">
                         {n}
@@ -184,13 +187,13 @@ export function GroupTable({
 }
 
 /**
- * 成员。**有先后的用「→」连**（按顺序、手动选择：前一个不可用才用下一个），
- * 按运行时数字排的（轮询、延迟最低、费用最低）不连 —— 那几种的次序不是写死的。
- * 手动选择的那一个排最前、标「优先」；正在改的那一下，它的底色明暗。
+ * 成员按策略显示。新版 Core 的手动选择只标当前启用的上游。
  */
 function Members({ g, ov, busy }: { g: GroupView; ov: Overview; busy: boolean }) {
   const t = useText(groupTableText);
-  const ordered = g.kind === "fallback" || g.kind === "select";
+  const strict = ov.hard_route_switch === true && g.kind === "select";
+  const ordered = g.kind === "fallback" || (g.kind === "select" && !strict);
+  const selected = strict ? selectedMember(g) : g.selected;
   const list = membersOf(
     g,
     ov.providers.map((p) => p.name),
@@ -199,7 +202,7 @@ function Members({ g, ov, busy }: { g: GroupView; ov: Overview; busy: boolean })
     <div className="flex flex-wrap items-center gap-1">
       {list.map((p, i) => {
         const s = upstreamState(ov.providers.find((x) => x.name === p));
-        const preferred = g.kind === "select" && p === g.selected;
+        const preferred = g.kind === "select" && p === selected;
         return (
           // 箭头和它后面的成员放在一起换行，续行以「→」开头，读得出是接着上一行
           <span key={p} className="inline-flex items-center gap-1">
@@ -214,7 +217,7 @@ function Members({ g, ov, busy }: { g: GroupView; ov: Overview; busy: boolean })
             >
               <TargetIcon name={p} providers={ov.providers} size={12} />
               <span className="font-mono">{p}</span>
-              {preferred && <span className="text-muted-foreground">{t.preferredTag}</span>}
+              {preferred && <span className="text-muted-foreground">{strict ? t.selectedTag : t.preferredTag}</span>}
               {s && <StatusDot tone={s.tone} label={s.label} />}
             </span>
           </span>
@@ -224,7 +227,7 @@ function Members({ g, ov, busy }: { g: GroupView; ov: Overview; busy: boolean })
   );
 }
 
-function menu(g: GroupView, a: GroupActions): MenuItems {
+function menu(g: GroupView, a: GroupActions, strict = false, busy = false): MenuItems {
   const t = textOf(groupTableText);
   const rt = textOf(routingText);
   if (g.builtin) {
@@ -232,14 +235,14 @@ function menu(g: GroupView, a: GroupActions): MenuItems {
   }
   return [
     { kind: "item", label: rt.editMenu, onSelect: () => a.edit(g.name) },
-    ...(g.kind === "select"
+    ...(g.kind === "select" && !busy
       ? ([
           {
             kind: "sub",
-            label: t.prefer,
+            label: strict ? t.switchTo : t.prefer,
             choices: g.providers.map((p) => ({
               label: p,
-              checked: p === g.selected,
+              checked: p === (strict ? selectedMember(g) : g.selected),
               onSelect: () => a.prefer(g, p),
             })),
           },

@@ -1,3 +1,4 @@
+import { routeConfirmText } from "./RouteConfirmDialogs.i18n";
 import { Fragment, useMemo, useState, type KeyboardEvent, type MouseEvent } from "react";
 import { FlaskConicalIcon, GripVerticalIcon, PlusIcon } from "lucide-react";
 import { AliasMark } from "@/aliases/AliasMark";
@@ -101,6 +102,7 @@ export function RouteDialog({
   const t = useText(routeDialogText);
   const rt = useText(routingText);
   const ct = useText(commonText);
+  const switchText = useText(routeConfirmText);
   const source =
     mode.kind === "edit"
       ? ov.routes.find((r) => r.name === mode.name)
@@ -426,6 +428,9 @@ export function RouteDialog({
           {error !== null && errorText(error)}
         </Banner>
 
+        {ov.hard_route_switch && (original.length > 0 || keys.length > 0) && (
+          <p className="tw-label text-muted-foreground">{switchText.cutover}</p>
+        )}
         <DialogFooter className="items-center">
           {missing && <span className="mr-auto tw-label text-muted-foreground">{missing}</span>}
           <Button variant="outline" onClick={onClose}>
@@ -557,7 +562,7 @@ function Action({ r, ov, known }: { r: RuleDraft; ov: Overview; known: readonly 
       </div>
     );
   }
-  const sub = [describeTarget(r.to, ov.groups, ov.providers), addOns].filter(Boolean).join(" · ");
+  const sub = [describeTarget(r.to, ov.groups, ov.providers, ov.hard_route_switch), addOns].filter(Boolean).join(" · ");
   return (
     <div className="min-w-0">
       <div className="flex min-w-0 items-center gap-1.5">
