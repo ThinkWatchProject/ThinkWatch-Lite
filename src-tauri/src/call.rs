@@ -3,8 +3,7 @@
 //! **只是转发的端点不再各有一个命令。**以前一个端点在这一层要写一个命令，
 //! 参数名、路径、请求类型各写一遍，前端再按命令名和参数名调一遍 —— 参数名
 //! 拼错是运行时才知道的事。现在界面按端点名调（类型来自生成的 `tw-api.ts`），
-//! 这里按名字找到 `tw_api::ep` 里那一个端点。搜索能力可随 Core 扩展，三个搜索
-//! 端点直接转发 JSON 交给 Core 校验；其余端点先按钉住的协议类型校验。
+//! 这里按名字找到 `tw_api::ep` 里那一个端点。概览和搜索保留 Core 返回的能力字段。
 //!
 //! **界面够得着的端点只有 [`ALLOWED`] 里这些。**不在里面的有意不给：密钥明文
 //! （`KeyValue`，复制走 Rust 这边直接写剪贴板）、让 core 退出、诊断包的正文、
@@ -208,13 +207,12 @@ webview_endpoints![
     SyncRepublish,
 ];
 
-/// 搜索端点保留 Core 的可扩展能力字段，其余请求先按端点类型校验。
+/// 概览和搜索端点保留 Core 的可扩展能力字段。
 async fn relay<E: Endpoint>(c: &ControlClient, params: &[&str], req: Value) -> Out<Value> {
-    // Search capabilities evolve on Core independently of the bundled API.
-    // Only these already-allowlisted routes accept extensible JSON. Core still
-    // validates every request, with the same authenticated transport and paths.
-    if matches!(E::NAME, "WebTools" | "SaveWebTools" | "TestWebTool") {
-        return Ok(c.call::<SearchEndpoint<E>>(params, &req).await?);
+    if (E::NAME == "Overview" && req.is_null())
+        || matches!(E::NAME, "WebTools" | "SaveWebTools" | "TestWebTool")
+    {
+        return Ok(c.call::<ExtensibleEndpoint<E>>(params, &req).await?);
     }
     let req: E::Req = serde_json::from_value(req).map_err(|e| {
         CmdError::plain(format!(
@@ -226,9 +224,9 @@ async fn relay<E: Endpoint>(c: &ControlClient, params: &[&str], req: Value) -> O
     serde_json::to_value(res).map_err(|e| CmdError::plain(e.to_string()))
 }
 
-struct SearchEndpoint<E>(std::marker::PhantomData<E>);
+struct ExtensibleEndpoint<E>(std::marker::PhantomData<E>);
 
-impl<E: Endpoint> Endpoint for SearchEndpoint<E> {
+impl<E: Endpoint> Endpoint for ExtensibleEndpoint<E> {
     const METHOD: tw_api::Method = E::METHOD;
     const PATH: &'static str = E::PATH;
     const PARAMS: &'static [&'static str] = E::PARAMS;

@@ -6,6 +6,7 @@
  * 的那几件事：保存按钮旁边缺什么、哪条规则被兜底挡住。
  */
 import type { ClientView, ConditionField, ConditionView, Dialect, GroupKind, GroupView, KnownModel, PinnedModel, ProviderView, RouteView, RuleInput, RuleReasoning, RuleView } from "@/types";
+import { selectedMember } from "./chain";
 import { textOf } from "@/i18n";
 import { ALL_UPSTREAMS, balanceByLabel, conditionName, groupKindLabel, reasoningText, targetLabel } from "@/labels";
 import { protocolLabel } from "@/upstreams/labels";
@@ -452,12 +453,13 @@ export function describeTarget(
   name: string,
   groups: GroupView[],
   providers: ProviderView[],
+  hardSwitch = false,
 ): string {
   const t = textOf(modelText);
   const g = groups.find((x) => x.name === name);
   if (g) {
     if (g.builtin) return t.builtinGroup;
-    const members = membersText(g);
+    const members = membersText(g, hardSwitch);
     return t.groupTarget(strategyText(g), members);
   }
   const p = providers.find((x) => x.name === name);
@@ -466,7 +468,8 @@ export function describeTarget(
 }
 
 /** 成员怎么写：有先后的用「→」连，其余用顿号 */
-export function membersText(g: Pick<GroupView, "kind" | "providers" | "selected">): string {
+export function membersText(g: Pick<GroupView, "kind" | "providers" | "selected">, hardSwitch = false): string {
+  if (g.kind === "select" && hardSwitch) return selectedMember(g) ?? "";
   const ordered = g.kind === "fallback" || g.kind === "select";
   if (g.kind === "select" && g.selected) {
     const rest = g.providers.filter((p) => p !== g.selected);
@@ -490,11 +493,11 @@ export function addOnsText(d: RuleDraft, known: readonly KnownModel[] = []): str
 }
 
 /** 策略组的策略，附一句会影响用户决定的说明 */
-export function strategies(): { id: GroupKind; desc: string }[] {
+export function strategies(hardSwitch = false): { id: GroupKind; desc: string }[] {
   const t = textOf(modelText).strategies;
   return [
     { id: "fallback", desc: t.fallback },
-    { id: "select", desc: t.select },
+    { id: "select", desc: hardSwitch ? t.selectOnly : t.select },
     { id: "load-balance", desc: t.loadBalance },
     { id: "url-test", desc: t.urlTest },
     { id: "cheapest", desc: t.cheapest },

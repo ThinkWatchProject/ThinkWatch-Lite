@@ -544,6 +544,7 @@ function describe(
       const ms = membersOf(
         g,
         ov.providers.map((p) => p.name),
+        ov.hard_route_switch,
       );
       const ordered = g.kind === "fallback" || g.kind === "select";
       const line = node.idle && !g.builtin ? t.unreferenced : (ordered ? t.members : t.membersUnordered)(strategyText(g), ms);

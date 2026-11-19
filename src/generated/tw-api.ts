@@ -3338,6 +3338,10 @@ export type OutcomeDetail = { "action": "recorded", } | { "action": "replaced", 
  */
 export type Overview = { 
 /**
+ * Routing changes take effect on the next request, including manual selection.
+ */
+hard_route_switch?: boolean, 
+/**
  * 配置文件现在的版本号。和 `GET /config` 的 `version`、改配置时带的
  * `base_version` 是同一个。
  *
