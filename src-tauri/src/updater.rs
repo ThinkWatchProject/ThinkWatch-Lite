@@ -54,7 +54,25 @@ pub async fn set_update_check(app: tauri::AppHandle, on: bool) -> Out<UpdateView
 #[derive(Clone, serde::Serialize)]
 pub struct Found {
     version: String,
-    notes: Option<String>,
+    #[serde(skip_serializing)]
+    notes: ReleaseNotes,
+}
+
+#[derive(Clone, Default, serde::Serialize)]
+struct ReleaseNotes {
+    zh: Option<String>,
+    en: Option<String>,
+}
+
+impl ReleaseNotes {
+    fn from_manifest(zh: Option<String>, raw: &serde_json::Value) -> Self {
+        // Tauri 已读了标准的 notes（中文），英文在同一份清单的附加字段里。
+        let en = raw
+            .get("notes_en")
+            .and_then(|v| v.as_str())
+            .map(str::to_owned);
+        Self { zh, en }
+    }
 }
 
 /// 更新在内存里的那点状态。
@@ -70,7 +88,7 @@ pub struct Updates {
 #[derive(serde::Serialize)]
 pub struct OfferView {
     version: String,
-    notes: Option<String>,
+    notes: ReleaseNotes,
     current: String,
     install: update::Install,
     /// Homebrew 那一档要执行的命令。**由这里给出，界面上不再写一遍** ——
@@ -85,7 +103,7 @@ async fn look(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     let found = updater(app)?.check().await.map_err(|e| e.to_string())?;
     Ok(found.map(|up| Found {
         version: up.version,
-        notes: up.body,
+        notes: ReleaseNotes::from_manifest(up.body, &up.raw_json),
     }))
 }
 
@@ -172,7 +190,8 @@ fn brew_offer(version: &str, release: Option<Found>) -> Found {
         version: version.to_string(),
         notes: release
             .filter(|r| r.version == version)
-            .and_then(|r| r.notes),
+            .map(|r| r.notes)
+            .unwrap_or_default(),
     }
 }
 
@@ -980,21 +999,51 @@ mod tests {
     use notices::Mode;
 
     #[test]
+    fn release_notes_read_both_languages_from_the_same_manifest() {
+        let manifest = serde_json::json!({
+            "version": "2026.11.20",
+            "notes": "修复路由",
+            "notes_en": "Fixed routing",
+            "platforms": {},
+        });
+        let release: tauri_plugin_updater::RemoteRelease =
+            serde_json::from_value(manifest.clone()).unwrap();
+        let notes = ReleaseNotes::from_manifest(release.notes, &manifest);
+        assert_eq!(notes.zh.as_deref(), Some("修复路由"));
+        assert_eq!(notes.en.as_deref(), Some("Fixed routing"));
+    }
+
+    #[test]
+    fn older_or_malformed_manifests_can_still_offer_an_update() {
+        for manifest in [serde_json::json!({}), serde_json::json!({ "notes_en": 42 })] {
+            let notes = ReleaseNotes::from_manifest(Some("修复路由".into()), &manifest);
+            assert_eq!(notes.zh.as_deref(), Some("修复路由"));
+            assert_eq!(notes.en, None);
+        }
+    }
+
+    #[test]
     fn brew_uses_notes_only_for_the_version_in_the_cask() {
         let release = Found {
             version: "2026.11.20".into(),
-            notes: Some("Release notes".into()),
+            notes: ReleaseNotes {
+                zh: Some("修复路由".into()),
+                en: Some("Fixed routing".into()),
+            },
         };
         let matching = brew_offer("2026.11.20", Some(release.clone()));
-        assert_eq!(matching.notes.as_deref(), Some("Release notes"));
+        assert_eq!(matching.notes.zh.as_deref(), Some("修复路由"));
+        assert_eq!(matching.notes.en.as_deref(), Some("Fixed routing"));
 
         let behind = brew_offer("2026.11.19", Some(release));
         assert_eq!(behind.version, "2026.11.19");
-        assert_eq!(behind.notes, None);
+        assert_eq!(behind.notes.zh, None);
+        assert_eq!(behind.notes.en, None);
 
         let unavailable = brew_offer("2026.11.20", None);
         assert_eq!(unavailable.version, "2026.11.20");
-        assert_eq!(unavailable.notes, None);
+        assert_eq!(unavailable.notes.zh, None);
+        assert_eq!(unavailable.notes.en, None);
     }
 
     /// 「已更新到 x」和别的告知同一个开关：**只在「系统通知」那一档弹**

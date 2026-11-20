@@ -5,7 +5,7 @@
 
 正文是英文的，依次是：
 
-1. `release-notes/<版本>.md`：这一版的说明。**可以没有**，没有就从下载表开始。
+1. `release-notes/<版本>.md`：这一版的英文说明。正式发版时必须提供，演练时可省略。
 2. 下载表：每个文件一行（Windows 每个架构两行：安装程序、绿色版 zip），文件名和
    release.yml 挂上去的一字不差；再给 Homebrew 和 Linux 安装脚本的命令、绿色版的
    用法。
@@ -14,8 +14,8 @@
    调用方用 `gh api repos/<仓库>/releases/generate-notes` 取来。拆成参数传进来，
    这个脚本就不碰网络，测试可以直接喂它。
 
-**tag 的注解不在这里。**那段中文写进 latest.json（见 manifest.py），是给已经装上
-的应用的；发布页面向从网页来下载的人。
+应用的英文更新说明也取这份摘要。tag 注解里的中文说明和英文摘要一起写进
+latest.json（见 manifest.py）。
 
 说明文件写坏了（有中文、有一级标题、是空的）就不写正文 —— 发版流水线在这一步
 停下，比发出去再改好。CI 在每个 PR 上把 `release-notes/` 下的每一份都过一遍
@@ -68,7 +68,7 @@ def summary(version: str, notes_dir: pathlib.Path = NOTES_DIR) -> str | None:
     text = path.read_text(encoding="utf-8").strip()
     name = f"release-notes/{path.name}"
     if not text:
-        raise NotesError(f"{name} 是空的：没有要说的就删掉这个文件")
+        raise NotesError(f"{name} 是空的：请填写英文发布说明")
     for n, line in enumerate(text.splitlines(), 1):
         if CJK.search(line):
             raise NotesError(
