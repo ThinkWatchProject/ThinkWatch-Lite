@@ -11,9 +11,9 @@ import { Spinner } from "@/ui/spinner";
 import { StatusDot } from "@/ui/status-dot";
 import { IconCopied, IconCopy } from "@/ui/icons";
 import { Markdown } from "@/traffic/Markdown";
-import { useText } from "@/i18n";
+import { useLang, useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
-import { canInstall, describeStep, type Offer, type Step } from "./updateFlow";
+import { canInstall, describeStep, releaseNotesFor, type Offer, type Step } from "./updateFlow";
 import { updateText } from "./Update.i18n";
 import { errorText } from "@/i18n/core.i18n";
 
@@ -41,6 +41,7 @@ const COPIED_MS = 2_000;
  * 内容一边展开、窗口一边一格格地改尺寸，比直接换过去难看。
  */
 export default function UpdateWindow() {
+  const lang = useLang();
   const t = useText(updateText);
   const common = useText(commonText);
   const [offer, setOffer] = useState<Offer | null>(null);
@@ -119,7 +120,7 @@ export default function UpdateWindow() {
 
   if (!offer) return null;
   const busy = step !== null && failed === null;
-  const notes = busy ? null : offer.notes?.trim();
+  const notes = busy ? null : releaseNotesFor(offer.notes, lang);
 
   const install = async () => {
     setFailed(null);
