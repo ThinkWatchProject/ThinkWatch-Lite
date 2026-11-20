@@ -10,6 +10,7 @@ import { Meter } from "@/ui/meter";
 import { Spinner } from "@/ui/spinner";
 import { StatusDot } from "@/ui/status-dot";
 import { IconCopied, IconCopy } from "@/ui/icons";
+import { Markdown } from "@/traffic/Markdown";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { canInstall, describeStep, type Offer, type Step } from "./updateFlow";
@@ -26,7 +27,7 @@ const COPIED_MS = 2_000;
  * 点了自动检查发出的那条通知、菜单里的「安装新版本」。窗口建出来时是隐藏的 —— 这里
  * 画好、量出高度之后再亮出来。
  *
- * 上面是应用图标、哪一版可用、现在是哪一版；下面画哪一种取决于这一份是怎么装上来的：
+ * 上面是应用图标、哪一版可用、现在是哪一版、本次更新；下面画哪一种取决于这一份是怎么装上来的：
  *
  * · 从网页下载的：「下载并安装」，按一次之后不再问任何问题 —— 下载、
  *   等网关手上的请求结束、替换、重启，全部自动。
@@ -93,6 +94,8 @@ export default function UpdateWindow() {
       void invoke("update_fit", { height }).then(async () => {
         if (shown.current) return;
         shown.current = true;
+        // 先把焦点落在窗口正文。WebKit 激活窗口时就不会选中更新说明或按钮。
+        el.focus({ preventScroll: true });
         await w.show();
         await w.setFocus();
       });
@@ -116,6 +119,7 @@ export default function UpdateWindow() {
 
   if (!offer) return null;
   const busy = step !== null && failed === null;
+  const notes = busy ? null : offer.notes?.trim();
 
   const install = async () => {
     setFailed(null);
@@ -217,7 +221,7 @@ export default function UpdateWindow() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <div ref={body} className="flex flex-col gap-4 p-5">
+      <div ref={body} tabIndex={-1} className="flex flex-col gap-4 p-5 outline-none">
         <header className="flex items-center gap-3.5">
           {/* 应用图标本身（和程序坞里同一张） */}
           <img src={appIcon} alt="" width={48} height={48} draggable={false} className="size-12 shrink-0 select-none" />
@@ -226,6 +230,21 @@ export default function UpdateWindow() {
             <p className="tw-num tw-body text-muted-foreground">{t.current(offer.current)}</p>
           </div>
         </header>
+        {notes && (
+          <section className="flex min-w-0 flex-col gap-1.5">
+            <h2 id="update-notes-title" className="tw-label text-muted-foreground">
+              {t.whatsNew}
+            </h2>
+            <div
+              role="region"
+              aria-labelledby="update-notes-title"
+              tabIndex={0}
+              className="tw-body max-h-40 overflow-x-hidden overflow-y-auto overscroll-contain select-text focus-visible:outline-2 focus-visible:outline-ring"
+            >
+              <Markdown text={notes} className="wrap-anywhere [&_pre]:whitespace-pre-wrap" />
+            </div>
+          </section>
+        )}
         {content}
         {actions && <div className="flex justify-end gap-2">{actions}</div>}
       </div>

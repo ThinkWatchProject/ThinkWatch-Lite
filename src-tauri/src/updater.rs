@@ -54,6 +54,7 @@ pub async fn set_update_check(app: tauri::AppHandle, on: bool) -> Out<UpdateView
 #[derive(Clone, serde::Serialize)]
 pub struct Found {
     version: String,
+    notes: Option<String>,
 }
 
 /// 更新在内存里的那点状态。
@@ -69,6 +70,7 @@ pub struct Updates {
 #[derive(serde::Serialize)]
 pub struct OfferView {
     version: String,
+    notes: Option<String>,
     current: String,
     install: update::Install,
     /// Homebrew 那一档要执行的命令。**由这里给出，界面上不再写一遍** ——
@@ -78,11 +80,12 @@ pub struct OfferView {
 
 /// 读发布页上的清单：最新的那一版比现在新吗。
 ///
-/// 读的是一份几百字节的 JSON，不下载任何别的东西。
-pub(crate) async fn look(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
+/// 只读清单，不下载安装包。
+async fn look(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     let found = updater(app)?.check().await.map_err(|e| e.to_string())?;
     Ok(found.map(|up| Found {
-        version: up.version.clone(),
+        version: up.version,
+        notes: up.body,
     }))
 }
 
@@ -155,9 +158,22 @@ async fn ask(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     if !update::newer(version, &current) {
         return Ok(None);
     }
-    Ok(Some(Found {
+    // 发布说明是附带信息：取不到时仍提示用户更新。只等一小会儿，以免拖慢检查。
+    let release = tokio::time::timeout(std::time::Duration::from_secs(3), look(app))
+        .await
+        .ok()
+        .and_then(Result::ok)
+        .flatten();
+    Ok(Some(brew_offer(version, release)))
+}
+
+fn brew_offer(version: &str, release: Option<Found>) -> Found {
+    Found {
         version: version.to_string(),
-    }))
+        notes: release
+            .filter(|r| r.version == version)
+            .and_then(|r| r.notes),
+    }
 }
 
 pub(crate) const UPDATE_WINDOW: &str = "update";
@@ -368,6 +384,7 @@ pub fn update_pending(app: tauri::AppHandle) -> Option<OfferView> {
     let install = update::kind();
     Some(OfferView {
         version: found.version,
+        notes: found.notes,
         current: app.package_info().version.to_string(),
         install,
         command: (install == update::Install::Homebrew).then_some(update::BREW_UPGRADE),
@@ -961,6 +978,24 @@ mod tests {
     use super::*;
     use crate::i18n::{Lang, with_lang};
     use notices::Mode;
+
+    #[test]
+    fn brew_uses_notes_only_for_the_version_in_the_cask() {
+        let release = Found {
+            version: "2026.11.20".into(),
+            notes: Some("Release notes".into()),
+        };
+        let matching = brew_offer("2026.11.20", Some(release.clone()));
+        assert_eq!(matching.notes.as_deref(), Some("Release notes"));
+
+        let behind = brew_offer("2026.11.19", Some(release));
+        assert_eq!(behind.version, "2026.11.19");
+        assert_eq!(behind.notes, None);
+
+        let unavailable = brew_offer("2026.11.20", None);
+        assert_eq!(unavailable.version, "2026.11.20");
+        assert_eq!(unavailable.notes, None);
+    }
 
     /// 「已更新到 x」和别的告知同一个开关：**只在「系统通知」那一档弹**
     #[test]
