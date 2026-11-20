@@ -9,6 +9,7 @@ export const updateText = messages(
     // 更新窗口
     current: (version: string) => `当前版本 ${version}`,
     available: (version: string) => `ThinkWatch Lite ${version} 可用`,
+    whatsNew: "本次更新",
     closeWhileWaiting: "关闭此窗口不影响更新，更新完成后将发送通知。",
     /** 能在窗口里直接装的那几档（网页下载的、Windows 的绿色版）都是这一句 */
     standalone: "下载完成后自动安装并重新启动，进行中的请求不会中断。",
@@ -32,6 +33,7 @@ export const updateText = messages(
   {
     current: (version: string) => `Current version: ${version}`,
     available: (version: string) => `ThinkWatch Lite ${version} is available`,
+    whatsNew: "What's new",
     closeWhileWaiting: "Closing this window does not stop the update. A notification is sent when it is complete.",
     standalone:
       "Installs and restarts automatically after downloading. Requests in progress are not interrupted.",
