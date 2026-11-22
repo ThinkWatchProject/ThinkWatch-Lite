@@ -137,7 +137,8 @@ fn pending(id: &str, get: impl Fn(&Pending) -> Option<String>) -> Result<String,
         .ok_or_else(|| {
             tr!(
                 "这次登录已经结束，请重新发起",
-                "This sign-in has ended; start a new one"
+                "This sign-in has ended; start a new one";
+                "這次登入已經結束，請重新發起",
             )
             .to_string()
         })
@@ -150,14 +151,16 @@ pub(crate) fn open_page(app: &tauri::AppHandle, url: &str) -> Result<(), String>
     if !is_web_page(url) {
         return Err(tr!(
             format!("登录页地址不是 https 网页：{url}"),
-            format!("The sign-in address is not an https web page: {url}")
+            format!("The sign-in address is not an https web page: {url}");
+            format!("登入頁地址不是 https 網頁：{url}"),
         )
         .to_string());
     }
     app.opener().open_url(url, None::<&str>).map_err(|e| {
         tr!(
             format!("无法打开浏览器：{e}"),
-            format!("The browser could not be opened: {e}")
+            format!("The browser could not be opened: {e}");
+            format!("無法開啟瀏覽器：{e}"),
         )
     })
 }

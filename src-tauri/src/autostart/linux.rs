@@ -79,13 +79,15 @@ impl Autostart {
                 format!("路径中含有 % 时无法开机启动：{program}。请将应用移到不含 % 的目录。"),
                 format!(
                     "Launch at login does not work when the path contains %: {program}. Move the app to a directory without % in its path."
-                )
+                );
+                format!("路徑中含有 % 時無法開機啟動：{program}。請將應用移到不含 % 的目錄。"),
             )));
         }
         if self.file.as_os_str().is_empty() || !self.file.is_absolute() {
             return Err(io::Error::other(tr!(
                 "未能确定自启目录（HOME 未设置）",
-                "The autostart directory could not be determined (HOME is not set)"
+                "The autostart directory could not be determined (HOME is not set)";
+                "未能確定自啟目錄（HOME 未設定）",
             )));
         }
         let dir = self.file.parent().expect("the entry is inside a directory");
@@ -94,7 +96,8 @@ impl Autostart {
                 e.kind(),
                 tr!(
                     format!("无法创建目录 {}：{e}", dir.display()),
-                    format!("The directory {} could not be created: {e}", dir.display())
+                    format!("The directory {} could not be created: {e}", dir.display());
+                    format!("無法建立目錄 {}：{e}", dir.display()),
                 ),
             )
         })?;
@@ -189,7 +192,8 @@ fn program(
     .ok_or_else(|| {
         tr!(
             "未能确定应用程序的位置",
-            "The location of the application could not be determined"
+            "The location of the application could not be determined";
+            "未能確定應用程式的位置",
         )
         .to_string()
     })?;
@@ -199,7 +203,8 @@ fn program(
             format!(
                 "The application path is not valid UTF-8: {}",
                 p.to_string_lossy()
-            )
+            );
+            format!("應用程式路徑不是有效的 UTF-8：{}", p.to_string_lossy()),
         )
     })
 }

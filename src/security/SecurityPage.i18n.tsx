@@ -66,4 +66,65 @@ export const securityPageText = messages(
     modeSet: (guard: string, mode: string) => `${guard} set to ${mode}`,
     ruleCreated: (name: string) => `Rule “${name}” created`,
   },
+  {
+    "zh-Hant": {
+      log: "日誌",
+      modes: {
+        enforce: "項開啟",
+        observe: "項監控",
+        off: "項關閉",
+      },
+      hits: (_count: number, n: ReactNode, range: string, custom: boolean) => (<>
+        {custom ? range : `${range}內`} {n} 次命中
+       </>),
+      outcomes: {
+        cut: "已切斷",
+        blocked: "已拒絕",
+        stripped: "已刪除",
+        replaced: "已替換",
+        recorded: "僅記錄",
+      } satisfies Record<SecurityOutcome, string>,
+      loadFailed: "安全設定讀取失敗",
+      ruleOn: (name: string) => `已啟用「${name}」`,
+      actionSet: (name: string, action: string) => `「${name}」的動作已改為「${action}」`,
+      modeSet: (guard: string, mode: string) => `${guard}已切換為「${mode}」`,
+      ruleCreated: (name: string) => `已建立規則「${name}」`,
+    },
+    ja: {
+      log: "ログ",
+      modes: { enforce: "件有効", observe: "件監視中", off: "件無効" },
+      hits: (_count: number, n: ReactNode, range: string, custom: boolean) => (<>{custom ? range : `過去 ${range}`} に {n} 件検出</>),
+      outcomes: { cut: "切断", blocked: "拒否", stripped: "削除", replaced: "置換", recorded: "記録のみ" },
+      loadFailed: "セキュリティ設定を読み込めませんでした",
+      ruleOn: (name: string) => `「${name}」を有効にしました`,
+      ruleOff: (name: string) => `「${name}」を無効にしました`,
+      actionSet: (name: string, action: string) => `「${name}」の処理を「${action}」に設定しました`,
+      modeSet: (guard: string, mode: string) => `${guard}を「${mode}」に設定しました`,
+      ruleCreated: (name: string) => `ルール「${name}」を作成しました`,
+    },
+    es: {
+      log: "Registro",
+      modes: {
+        enforce: "el",
+        observe: "seguimiento",
+        off: "apagado",
+      },
+      hits: (count: number, n: ReactNode, range: string, custom: boolean) => (<>
+        {n} {count === 1 ? "igualar" : "coincidencias"} {custom ? lower(range) : `en el último ${range}`}
+       </>),
+      outcomes: {
+        cut: "cortado",
+        blocked: "denegada",
+        stripped: "borrado",
+        replaced: "sustituido",
+        recorded: "registrados",
+      },
+      loadFailed: "La configuración de seguridad no se pudo cargar",
+      ruleOn: (name: string) => `“${name}” activado`,
+      ruleOff: (name: string) => `“${name}” apagado`,
+      actionSet: (name: string, action: string) => `Acción «${name}» establecida en ${action}`,
+      modeSet: (guard: string, mode: string) => `${guard} Se fija en ${mode}`,
+      ruleCreated: (name: string) => `Regla “${name}” creada`,
+    },
+  },
 );

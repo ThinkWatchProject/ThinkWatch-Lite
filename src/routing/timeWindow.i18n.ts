@@ -24,4 +24,14 @@ export const timeWindowText = messages(
     withDays: (days: string, time: string) => `${days} ${time}`,
     nextDay: "next day",
   },
+  {
+    "zh-Hant": {
+      days: { mon: "週一", tue: "週二", wed: "週三", thu: "週四", fri: "週五", sat: "週六", sun: "週日" },
+    },
+    es: {
+      days: { mon: "Mon", tue: "Mar", wed: "Mié", thu: "Thu", fri: "Fri", sat: "Sáb", sun: "Sol" },
+      overnight: (start: string, end: string) => `${start}–${end} al día siguiente`,
+      nextDay: "al día siguiente",
+    },
+  },
 );

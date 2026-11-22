@@ -23,4 +23,25 @@ export const pinnedModelsText = messages(
     model: "Model name",
     remove: (n: number) => `Remove specified model ${n}`,
   },
+  {
+    "zh-Hant": {
+      addModel: "新增模型",
+      addBackup: "新增備用",
+      note: "按順序傳送，前一個失敗換下一個。模型名原樣發出，不經過別名表。",
+      provider: (n: number) => `第 ${n} 個指定模型的上游`,
+      chooseProvider: "選擇上游",
+      remove: (n: number) => `刪除第 ${n} 個指定模型`,
+    },
+    es: {
+      addModel: "Añadir modelo",
+      addBackup: "Añadir copia de seguridad",
+      note: "Enviado en orden; cuando uno falla, se usa el siguiente. Los nombres de los modelos se envían como escritos, sin pasar por la tabla de alias.",
+      provider: (n: number) => `Corriente ascendente del modelo especificado ${n}`,
+      chooseProvider: "Seleccione un cursor",
+      missing: (name: string) => `${name} (no encontrado)`,
+      disabled: (name: string) => `${name} (inhabilitado)`,
+      model: "Nombre del modelo",
+      remove: (n: number) => `Eliminar el modelo especificado ${n}`,
+    },
+  },
 );

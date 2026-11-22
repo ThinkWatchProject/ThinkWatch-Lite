@@ -256,7 +256,7 @@ export function RuleTable({
   mode: GuardMode;
   rules: SecurityRuleView[];
   /** 分组和分组名，core 给的（旧的 core 不给） */
-  kinds: SecurityKindView[] | undefined;
+  kinds: readonly Pick<SecurityKindView, "slug" | "name">[] | undefined;
   query: string;
   /** 最近 7 天每条规则的命中次数。还没读到、读不到是 `undefined`：组头不写次数，组照 core 的顺序 */
   hits: RuleHits | undefined;
@@ -295,7 +295,7 @@ export function RuleTable({
   }, [rules, hits]);
   const groups = useMemo(() => {
     const shown = present.filter(
-      ({ item: r, presence }) => presence === "exit" || ruleMatches(r, viewName(r), query),
+      ({ item: r, presence }) => presence === "exit" || ruleMatches(r, viewName(guard, r), query),
     );
     return hitsFirst(groupRules(shown, (p) => p.item), (g) => hitKinds.has(g.key));
   }, [present, guard, query, hitKinds]);
@@ -331,7 +331,7 @@ export function RuleTable({
         {groups.map((g) => {
           const live = g.rows.filter((p) => p.presence !== "exit").map((p) => p.item);
           // 分组名由 core 给（`kinds`），按界面语言取
-          const title = kindName(kinds, g.key);
+          const title = kindName(guard, kinds, g.key);
           const expanded = groupOpen(g.key, searching, open, closedInSearch);
           return (
             <Fragment key={g.key}>
@@ -430,7 +430,7 @@ function RuleRow({
 }) {
   const t = useText(guardTabText);
   const lt = useText(securityLabelsText);
-  const name = viewName(r);
+  const name = viewName(guard, r);
   const why = ruleWhy(guard, r);
   const pattern = r.matcher.kind === "regex" ? r.matcher.pattern : "";
   return (
@@ -464,7 +464,7 @@ function RuleRow({
           </TableCell>
         ) : (
           <TableCell className="truncate text-muted-foreground">
-            <RuleMatchText r={r} />
+            <RuleMatchText guard={guard} r={r} />
           </TableCell>
         )}
         {guard === "content" && (

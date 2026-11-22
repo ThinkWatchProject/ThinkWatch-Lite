@@ -71,7 +71,8 @@ fn run(req: &Request) -> Vec<UninstallStep> {
             format!("未能确定程序位置，注册项未清理（{e}）"),
             format!(
                 "The program location could not be determined, so its registry entries were left in place ({e})"
-            )
+            );
+            format!("未能確定程式位置，註冊項未清理（{e}）"),
         ))),
     }
     // 卸载程序接着要删 twcore.exe，数据目录也要等它放手：不等它走，那个文件删不掉、

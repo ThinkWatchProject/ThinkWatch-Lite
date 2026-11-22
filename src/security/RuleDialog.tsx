@@ -728,10 +728,10 @@ export function BuiltinRuleDialog({
       <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-xl">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            {viewName(rule)}
+            {viewName(guard, rule)}
             <Badge variant="secondary">{t.builtin}</Badge>
           </DialogTitle>
-          <DialogDescription>{why || t.category(kindName(catalogKinds(guard), rule.kind))}</DialogDescription>
+          <DialogDescription>{why || t.category(kindName(guard, catalogKinds(guard), rule.kind))}</DialogDescription>
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
@@ -740,7 +740,7 @@ export function BuiltinRuleDialog({
               {written?.match === "regex" ? (
                 <span className="font-mono tw-label break-all">{written.pattern}</span>
               ) : (
-                <RuleMatchText r={rule} />
+                <RuleMatchText guard={guard} r={rule} />
               )}
             </div>
           </Field>

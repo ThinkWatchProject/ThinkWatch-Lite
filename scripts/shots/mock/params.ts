@@ -1,11 +1,12 @@
 // 这一张图是哪个场景、哪种语言。mock 的数据按它摆（连着远程时列表里当前的是哪一条……）
 import { sceneOf } from "../scenes";
+import { lang } from "../boot";
 
 const q = new URLSearchParams(location.search);
 
 export const P = {
   scene: sceneOf(q.get("scene")),
-  lang: (q.get("lang") === "en" ? "en" : "zh") as "zh" | "en",
+  lang,
   /** 打开哪一页 */
   page: sceneOf(q.get("scene"))?.page ?? null,
   /** 连着远程 core（`homelab`） */

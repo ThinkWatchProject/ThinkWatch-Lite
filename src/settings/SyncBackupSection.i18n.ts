@@ -7,4 +7,15 @@ export const syncBackupText = messages(
   {
     title: "Sync and backup",
   },
+  {
+    "zh-Hant": {
+      title: "同步與備份",
+    },
+    ja: {
+      title: "同期とバックアップ",
+    },
+    es: {
+      title: "Sincronización y respaldo",
+    },
+  },
 );

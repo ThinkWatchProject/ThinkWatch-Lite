@@ -164,6 +164,33 @@ async fn the_desktop_side_gets_in_with_the_key_and_not_without() {
     assert!(e.contains("密钥") || e.contains("key"), "{e}");
 }
 
+#[tokio::test]
+async fn the_security_catalog_has_stable_ids_and_english_fallbacks() {
+    let core = Core::start();
+    core.wait_ready().await;
+    let catalog = core
+        .ok()
+        .call::<tw_api::ep::Security>(&[], &())
+        .await
+        .unwrap();
+
+    let rule = catalog
+        .redact
+        .rules
+        .iter()
+        .find(|r| r.id == "anthropic-api-key")
+        .unwrap();
+    assert_eq!(rule.name, "Anthropic API key");
+    assert!(rule.about.starts_with("Starts with"));
+    let group = catalog
+        .redact
+        .kinds
+        .iter()
+        .find(|k| k.slug == rule.kind)
+        .unwrap();
+    assert_eq!(group.name, "AI services");
+}
+
 /// 写请求也走同一条握手。
 ///
 /// **读和写是两条代码路径**，2026.9.10 就是只有读的那条带了凭据：界面照常显示

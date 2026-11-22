@@ -125,7 +125,14 @@ fn restore_all_in(
             ok: r.is_ok(),
             skipped: false,
             detail: match r {
-                Ok(_) => tr!("已还原", "Restored").to_string(),
+                Ok(_) => tr!(
+                    "已还原",
+                    "Restored";
+                    "已還原",
+                    "Restored",
+                    "Restored",
+                )
+                .to_string(),
                 Err(e) => crate::core_text::text(&e),
             },
             warning: None,
@@ -141,7 +148,10 @@ fn restore_all_in(
             skipped: true,
             detail: tr!(
                 "由另一个 ThinkWatch Lite 接管，需在接管它的 ThinkWatch Lite 中还原",
-                "Connected by another ThinkWatch Lite. Restore it from the ThinkWatch Lite that connected it"
+                "Connected by another ThinkWatch Lite. Restore it from the ThinkWatch Lite that connected it";
+                "由另一個 ThinkWatch Lite 接管，需在接管它的 ThinkWatch Lite 中還原",
+                "Connected by another ThinkWatch Lite. Restore it from the ThinkWatch Lite that connected it",
+                "Conectado por otro ThinkWatch Lite. Restaurarlo desde el ThinkWatke Lite que lo conectó",
             )
             .to_string(),
             warning: None,
@@ -185,7 +195,10 @@ pub fn restore_steps(restored: Vec<RestoreOutcome>) -> (Vec<UninstallStep>, bool
                 ok: r.ok,
                 text: tr!(
                     format!("{}：{}", r.client, detail),
-                    format!("{}: {}", r.client, detail)
+                    format!("{}: {}", r.client, detail);
+                    format!("{}：{}", r.client, detail),
+                    format!("{}: {}", r.client, detail),
+                    format!("{}: {}", r.client, detail),
                 ),
             }
         })
@@ -228,7 +241,10 @@ pub fn drop_data(
     if !drop_data {
         return UninstallStep::done(tr!(
             format!("数据目录已保留：{}", dir.display()),
-            format!("Data directory kept: {}", dir.display())
+            format!("Data directory kept: {}", dir.display());
+            format!("資料目錄已保留：{}", dir.display()),
+            format!("Data directory kept: {}", dir.display()),
+            format!("Directorio de datos mantenido: {}", dir.display()),
         ));
     }
     if !restored_all {
@@ -240,20 +256,44 @@ pub fn drop_data(
             format!(
                 "Data directory kept: {}. Some clients above could not be restored, and their backups are in it; delete it once they are sorted out.",
                 dir.display()
-            )
+            );
+            format!(
+                "資料目錄已保留：{}。上面有用戶端沒能還原，它們的備份在這個目錄裡；處理好之後再刪除它",
+                dir.display()
+            ),
+            format!(
+                "Data directory kept: {}. Some clients above could not be restored, and their backups are in it; delete it once they are sorted out.",
+                dir.display()
+            ),
+            format!(
+                "Directorio de datos mantenido: {}. Algunos clientes anteriores no pudieron ser restaurados, y sus copias de seguridad están en él; eliminarlo una vez que se hayan resuelto.",
+                dir.display()
+            ),
         ));
     }
     match remove_retrying(dir, keep, retry) {
         Ok(()) => UninstallStep::done(tr!(
             format!("数据目录已删除：{}", dir.display()),
-            format!("Data directory deleted: {}", dir.display())
+            format!("Data directory deleted: {}", dir.display());
+            format!("資料目錄已刪除：{}", dir.display()),
+            format!("Data directory deleted: {}", dir.display()),
+            format!("Directorio de datos eliminado: {}", dir.display()),
         )),
         Err(e) => UninstallStep::failed(tr!(
             format!("未能删除数据目录：{}（{e}）", dir.display()),
             format!(
                 "The data directory could not be deleted: {} ({e})",
                 dir.display()
-            )
+            );
+            format!("未能刪除資料目錄：{}（{e}）", dir.display()),
+            format!(
+                "The data directory could not be deleted: {} ({e})",
+                dir.display()
+            ),
+            format!(
+                "El directorio de datos no pudo ser eliminado: {} ({e})",
+                dir.display()
+            ),
         )),
     }
 }
@@ -316,20 +356,29 @@ pub fn last_line() -> String {
     #[cfg(target_os = "macos")]
     let last = tr!(
         "现可将应用移到废纸篓。",
-        "The app can now be moved to the Trash."
+        "The app can now be moved to the Trash.";
+        "現可將應用移到廢紙簍。",
+        "The app can now be moved to the Trash.",
+        "La aplicación ahora se puede mover a la Papelera.",
     )
     .into();
     #[cfg(windows)]
     let last = if crate::portable::is_portable() {
         tr!(
             "卸载步骤已完成，现可删除整个文件夹。",
-            "Uninstall steps are complete. The whole folder can now be deleted."
+            "Uninstall steps are complete. The whole folder can now be deleted.";
+            "解除安裝步驟已完成，現可刪除整個資料夾。",
+            "Uninstall steps are complete. The whole folder can now be deleted.",
+            "Los pasos de desinstalación están completos. Toda la carpeta ahora se puede eliminar.",
         )
         .into()
     } else {
         tr!(
             "现可卸载或删除应用。",
-            "The app can now be uninstalled or deleted."
+            "The app can now be uninstalled or deleted.";
+            "現可解除安裝或刪除應用。",
+            "The app can now be uninstalled or deleted.",
+            "La aplicación ahora se puede desinstalar o eliminar.",
         )
         .into()
     };
@@ -337,9 +386,19 @@ pub fn last_line() -> String {
     let last = match crate::desktop_entry::appimage() {
         Some(file) => tr!(
             format!("现可删除 AppImage 文件：{}", file.display()),
-            format!("The AppImage file can now be deleted: {}", file.display())
+            format!("The AppImage file can now be deleted: {}", file.display());
+            format!("現可刪除 AppImage 檔案：{}", file.display()),
+            format!("The AppImage file can now be deleted: {}", file.display()),
+            format!("El archivo AppImage ahora se puede eliminar: {}", file.display()),
         ),
-        None => tr!("现可删除应用。", "The app can now be deleted.").into(),
+        None => tr!(
+            "现可删除应用。",
+            "The app can now be deleted.";
+            "現可刪除應用。",
+            "The app can now be deleted.",
+            "La aplicación ahora se puede eliminar.",
+        )
+        .into(),
     };
     last
 }
@@ -367,7 +426,10 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<Uninst
         match launcher.disable() {
             Ok(_) => log.push(UninstallStep::done(tr!(
                 "已取消开机启动",
-                "Launch at login turned off"
+                "Launch at login turned off";
+                "已取消開機啟動",
+                "Launch at login turned off",
+                "Lanzar al iniciar sesión apagado",
             ))),
             // 退路按平台说：自启项在哪儿、用户去哪儿关，各不相同
             #[cfg(target_os = "macos")]
@@ -377,7 +439,16 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<Uninst
                 ),
                 format!(
                     "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in System Settings › General › Login Items."
-                )
+                );
+                format!(
+                    "未能取消開機啟動（{e}）。請在「系統設定 › 通用 › 登入項」中關閉 ThinkWatch Lite。"
+                ),
+                format!(
+                    "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in System Settings › General › Login Items."
+                ),
+                format!(
+                    "No se pudo desactivar el inicio de sesión ({e}). Desactiva ThinkWatch Lite en Configuración del sistema › General › Artículos de inicio de Sesión."
+                ),
             ))),
             // 各家桌面的「开机启动的应用」设置不在同一个地方，文件在哪儿却是确定的
             #[cfg(target_os = "linux")]
@@ -385,7 +456,10 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<Uninst
                 let file = launcher.file().display();
                 log.push(UninstallStep::failed(tr!(
                     format!("未能取消开机启动（{e}）。请删除 {file}。"),
-                    format!("Launch at login could not be turned off ({e}). Delete {file}.")
+                    format!("Launch at login could not be turned off ({e}). Delete {file}.");
+                    format!("未能取消開機啟動（{e}）。請刪除 {file}。"),
+                    format!("Launch at login could not be turned off ({e}). Delete {file}."),
+                    format!("El lanzamiento al inicio de sesión no se pudo desactivar ({e}. Borrar {file}."),
                 )))
             }
         }
@@ -397,7 +471,10 @@ pub async fn uninstall(app: tauri::AppHandle, drop_data: bool) -> Out<Vec<Uninst
         Ok(exe) => log.extend(crate::winreg::release_all(&exe)),
         Err(e) => log.push(UninstallStep::failed(tr!(
             format!("未能确定程序位置，注册项未清理（{e}）"),
-            format!("The program location could not be determined, so its registry entries were left in place ({e})")
+            format!("The program location could not be determined, so its registry entries were left in place ({e})");
+            format!("未能確定程式位置，註冊項未清理（{e}）"),
+            format!("The program location could not be determined, so its registry entries were left in place ({e})"),
+            format!("La ubicación del programa no se pudo determinar, por lo que sus entradas de registro se dejaron en su lugar ({e})"),
         ))),
     }
     // AppImage 每次启动写的菜单条目和图标（见 `desktop_entry`）。删不掉的

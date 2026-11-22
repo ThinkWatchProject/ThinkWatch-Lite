@@ -8,4 +8,12 @@ export const liveText = messages(
   {
     unknownModel: "Unknown model",
   },
+  {
+    ja: {
+      unknownModel: "不明なモデル",
+    },
+    es: {
+      unknownModel: "Modelo desconocido",
+    },
+  },
 );

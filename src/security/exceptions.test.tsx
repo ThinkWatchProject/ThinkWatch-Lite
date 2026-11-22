@@ -84,8 +84,8 @@ describe("例外一节", () => {
     expect(text).toContain("例外 · 2 个值");
     expect(html.match(/data-slot="exception"/g)).toHaveLength(2);
     expect(text).toContain("sk-ant-api03-…Q3xA");
-    // 规则目录没取到时写 id
-    expect(text).toContain("anthropic-api-key");
+    // 已知规则在目录未加载时也用本地译文
+    expect(text).toContain("Anthropic API 密钥");
     expect(text).toContain("test…1234 —");
     expect(text).toContain("移出例外");
     // 只有掩码后的值，没有哈希

@@ -27,4 +27,28 @@ export const uiText = messages(
     hide: "Hide",
     ignore: "Ignore",
   },
+  {
+    "zh-Hant": {
+      loading: "讀取中…",
+      loadFailed: "讀取失敗",
+      retry: "重試",
+      undo: "撤銷",
+      undone: "已撤銷",
+      show: "顯示",
+      hide: "隱藏",
+    },
+    ko: {
+      loadFailed: "불러올 수 없음",
+      retry: "다시 시도",
+    },
+    es: {
+      loading: "Cargando…",
+      loadFailed: "No se pudo cargar",
+      retry: "Reintentar",
+      undo: "Deshacer",
+      show: "Mostrar",
+      hide: "Ocultar",
+      ignore: "Ignorar",
+    },
+  },
 );

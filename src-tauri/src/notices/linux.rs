@@ -615,7 +615,12 @@ mod native {
                 // (`crate::desktop_entry`); GNOME attributes notifications by it
                 desktop_entry: app.config().identifier.clone(),
                 icon: write_icon(&dir),
-                open_label: tr!("打开", "Open").to_string(),
+                open_label: tr!(
+                    "打开",
+                    "Open";
+                    "開啟",
+                )
+                .to_string(),
                 store: Some(dir.join(STORE_FILE)),
                 on_click: Box::new(move |key, token| clicked(&a, &key, token)),
             });

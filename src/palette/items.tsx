@@ -16,7 +16,7 @@ import {
   ZoomInIcon,
   ZoomOutIcon,
 } from "lucide-react";
-import { textOf, type Lang } from "@/i18n";
+import { LANGUAGES, textOf, type Lang, type Messages } from "@/i18n";
 import { appText } from "@/App.i18n";
 import { SURFACES, type Nav, type Surface } from "@/nav";
 import type { ClientsResponse, Overview, RequestRow } from "@/types";
@@ -107,9 +107,9 @@ const PAGE_ICONS: Record<Surface, ReactNode> = {
   settings: <IconSettings />,
 };
 
-/** 两种语言的别名都参与搜索：中文界面里打 `dark` 也找得到外观 */
-function both(pick: (t: (typeof paletteText)["zh"]) => string | undefined): string[] {
-  return [pick(paletteText.zh), pick(paletteText.en)].filter((s): s is string => !!s);
+/** 搜索匹配所有界面语言的名称和别名。 */
+function keywordsOf<T>(copy: Messages<T>, pick: (t: T) => string | undefined): string[] {
+  return LANGUAGES.map((lang) => pick(copy[lang])).filter((s): s is string => !!s);
 }
 
 /** 外壳交进来的：数据和几个只有外壳做得了的动作 */
@@ -158,7 +158,7 @@ export function buildItems(s: Sources): Item[] {
       id: `page:${surface}`,
       group: "pages",
       title: app.surfaces[surface],
-      keywords: [appText.zh.surfaces[surface], appText.en.surfaces[surface], ...both((x) => x.pageAliases[surface])],
+      keywords: [...keywordsOf(appText, (x) => x.surfaces[surface]), ...keywordsOf(paletteText, (x) => x.pageAliases[surface])],
       icon: PAGE_ICONS[surface],
       combo: pageCombo(surface),
       verb: "open",
@@ -184,41 +184,40 @@ export function buildItems(s: Sources): Item[] {
       run,
       ...rest,
       // 两种语言的名字，加两种语言的别名
-      keywords: [...keywords, ...both((x) => x.actionAliases[alias ?? id])],
+      keywords: [...keywords, ...keywordsOf(paletteText, (x) => x.actionAliases[alias ?? id])],
     });
   };
-  const other = (pick: (x: (typeof paletteText)["zh"]) => string) => [pick(paletteText.zh), pick(paletteText.en)];
 
   if (writable) {
     action("new-upstream", t.newUpstream, <PlusIcon />, () => nav.open("upstreams", { create: "upstream" }), {
-      keywords: other((x) => x.newUpstream),
+      keywords: keywordsOf(paletteText, (x) => x.newUpstream),
     });
     action("new-key", t.newKey, <PlusIcon />, () => nav.open("keys", { create: true }), {
-      keywords: other((x) => x.newKey),
+      keywords: keywordsOf(paletteText, (x) => x.newKey),
     });
     if (hasUpstreams) {
       action("new-route", t.newRoute, <PlusIcon />, () => nav.open("routing", { create: "route" }), {
-        keywords: other((x) => x.newRoute),
+        keywords: keywordsOf(paletteText, (x) => x.newRoute),
       });
     }
   }
   if (linked && hasUpstreams && !s.readOnly) {
     action("speed-test", t.speedTest, <ZapIcon />, () => nav.open("upstreams", { test: "speed" }), {
-      keywords: other((x) => x.speedTest),
+      keywords: keywordsOf(paletteText, (x) => x.speedTest),
       alias: "speedTest",
     });
     action("link-test", t.linkTest, <ActivityIcon />, () => nav.open("upstreams", { test: "link" }), {
-      keywords: other((x) => x.linkTest),
+      keywords: keywordsOf(paletteText, (x) => x.linkTest),
       alias: "linkTest",
     });
     action("dry-run", t.dryRun, <FlaskConicalIcon />, () => nav.open("routing", { dryRun: true }), {
-      keywords: other((x) => x.dryRun),
+      keywords: keywordsOf(paletteText, (x) => x.dryRun),
       alias: "dryRun",
     });
   }
   if (linked) {
     action("search-traffic", t.searchTraffic, <SearchIcon />, () => nav.open("requests", { search: true }), {
-      keywords: other((x) => x.searchTraffic),
+      keywords: keywordsOf(paletteText, (x) => x.searchTraffic),
       combo: COMBOS.search,
       alias: "searchTraffic",
     });
@@ -226,55 +225,55 @@ export function buildItems(s: Sources): Item[] {
   const profiles = s.conn?.profiles ?? [];
   if (profiles.length > 1) {
     action("switch-connection", t.switchConnection, <ArrowLeftRightIcon />, () => {}, {
-      keywords: other((x) => x.switchConnection),
+      keywords: keywordsOf(paletteText, (x) => x.switchConnection),
       alias: "switchConnection",
       enter: "connections",
     });
   }
   action("refresh", t.refresh, <RotateCwIcon />, s.shell.refresh, {
-    keywords: other((x) => x.refresh),
+    keywords: keywordsOf(paletteText, (x) => x.refresh),
     combo: COMBOS.refresh,
   });
   action("rail", s.railOpen ? app.collapseRail : app.expandRail, <IconSidebar />, s.shell.toggleRail, {
-    keywords: [appText.zh.collapseRail, appText.zh.expandRail, appText.en.collapseRail, appText.en.expandRail],
+    keywords: [...keywordsOf(appText, (x) => x.collapseRail), ...keywordsOf(appText, (x) => x.expandRail)],
     combo: COMBOS.rail,
   });
   // 界面大小：只在搜的时候出现（平常按快捷键），设置页那一行跟着动（`ui-zoom-changed`）
   action("zoom-in", t.zoomIn, <ZoomInIcon />, () => stepZoom("in"), {
-    keywords: other((x) => x.zoomIn),
+    keywords: keywordsOf(paletteText, (x) => x.zoomIn),
     alias: "zoom",
     combo: COMBOS.zoomIn,
     searchOnly: true,
   });
   action("zoom-out", t.zoomOut, <ZoomOutIcon />, () => stepZoom("out"), {
-    keywords: other((x) => x.zoomOut),
+    keywords: keywordsOf(paletteText, (x) => x.zoomOut),
     alias: "zoom",
     combo: COMBOS.zoomOut,
     searchOnly: true,
   });
   action("zoom-reset", t.zoomReset, <ScanIcon />, () => stepZoom("reset"), {
-    keywords: other((x) => x.zoomReset),
+    keywords: keywordsOf(paletteText, (x) => x.zoomReset),
     alias: "zoom",
     combo: COMBOS.zoomReset,
     searchOnly: true,
   });
   if (linked) {
     action("config-file", app.configFile, <FileCodeIcon />, s.shell.configFile, {
-      keywords: [appText.zh.configFile, appText.en.configFile],
+      keywords: keywordsOf(appText, (x) => x.configFile),
       alias: "configFile",
     });
     action("version-history", app.versionHistory, <HistoryIcon />, s.shell.history, {
-      keywords: [appText.zh.versionHistory, appText.en.versionHistory],
+      keywords: keywordsOf(appText, (x) => x.versionHistory),
       alias: "versionHistory",
     });
   }
   action("check-updates", t.checkUpdates, <DownloadIcon />, s.shell.checkUpdates, {
-    keywords: other((x) => x.checkUpdates),
+    keywords: keywordsOf(paletteText, (x) => x.checkUpdates),
     alias: "checkUpdates",
   });
-  action("notices", t.notices, <BellIcon />, s.shell.notices, { keywords: other((x) => x.notices) });
+  action("notices", t.notices, <BellIcon />, s.shell.notices, { keywords: keywordsOf(paletteText, (x) => x.notices) });
   action("shortcuts", t.shortcuts, <CircleHelpIcon />, s.shell.shortcuts, {
-    keywords: other((x) => x.shortcuts),
+    keywords: keywordsOf(paletteText, (x) => x.shortcuts),
     combo: COMBOS.shortcuts,
   });
 
@@ -282,26 +281,26 @@ export function buildItems(s: Sources): Item[] {
   if (writable) {
     if (hasUpstreams) {
       action("new-group", t.newGroup, <PlusIcon />, () => nav.open("routing", { create: "group" }), {
-        keywords: other((x) => x.newGroup),
+        keywords: keywordsOf(paletteText, (x) => x.newGroup),
         searchOnly: true,
       });
     }
     action("new-proxy", t.newProxy, <PlusIcon />, () => nav.open("upstreams", { create: "proxy" }), {
-      keywords: other((x) => x.newProxy),
+      keywords: keywordsOf(paletteText, (x) => x.newProxy),
       searchOnly: true,
     });
     action("new-sheet", t.newSheet, <PlusIcon />, () => nav.open("upstreams", { create: "sheet" }), {
-      keywords: other((x) => x.newSheet),
+      keywords: keywordsOf(paletteText, (x) => x.newSheet),
       searchOnly: true,
     });
     action("new-plugin", t.newPlugin, <PlusIcon />, () => nav.open("plugins", { add: true }), {
-      keywords: other((x) => x.newPlugin),
+      keywords: keywordsOf(paletteText, (x) => x.newPlugin),
       alias: "newPlugin",
       searchOnly: true,
     });
   }
   action("add-connection", t.addConnection, <PlusIcon />, s.addConnection, {
-    keywords: other((x) => x.addConnection),
+    keywords: keywordsOf(paletteText, (x) => x.addConnection),
     alias: "addConnection",
     searchOnly: true,
   });
@@ -427,7 +426,7 @@ export function buildItems(s: Sources): Item[] {
         group: "connections",
         title: profileName(p),
         detail: p.local ? undefined : (p.addr ?? undefined),
-        keywords: p.local ? [connText.zh.local, connText.en.local] : [p.name, p.host ?? ""],
+        keywords: p.local ? keywordsOf(connText, (x) => x.local) : [p.name, p.host ?? ""],
         icon: p.local ? <IconLocal /> : <IconRemote />,
         meta: current ? <Status tone="ok" text={t.current} /> : undefined,
         disabled: current,
@@ -447,7 +446,7 @@ export function buildItems(s: Sources): Item[] {
       group: "settings",
       title: sec.title[s.lang],
       detail: app.surfaces.settings,
-      keywords: [sec.title.zh, sec.title.en, ...both((x) => x.sectionAliases[sec.id])],
+      keywords: [...Object.values(sec.title), ...keywordsOf(paletteText, (x) => x.sectionAliases[sec.id])],
       icon: <IconSettings />,
       verb: "open",
       searchOnly: true,

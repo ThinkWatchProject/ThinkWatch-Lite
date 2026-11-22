@@ -24,4 +24,26 @@ export const upstreamBadgesText = messages(
     plainNote: "Synced content is not encrypted, so a URL change is pointed out here once.",
     markRead: "Mark as read",
   },
+  {
+    "zh-Hant": {
+      notSyncedTip: "此上游不參與同步：不上傳，也不被其他裝置的同名上游覆蓋。在設定 › 同步與備份中修改。",
+      urlChanged: "地址經同步變更",
+      urlChangedTitle: "地址經同步變更",
+      urlChangedBody: (from: string, to: string) => `地址由 ${from} 變更為 ${to}。`,
+      plainNote: "同步內容未加密，地址的變更在這裡提示一次。",
+      markRead: "標為已讀",
+    },
+    ko: {
+      markRead: "읽음으로 표시",
+    },
+    es: {
+      notSynced: "Sin sincronizar",
+      notSyncedTip: "Este upstream se deja fuera de sincronización: no se carga y no se reemplaza por un upsteam del mismo nombre desde otro dispositivo. Cambie esto en Configuración › Sincronización y respaldo.",
+      urlChanged: "URL cambiada por sincronización",
+      urlChangedTitle: "URL cambiada por sincronización",
+      urlChangedBody: (from: string, to: string) => `La URL cambió de ${from} a ${to}.`,
+      plainNote: "El contenido sincronizado no está cifrado, por lo que un cambio de URL se señala aquí una vez.",
+      markRead: "Marcar como leído",
+    },
+  },
 );

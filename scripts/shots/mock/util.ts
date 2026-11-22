@@ -29,7 +29,7 @@ export function rng(seed: number) {
 export const msg = (code: string, text: string, args: Record<string, string> = {}): Msg => ({ code, args, text });
 
 /** 本来就是一句话的示例数据（用户起的名字、对话内容）：按界面语言二选一 */
-export const L = <A>(zh: A, en: A): A => (P.lang === "en" ? en : zh);
+export const L = <A>(zh: A, en: A): A => (P.lang === "zh" || P.lang === "zh-Hant" ? zh : en);
 
 export const clone = <T>(x: T): T => structuredClone(x);
 
