@@ -154,42 +154,61 @@
       "arg": "upstream",
       "en": "the credential of upstream `{upstream}`",
       "zh": "上游「{upstream}」的凭据",
-      "ja": "アップストリーム「{upstream}」の認証情報"
+      "ja": "アップストリーム「{upstream}」の認証情報",
+      "zh-Hant": "上游「{upstream}」的憑據",
+      "ko": "업스트림 「{upstream}」의 인증 정보",
+      "es": "Credenciales del proveedor «{upstream}»"
     },
     {
       "arg": "upstream",
       "en": "The credential for upstream `{upstream}` could not be obtained",
       "zh": "无法获取上游「{upstream}」的凭据",
-      "ja": "アップストリーム「{upstream}」の認証情報を取得できませんでした"
+      "ja": "アップストリーム「{upstream}」の認証情報を取得できませんでした",
+      "zh-Hant": "無法獲取上游「{upstream}」的憑據",
+      "ko": "업스트림 「{upstream}」의 인증 정보를 가져올 수 없습니다",
+      "es": "No se pudieron obtener las credenciales de «{upstream}»"
     },
     {
       "arg": "proxy",
       "en": "The password for proxy `{proxy}` could not be read",
       "zh": "无法读取代理「{proxy}」的密码",
-      "ja": "プロキシ「{proxy}」のパスワードを読み取れませんでした"
+      "ja": "プロキシ「{proxy}」のパスワードを読み取れませんでした",
+      "zh-Hant": "無法讀取代理「{proxy}」的密碼",
+      "ko": "프록시 「{proxy}」의 비밀번호를 읽을 수 없습니다",
+      "es": "No se pudo leer la contraseña del proxy «{proxy}»"
     },
     {
       "arg": "provider",
       "en": "oauth.refresh of upstream `{provider}` could not be located",
       "zh": "找不到上游「{provider}」的 oauth.refresh",
-      "ja": "アップストリーム「{provider}」の oauth.refresh が見つかりませんでした"
+      "ja": "アップストリーム「{provider}」の oauth.refresh が見つかりませんでした",
+      "zh-Hant": "找不到上游「{provider}」的 oauth.refresh",
+      "ko": "업스트림 「{provider}」의 oauth.refresh를 찾을 수 없습니다",
+      "es": "No se encontró oauth.refresh en el proveedor «{provider}»"
     },
     {
       "arg": "provider",
       "en": "after writing the new credential for upstream `{provider}` the configuration could not be read, so nothing was written",
       "zh": "写入上游「{provider}」的新凭据后无法读取配置，未写入任何内容",
-      "ja": "アップストリーム「{provider}」の認証情報を更新できませんでした。設定を読み込めなかったため、変更は保存されていません"
+      "ja": "アップストリーム「{provider}」の認証情報を更新できませんでした。設定を読み込めなかったため、変更は保存されていません",
+      "zh-Hant": "寫入上游「{provider}」的新憑據後無法讀取配置，未寫入任何內容",
+      "ko": "업스트림 「{provider}」의 새 인증 정보를 저장하지 못했습니다",
+      "es": "No se guardaron las nuevas credenciales del proveedor «{provider}»"
     },
     {
       "arg": "step",
       "en": "{step:zai_step_en}",
-      "zh": "{step:zai_step}时失败"
+      "zh": "{step:zai_step}时失败",
+      "zh-Hant": "{step:zai_step}時失敗"
     },
     {
       "arg": "backend",
       "en": "The ChatGPT backend could not be reached",
       "zh": "无法连接 ChatGPT 后端",
-      "ja": "ChatGPT のバックエンドに接続できませんでした"
+      "ja": "ChatGPT のバックエンドに接続できませんでした",
+      "zh-Hant": "無法連線 ChatGPT 後端",
+      "ko": "ChatGPT 백엔드에 연결할 수 없습니다",
+      "es": "No se pudo conectar con el servicio de ChatGPT"
     }
   ],
   "messages": {

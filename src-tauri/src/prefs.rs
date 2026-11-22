@@ -217,7 +217,8 @@ pub async fn change(f: impl FnOnce(&mut Prefs) + Send + 'static) -> crate::error
     saved.map_err(|e| {
         crate::error::CmdError::from(tr!(
             format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
+            format!("The setting could not be saved: {e:#}");
+            format!("無法儲存設定：{e:#}"),
         ))
     })
 }

@@ -21,4 +21,30 @@ export const cannotImportText = messages(
     latest: "Up to date",
     checkFailed: "Update check failed",
   },
+  {
+    "zh-Hant": {
+      title: "無法匯入這條連結",
+      unsupported: (param: string) => `這條連結含有當前版本不支援的引數「${param}」。`,
+      unsupportedUnnamed: "這條連結含有當前版本不支援的引數。",
+      update: "更新 ThinkWatch Lite 後再開啟這條連結。",
+      check: "檢查更新",
+      install: "安裝更新",
+      checkFailed: "檢查更新失敗",
+    },
+    ko: {
+      check: "업데이트 확인",
+      latest: "최신 버전",
+      checkFailed: "업데이트 확인 실패",
+    },
+    es: {
+      title: "No se puede importar este enlace",
+      unsupported: (param: string) => `Este enlace contiene un parámetro que esta versión no admite: “${param}”.`,
+      unsupportedUnnamed: "Este enlace contiene un parámetro que esta versión no admite.",
+      update: "Actualiza ThinkWatch Lite, luego abre este enlace de nuevo.",
+      check: "Buscar actualizaciones",
+      install: "Instalar actualización",
+      latest: "Al día",
+      checkFailed: "Error al buscar actualizaciones",
+    },
+  },
 );

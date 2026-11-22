@@ -133,6 +133,124 @@ export const pluginLabelsText = messages(
     cpu: (ms: string) => `${ms} ms`,
     lessThanMs: "under 0.1 ms",
   },
+  {
+    "zh-Hant": {
+      permissions: {
+        system: { short: "系統提示詞", what: "讀取和修改系統提示詞", note: "" },
+        messages: {
+          short: "對話訊息",
+          what: "讀取和修改對話訊息中的文字和工具結果",
+          note: "可以向對話中加入指令",
+        },
+        tools: { short: "工具定義", what: "讀取和修改工具定義", note: "會改變模型可用的工具" },
+        params: {
+          short: "請求引數",
+          what: "讀取和修改模型名、max_tokens、溫度等引數",
+          note: "可能改變發給上游的模型和產生的費用",
+        },
+        reply_text: { short: "回答文字", what: "讀取和修改回答中的文字", note: "" },
+        reply_tool_calls: {
+          short: "回答中的工具呼叫",
+          what: "修改、刪除和新增回答中的工具呼叫",
+          note: "高風險：可以改寫用戶端將要執行的命令和檔案路徑",
+        },
+      } as Record<string, {
+        short: string;
+        what: string;
+        note: string;
+      }>,
+      highRisk: "高風險",
+      blockMode: "回答文字整段到齊後才顯示",
+      kinds: { conversation: "對話", embeddings: "向量化", completions: "補全" } as Record<string, string>,
+      alsoHandles: (list: string) => `也處理：${list}`,
+      onlyHandles: (list: string) => `僅處理：${list}`,
+      status: {
+        ok: "生效中",
+        disabled: "已停用",
+        changed: "檔案已更改",
+        error: "載入失敗",
+      } as Record<string, string>,
+      outcomes: {
+        unchanged: "未改動",
+        changed: "已改寫",
+        rejected: "已拒絕",
+        error: "出錯",
+        skipped: "已跳過",
+      } as Record<string, string>,
+      hooks: { request: "請求", reply: "回答" } as Record<string, string>,
+      onError: "出錯時",
+      onErrorOptions: { reject: "拒絕這次請求", skip: "跳過此外掛" },
+      scope: "適用範圍",
+      scopeParts: { clients: "用戶端", models: "模型", upstreams: "上游" },
+      allRequests: "全部請求",
+      allOf: { clients: "全部用戶端", models: "全部模型", upstreams: "全部上游" },
+    },
+    ko: {
+      status: {
+        ok: "Active",
+        disabled: "비활성화됨",
+        changed: "File changed",
+        error: "Failed to load",
+      } as Record<string, string>,
+      hooks: { request: "요청", reply: "Reply" } as Record<string, string>,
+      scopeParts: { clients: "클라이언트", models: "모델", upstreams: "업스트림" },
+      allOf: { clients: "All clients", models: "All models", upstreams: "모든 업스트림" },
+    },
+    es: {
+      permissions: {
+        system: { short: "Indicación del sistema", what: "Lea y cambie el prompt del sistema", note: "" },
+        messages: {
+          short: "Mensajes",
+          what: "Leer y cambiar el texto y la herramienta resulta en mensajes de conversación",
+          note: "Puede añadir instrucciones a la conversación",
+        },
+        tools: { short: "Definiciones de las herramientas", what: "Lea y cambie las definiciones de la herramienta", note: "Cambios en las herramientas que el modelo puede utilizar" },
+        params: {
+          short: "Parámetros",
+          what: "Leer y cambiar el modelo, max_tokens, temperatura y otros parámetros",
+          note: "Puede cambiar el modelo enviado arriba y lo que cuesta",
+        },
+        reply_text: { short: "Responder texto", what: "Leer y cambiar el texto de las respuestas", note: "" },
+        reply_tool_calls: {
+          short: "Llamadas de herramientas en las respuestas",
+          what: "Cambiar, eliminar y añadir llamadas de herramientas en las respuestas",
+          note: "Alto riesgo: puede reescribir los comandos y las rutas de archivo que un cliente está a punto de ejecutar",
+        },
+      } as Record<string, {
+        short: string;
+        what: string;
+        note: string;
+      }>,
+      highRisk: "Alto riesgo",
+      added: "Nuevo",
+      blockMode: "Responder texto aparece una vez que cada bloque está completo",
+      kinds: { conversation: "conversaciones", embeddings: "incrustaciones", completions: "finalizaciones" } as Record<string, string>,
+      alsoHandles: (list: string) => `También manijas: ${list}`,
+      onlyHandles: (list: string) => `Solo manijas: ${list}`,
+      status: {
+        ok: "Activo",
+        disabled: "Desactivado",
+        changed: "Archivo cambiado",
+        error: "Fallo al cargar",
+      } as Record<string, string>,
+      outcomes: {
+        unchanged: "Sin cambios",
+        changed: "Cambiado",
+        rejected: "Rechazada",
+        error: "Error",
+        skipped: "Omitir",
+      } as Record<string, string>,
+      hooks: { request: "Solicitud", reply: "Respuesta" } as Record<string, string>,
+      onError: "Error",
+      onErrorOptions: { reject: "Rechazar la solicitud", skip: "Omitir este complemento" },
+      scope: "Se aplica a",
+      scopeParts: { clients: "Clientes", models: "Modelos", upstreams: "Proveedores" },
+      all: "Todos",
+      allRequests: "Todas las solicitudes",
+      allOf: { clients: "Todos los clientes", models: "Todos los modelos", upstreams: "Todos los proveedores" },
+      lessThanMs: "menos de 0,1 ms",
+    },
+  },
 );
 
 /** 统计：运行几次、改写几次。插件页的那一格和它的悬停 */
@@ -165,6 +283,38 @@ export const pluginStatsText = messages(
       errors: "Errors",
       cpu: "Average CPU time",
       lastError: "Last error",
+    },
+  },
+  {
+    "zh-Hant": {
+      runs: (n: number) => `${n.toLocaleString()} 次執行`,
+      changedShort: (n: number) => `改寫 ${n.toLocaleString()}`,
+      errorsShort: (n: number) => `出錯 ${n.toLocaleString()}`,
+      noRuns: "尚未執行",
+      since: "閘道器啟動以來",
+      lines: {
+        calls: "執行",
+        changed: "改寫",
+        rejected: "拒絕",
+        errors: "出錯",
+        cpu: "平均 CPU 時間",
+        lastError: "最近一次出錯",
+      },
+    },
+    es: {
+      runs: (n: number) => plural(n, "ejecutar", "corre"),
+      changedShort: (n: number) => `${n.toLocaleString()} cambiado`,
+      errorsShort: (n: number) => plural(n, "error", "errores"),
+      noRuns: "Todavía no corre.",
+      since: "Desde que comenzó el portal",
+      lines: {
+        calls: "Corre",
+        changed: "Cambiado",
+        rejected: "Rechazada",
+        errors: "Errores",
+        cpu: "Tiempo medio de la CPU",
+        lastError: "Último error",
+      },
     },
   },
 );

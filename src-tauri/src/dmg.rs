@@ -90,10 +90,16 @@ fn find_app(volume: &Path) -> Result<PathBuf, String> {
         .collect();
     match apps.as_slice() {
         [app] => Ok(app.clone()),
-        [] => Err(tr!("更新包里没有应用", "The update contains no app").into()),
+        [] => Err(tr!(
+            "更新包里没有应用",
+            "The update contains no app";
+            "更新包裡沒有應用",
+        )
+        .into()),
         _ => Err(tr!(
             "更新包里有不止一个应用",
-            "The update contains more than one app"
+            "The update contains more than one app";
+            "更新包裡有不止一個應用",
         )
         .into()),
     }

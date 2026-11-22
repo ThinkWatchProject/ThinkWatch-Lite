@@ -81,12 +81,12 @@ function LanguageRow() {
       label={t.language}
       htmlFor="settings-language-select"
       control={
-        <Loaded r={r} width="w-48">
+        <Loaded r={r} width="w-60">
           {(v) => (
             <SelectField
               id="settings-language-select"
               size="sm"
-              className="w-48"
+              className="w-60 max-w-full"
               value={v.setting ?? "system"}
               onValueChange={(nextValue) => {
                 const setting = isLang(nextValue) ? nextValue : null;

@@ -44,7 +44,7 @@ export interface ReleaseNotes {
 
 /** 中文界面读中文，其余读英文。旧清单可能缺一份。 */
 export function releaseNotesFor(notes: ReleaseNotes, lang: Lang): string | undefined {
-  return (lang === "zh" ? notes.zh : notes.en)?.trim() || undefined;
+  return (lang === "zh" || lang === "zh-Hant" ? notes.zh : notes.en)?.trim() || undefined;
 }
 
 /** 按下安装之后走到了哪一步。 */

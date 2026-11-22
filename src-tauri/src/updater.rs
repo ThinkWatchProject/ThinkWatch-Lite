@@ -170,7 +170,10 @@ async fn ask(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
         return Err(tr!(
             "无法从 Homebrew cask 中读取版本号",
             "The version number could not be read from the Homebrew cask",
-            "Homebrew cask からバージョン番号を読み取れませんでした"
+            "Homebrew cask からバージョン番号を読み取れませんでした";
+            "無法從 Homebrew cask 中讀取版本號",
+            "The version number could not be read from the Homebrew cask",
+            "El número de versión no se pudo leer en el barril de Homebrew",
         )
         .into());
     };
@@ -221,7 +224,10 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         .title(tr!(
             "软件更新",
             "Software Update",
-            "ソフトウェアアップデート"
+            "ソフトウェアアップデート";
+            "軟體更新",
+            "소프트웨어 업데이트",
+            "Actualización de software",
         ))
         .initialization_script(i18n::init_script())
         // 高度先随便给一个：网页画完量出内容有多高，再由 `update_fit` 定下来。
@@ -339,13 +345,19 @@ fn update_signal(version: &str) -> notices::Signal {
         tr!(
             format!("ThinkWatch Lite {version} 可用"),
             format!("ThinkWatch Lite {version} Is Available"),
-            format!("ThinkWatch Lite {version} を利用できます")
+            format!("ThinkWatch Lite {version} を利用できます");
+            format!("ThinkWatch Lite {version} 可用"),
+            format!("ThinkWatch Lite {version}을(를) 사용할 수 있습니다"),
+            format!("ThinkWatch Lite {version} está disponible"),
         ),
     )
     .body(tr!(
         "点按此提醒进行更新。",
         "Click to update.",
-        "クリックして更新します。"
+        "クリックして更新します。";
+        "點按此提醒進行更新。",
+        "클릭하여 업데이트하세요.",
+        "Haz clic para actualizar.",
     ))
     .tell()
     .now()
@@ -400,7 +412,10 @@ pub async fn update_show(app: tauri::AppHandle) -> Out<()> {
         return Err(tr!(
             "尚无可安装的新版本",
             "No new version is waiting to be installed",
-            "インストールできる新しいバージョンはありません"
+            "インストールできる新しいバージョンはありません";
+            "尚無可安裝的新版本",
+            "설치할 새 버전이 없습니다.",
+            "No hay ninguna versión nueva para instalar.",
         )
         .into());
     }
@@ -536,13 +551,28 @@ pub async fn update_install(
                 format!(
                     "This app is managed by Homebrew. Run this command in Terminal: {}",
                     update::BREW_UPGRADE
-                )
+                );
+                format!(
+                    "此應用由 Homebrew 管理，請在終端中執行：{}",
+                    update::BREW_UPGRADE
+                ),
+                format!(
+                    "This app is managed by Homebrew. Run this command in Terminal: {}",
+                    update::BREW_UPGRADE
+                ),
+                format!(
+                    "Esta aplicación es administrada por Homebrew. Ejecute este comando en Terminal: {}",
+                    update::BREW_UPGRADE
+                ),
             )
             .into(),
             _ => tr!(
                 "开发构建不执行自动更新",
                 "Development builds do not update automatically",
-                "開発ビルドでは自動更新を利用できません"
+                "開発ビルドでは自動更新を利用できません";
+                "開發構建不執行自動更新",
+                "Development builds do not update automatically",
+                "Las construcciones de desarrollo no se actualizan automáticamente",
             )
             .into(),
         });
@@ -551,7 +581,10 @@ pub async fn update_install(
         return Err(tr!(
             "更新正在进行中",
             "An update is already in progress",
-            "更新はすでに進行中です"
+            "更新はすでに進行中です";
+            "更新正在進行中",
+            "이미 업데이트 중입니다.",
+            "Ya hay una actualización en curso.",
         )
         .into());
     }
@@ -569,7 +602,15 @@ pub async fn update_install(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| {
-            tr!("已是最新版本", "Already up to date", "最新バージョンです").to_string()
+            tr!(
+                "已是最新版本",
+                "Already up to date",
+                "最新バージョンです";
+                "已是最新版本",
+                "이미 최신 버전입니다.",
+                "Ya está al día.",
+            )
+            .to_string()
         })?;
 
     let _ = app.emit("update-step", Step::Downloading);
@@ -586,7 +627,10 @@ pub async fn update_install(
             tr!(
                 format!("下载失败：{e}"),
                 format!("Download failed: {e}"),
-                format!("ダウンロードに失敗しました：{e}")
+                format!("ダウンロードに失敗しました：{e}");
+                format!("下載失敗：{e}"),
+                format!("다운로드 실패: {e}"),
+                format!("Error al descargar: {e}"),
             )
         })?;
     // 绿色版不跑安装程序，自己换文件夹里的两个 exe —— 见 `install_portable`
@@ -603,7 +647,10 @@ pub async fn update_install(
             tr!(
                 format!("无法打开更新包：{e}"),
                 format!("The update could not be opened: {e}"),
-                format!("更新パッケージを開けませんでした：{e}")
+                format!("更新パッケージを開けませんでした：{e}");
+                format!("無法開啟更新包：{e}"),
+                format!("The update could not be opened: {e}"),
+                format!("No se pudo abrir la actualización: {e}"),
             )
         })?;
 
@@ -628,7 +675,10 @@ pub async fn update_install(
             tr!(
                 format!("安装失败：{e}"),
                 format!("Installation failed: {e}"),
-                format!("インストールに失敗しました：{e}")
+                format!("インストールに失敗しました：{e}");
+                format!("安裝失敗：{e}"),
+                format!("설치 실패: {e}"),
+                format!("Error al instalar: {e}"),
             )
         })?;
         hand_over_or_stop(&app, &state).await;
@@ -754,7 +804,10 @@ async fn install_windows(
     Err(tr!(
         format!("安装失败：{e}"),
         format!("Installation failed: {e}"),
-        format!("インストールに失敗しました：{e}")
+        format!("インストールに失敗しました：{e}");
+        format!("安裝失敗：{e}"),
+        format!("설치 실패: {e}"),
+        format!("Error al instalar: {e}"),
     )
     .into())
 }
@@ -982,12 +1035,18 @@ fn updated_notice(from: &str, now: &str, mode: notices::Mode) -> Option<(String,
         tr!(
             format!("已更新到 {now}"),
             format!("Updated to {now}"),
-            format!("{now} に更新しました")
+            format!("{now} に更新しました");
+            format!("已更新到 {now}"),
+            format!("{now}(으)로 업데이트했습니다"),
+            format!("Se actualizó a {now}"),
         ),
         tr!(
             format!("ThinkWatch Lite 已从 {from} 更新到 {now}。"),
             format!("ThinkWatch Lite was updated from {from} to {now}."),
-            format!("ThinkWatch Lite を {from} から {now} に更新しました。")
+            format!("ThinkWatch Lite を {from} から {now} に更新しました。");
+            format!("ThinkWatch Lite 已從 {from} 更新到 {now}。"),
+            format!("ThinkWatch Lite를 {from}에서 {now}(으)로 업데이트했습니다."),
+            format!("ThinkWatch Lite se actualizó de {from} a {now}."),
         ),
     ))
 }

@@ -33,6 +33,10 @@ struct Entry {
     zh: Words,
     en: Words,
     ja: Words,
+    #[serde(rename = "zh-Hant")]
+    zh_hant: Words,
+    ko: Words,
+    es: Words,
 }
 
 #[derive(Deserialize)]
@@ -64,6 +68,9 @@ fn words(e: &Entry, lang: Lang) -> &Words {
         Lang::Zh => &e.zh,
         Lang::En => &e.en,
         Lang::Ja => &e.ja,
+        Lang::ZhHant => &e.zh_hant,
+        Lang::Ko => &e.ko,
+        Lang::Es => &e.es,
     }
 }
 

@@ -100,7 +100,10 @@ pub(crate) fn running_text() -> &'static str {
     tr!(
         "ThinkWatch Lite 已在运行",
         "ThinkWatch Lite is already running",
-        "ThinkWatch Lite はすでに実行中です"
+        "ThinkWatch Lite はすでに実行中です";
+        "ThinkWatch Lite 已在執行",
+        "ThinkWatch Lite is already running",
+        "ThinkWatch Lite ya está funcionando",
     )
 }
 
@@ -115,15 +118,32 @@ pub(crate) fn ask_text(running: &str) -> (&'static str, String, [&'static str; 2
             ),
             format!(
                 "実行中のアプリは {running} にあります。同時に実行できる ThinkWatch Lite は 1 つです。"
-            )
+            );
+            format!("執行中的程式位於：{running}。同一時間只能執行一個 ThinkWatch Lite。"),
+            format!(
+                "The running program is at {running}. Only one ThinkWatch Lite can run at a time."
+            ),
+            format!(
+                "El programa en ejecución está en {running}. Sólo un ThinkWatch Lite puede ejecutarse a la vez."
+            ),
         ),
         [
             tr!(
                 "停止运行中的程序并启动此程序",
                 "Stop the running program and start this one",
-                "実行中のアプリを終了してこちらを起動"
+                "実行中のアプリを終了してこちらを起動";
+                "停止執行中的程式並啟動此程式",
+                "Stop the running program and start this one",
+                "Detener el programa en ejecución y comenzar este",
             ),
-            tr!("取消", "Cancel", "キャンセル"),
+            tr!(
+                "取消",
+                "Cancel",
+                "キャンセル";
+                "取消",
+                "취소",
+                "Cancelar",
+            ),
         ],
     )
 }
@@ -133,7 +153,10 @@ pub(crate) fn waiting_text() -> &'static str {
     tr!(
         "正在等待进行中的请求完成…",
         "Waiting for requests in progress to finish…",
-        "処理中のリクエストの完了を待っています…"
+        "処理中のリクエストの完了を待っています…";
+        "正在等待進行中的請求完成…",
+        "Waiting for requests in progress to finish…",
+        "Esperando peticiones en curso para terminar…",
     )
 }
 
@@ -142,7 +165,10 @@ pub(crate) fn unsupported_text() -> &'static str {
     tr!(
         "运行中的程序不支持切换，请先退出该程序。",
         "The running program does not support switching. Quit it first.",
-        "実行中のアプリは切り替えに対応していません。先に終了してください。"
+        "実行中のアプリは切り替えに対応していません。先に終了してください。";
+        "執行中的程式不支援切換，請先退出該程式。",
+        "The running program does not support switching. Quit it first.",
+        "El programa en ejecución no es compatible con el cambio.",
     )
 }
 
@@ -151,7 +177,10 @@ pub(crate) fn elevated_text() -> &'static str {
     tr!(
         "运行中的程序以管理员身份运行，无法从此处停止。请先退出该程序。",
         "The running program runs as administrator and cannot be stopped from here. Quit it first.",
-        "実行中のアプリは管理者権限で動作しています。そのアプリを終了してから再試行してください。"
+        "実行中のアプリは管理者権限で動作しています。そのアプリを終了してから再試行してください。";
+        "執行中的程式以管理員身份執行，無法從此處停止。請先退出該程式。",
+        "The running program runs as administrator and cannot be stopped from here. Quit it first.",
+        "El programa en ejecución se ejecuta como administrador y no se puede detener desde aquí.",
     )
 }
 
@@ -160,7 +189,10 @@ pub(crate) fn timeout_text() -> &'static str {
     tr!(
         "运行中的程序未能退出。",
         "The running program did not quit.",
-        "実行中のアプリを終了できませんでした。"
+        "実行中のアプリを終了できませんでした。";
+        "執行中的程式未能退出。",
+        "The running program did not quit.",
+        "El programa en ejecución no se retiró.",
     )
 }
 
@@ -283,7 +315,18 @@ mod imp {
 
     /// 说一句话，只有一个「确定」
     fn tell(content: &str) {
-        dialog::show(TITLE, running_text(), content, &[tr!("确定", "OK")]);
+        dialog::show(
+            TITLE,
+            running_text(),
+            content,
+            &[tr!(
+                "确定",
+                "OK";
+                "確定",
+                "OK",
+                "OK",
+            )],
+        );
     }
 
     /// 打开一把已经在的命名锁（只要能等它的权限）。打不开时是系统给的错误码：不在是

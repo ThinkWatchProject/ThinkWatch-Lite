@@ -8,7 +8,7 @@ describe("界面语言", () => {
   const m = messages(
     { title: "用量概览", failed: (n: number) => `${n} 次失败` },
     { title: "Usage", failed: (n: number) => `${n} failed` },
-    { title: "使用量" },
+    { ja: { title: "使用量" }, "zh-Hant": { title: "用量總覽" }, ko: { title: "사용량" }, es: { title: "Uso" } },
   );
 
   it("按当前语言取文案，换了语言立刻换", () => {
@@ -22,13 +22,25 @@ describe("界面语言", () => {
     expect(localeTag(getLang())).toBe("ja");
     expect(textOf(m).title).toBe("使用量");
     expect(textOf(m).failed(3)).toBe("3 failed");
+    setLang("ko");
+    expect(textOf(m).title).toBe("사용량");
+    setLang("es");
+    expect(textOf(m).title).toBe("Uso");
+    setLang("zh-Hant");
+    expect(localeTag(getLang())).toBe("zh-Hant");
+    expect(textOf(m).title).toBe("用量總覽");
+    expect(textOf(m).failed(3)).toBe("3 次失败");
     setLang("zh");
   });
 
   it("matches the first supported system language and falls back to English", () => {
     expect(preferredLanguage(["fr-FR", "ja-JP", "en-US"])).toBe("ja");
     expect(preferredLanguage(["en-GB", "ja-JP"])).toBe("en");
-    expect(preferredLanguage(["zh-Hant-TW", "ja-JP"])).toBe("zh");
+    expect(preferredLanguage(["zh-Hant-TW", "ja-JP"])).toBe("zh-Hant");
+    expect(preferredLanguage(["zh_HK.UTF-8"])).toBe("zh-Hant");
+    expect(preferredLanguage(["zh-Hans-TW"])).toBe("zh");
+    expect(preferredLanguage(["ko-KR", "en-US"])).toBe("ko");
+    expect(preferredLanguage(["fr-CA", "es-419", "en-US"])).toBe("es");
     expect(preferredLanguage(["fr-FR", "de-DE"])).toBe("en");
   });
 });

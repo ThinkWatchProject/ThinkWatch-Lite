@@ -37,17 +37,42 @@ export const formatText = messages(
     },
   },
   {
-    span: {
-      seconds: (n: number) => `${n} 秒`,
-      minutes: (n: number) => `${n} 分`,
-      hours: (n: string) => `${n} 時間`,
+    "zh-Hant": {
+      span: {
+        seconds: (n: number) => `${n} 秒`,
+        minutes: (n: number) => `${n} 分`,
+        hours: (n: string) => `${n} 小時`,
+      },
+      resetIn: {
+        now: "剛剛",
+        underMinute: "1 分鐘內",
+        minutes: (n: number) => `${n} 分鐘後`,
+        hours: (n: number) => `${n} 小時後`,
+        days: (n: number) => `${n} 天后`,
+      },
     },
-    resetIn: {
-      now: "今",
-      underMinute: "1 分以内",
-      minutes: (n: number) => `${n} 分後`,
-      hours: (n: number) => `${n} 時間後`,
-      days: (n: number) => `${n} 日後`,
+    ja: {
+      span: {
+        seconds: (n: number) => `${n} 秒`,
+        minutes: (n: number) => `${n} 分`,
+        hours: (n: string) => `${n} 時間`,
+      },
+      resetIn: {
+        now: "今",
+        underMinute: "1 分以内",
+        minutes: (n: number) => `${n} 分後`,
+        hours: (n: number) => `${n} 時間後`,
+        days: (n: number) => `${n} 日後`,
+      },
+    },
+    es: {
+      resetIn: {
+        now: "Ahora",
+        underMinute: "en un plazo de 1 min",
+        minutes: (n: number) => `en ${n} min`,
+        hours: (n: number) => `en ${n} h`,
+        days: (n: number) => (n === 1 ? "en 1 día" : `en ${n} días`),
+      },
     },
   },
 );

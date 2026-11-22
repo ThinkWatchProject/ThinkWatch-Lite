@@ -7,15 +7,42 @@
       "zh": {
         "name": "指定回答语言",
         "description": "在系统提示词末尾附加一句固定的要求：使用此处设置的语言回答。",
-        "settings": { "language": "回答语言" }
+        "settings": {
+          "language": "回答语言"
+        }
       },
       "en": {
-        "settings": { "language": "Answer language" }
+        "settings": {
+          "language": "Answer language"
+        }
       },
       "ja": {
         "name": "回答言語の指定",
         "description": "システムプロンプトの末尾に、指定した言語で回答するよう指示を追加します。",
-        "settings": { "language": "回答言語" }
+        "settings": {
+          "language": "回答言語"
+        }
+      },
+      "zh-Hant": {
+        "name": "指定回答語言",
+        "description": "在系統提示詞末尾附加一句固定的要求：使用此處設定的語言回答。",
+        "settings": {
+          "language": "回答語言"
+        }
+      },
+      "ko": {
+        "name": "응답 언어 지정",
+        "description": "시스템 프롬프트 끝에 지정한 언어로 응답하라는 지시를 추가합니다.",
+        "settings": {
+          "language": "응답 언어"
+        }
+      },
+      "es": {
+        "name": "Idioma de respuesta",
+        "description": "Añade al mensaje del sistema una instrucción para responder en el idioma elegido.",
+        "settings": {
+          "language": "Idioma de respuesta"
+        }
       }
     },
     {
@@ -24,15 +51,42 @@
       "zh": {
         "name": "WSL 路径转换",
         "description": "将工具调用参数中的盘符路径改写为客户端能打开的写法（WSL 的 /mnt/c/… 或 Windows 的 C:\\…），回答和对话历史中的工具调用均适用。",
-        "settings": { "windows_client": "客户端运行在 Windows 上（关闭时按 WSL 处理）" }
+        "settings": {
+          "windows_client": "客户端运行在 Windows 上（关闭时按 WSL 处理）"
+        }
       },
       "en": {
-        "settings": { "windows_client": "The client runs on Windows (otherwise WSL)" }
+        "settings": {
+          "windows_client": "The client runs on Windows (otherwise WSL)"
+        }
       },
       "ja": {
         "name": "WSL パスの変換",
         "description": "ツール呼び出しの引数に含まれるパスを、クライアントで開ける WSL または Windows 形式に変換します。回答と会話履歴の両方に適用されます。",
-        "settings": { "windows_client": "クライアントは Windows で実行（オフの場合は WSL）" }
+        "settings": {
+          "windows_client": "クライアントは Windows で実行（オフの場合は WSL）"
+        }
+      },
+      "zh-Hant": {
+        "name": "WSL 路徑轉換",
+        "description": "將工具呼叫引數中的磁碟機代號路徑改寫為用戶端能開啟的寫法（WSL 的 /mnt/c/… 或 Windows 的 C:\\…），回答和對話歷史中的工具呼叫均適用。",
+        "settings": {
+          "windows_client": "用戶端執行在 Windows 上（關閉時按 WSL 處理）"
+        }
+      },
+      "ko": {
+        "name": "WSL 경로 변환",
+        "description": "응답과 대화 기록의 도구 호출에 들어 있는 경로를 클라이언트에서 열 수 있는 WSL 또는 Windows 형식으로 바꿉니다.",
+        "settings": {
+          "windows_client": "클라이언트가 Windows에서 실행됨(끄면 WSL 사용)"
+        }
+      },
+      "es": {
+        "name": "Conversión de rutas WSL",
+        "description": "Convierte las rutas de las llamadas a herramientas en respuestas y en el historial al formato WSL o Windows que puede abrir el cliente.",
+        "settings": {
+          "windows_client": "El cliente se ejecuta en Windows (desactívalo si usa WSL)"
+        }
       }
     }
   ]

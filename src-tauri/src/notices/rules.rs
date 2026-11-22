@@ -27,18 +27,56 @@ use super::{Change, Level, Signal};
 fn l1_step(s: &tw_api::L1Stage) -> String {
     use tw_api::{L1Peer, L1Step};
     let step: &str = match s.step {
-        L1Step::Config => tr!("配置", "configuration", "設定"),
-        L1Step::Dns => tr!("DNS 解析", "DNS lookup", "DNS 名前解決"),
-        L1Step::Tcp => tr!("TCP 握手", "TCP handshake", "TCP ハンドシェイク"),
-        L1Step::Tls => tr!("TLS 握手", "TLS handshake", "TLS ハンドシェイク"),
-        L1Step::Handshake => tr!("代理握手", "proxy handshake", "プロキシのハンドシェイク"),
+        L1Step::Config => tr!(
+            "配置",
+            "configuration",
+            "設定";
+            "配置",
+            "configuration",
+            "configuration",
+        ),
+        L1Step::Dns => tr!(
+            "DNS 解析",
+            "DNS lookup",
+            "DNS 名前解決";
+            "DNS 解析",
+            "DNS lookup",
+            "Búsqueda de DNS",
+        ),
+        L1Step::Tcp => tr!(
+            "TCP 握手",
+            "TCP handshake",
+            "TCP ハンドシェイク";
+            "TCP 握手",
+            "TCP handshake",
+            "Apretón de manos TCP",
+        ),
+        L1Step::Tls => tr!(
+            "TLS 握手",
+            "TLS handshake",
+            "TLS ハンドシェイク";
+            "TLS 握手",
+            "TLS handshake",
+            "Apretón de manos TLS",
+        ),
+        L1Step::Handshake => tr!(
+            "代理握手",
+            "proxy handshake",
+            "プロキシのハンドシェイク";
+            "代理握手",
+            "proxy handshake",
+            "apretón de manos proxy",
+        ),
     };
     // 代理握手本来就只对着代理，再加一句「到代理」是废话
     if s.peer == L1Peer::Proxy && s.step != L1Step::Handshake {
         tr!(
             format!("到代理的{step}"),
             format!("{step} to the proxy"),
-            format!("プロキシへの{step}")
+            format!("プロキシへの{step}");
+            format!("到代理的{step}"),
+            format!("{step} to the proxy"),
+            format!("{step} al proxy"),
         )
     } else {
         step.to_string()
@@ -227,7 +265,15 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 return vec![Signal::cleared(format!("auth:{provider}"))];
             }
             let code = status
-                .map(|s| tr!(format!("（{s}）"), format!(" ({s})")))
+                .map(|s| {
+                    tr!(
+                        format!("（{s}）"),
+                        format!(" ({s})");
+                        format!("（{s}）"),
+                        format!(" ({s})"),
+                        format!(" ({s})"),
+                    )
+                })
                 .unwrap_or_default();
             vec![
                 Signal::raised(
@@ -266,7 +312,10 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     let step = l1_step(s);
                     tr!(
                         format!("卡在{step}。"),
-                        format!("It got stuck at the {step}. ")
+                        format!("It got stuck at the {step}. ");
+                        format!("卡在{step}。"),
+                        format!("It got stuck at the {step}. "),
+                        format!("Se quedó atascado en el {step}. "),
                     )
                 })
                 .unwrap_or_default();
@@ -298,7 +347,10 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                     tr!(
                         format!("第 {l} 行："),
                         format!("Line {l}: "),
-                        format!("{l} 行目：")
+                        format!("{l} 行目：");
+                        format!("第 {l} 行："),
+                        format!("Line {l}: "),
+                        format!("Línea {l}: "),
                     )
                 })
                 .unwrap_or_default();
@@ -399,12 +451,18 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
         } if action == "cut" => {
             let title = tr!(
                 format!("已拦截 {provider} 返回的 {tool} 调用"),
-                format!("Blocked {tool} Call from “{provider}”")
+                format!("Blocked {tool} Call from “{provider}”");
+                format!("已攔截 {provider} 返回的 {tool} 呼叫"),
+                format!("Blocked {tool} Call from “{provider}”"),
+                format!("Bloqueado {tool} Llamada de “{provider}”"),
             );
             let name = tool_rule_name(rule);
             let body = tr!(
                 format!("命中规则「{name}」，响应已切断。"),
-                format!("It matched the rule “{name}”, so the response was cut off.")
+                format!("It matched the rule “{name}”, so the response was cut off.");
+                format!("命中規則「{name}」，回應已切斷。"),
+                format!("It matched the rule “{name}”, so the response was cut off."),
+                format!("Coincidía con la regla “{name}”, por lo que se cortó la respuesta."),
             );
             // **正文不带调用内容**：系统通知在锁屏上也看得见
             vec![
@@ -540,8 +598,20 @@ fn key_limit(ev: &Event) -> Vec<Signal> {
     let percent = (used.saturating_mul(100) / max.max(1)).min(99);
     let n = limit_amount(measure, used);
     let spent = match measure {
-        tw_api::LimitMeasure::Requests => tr!(format!("{n} 次"), format!("{n} requests")),
-        tw_api::LimitMeasure::Tokens => tr!(format!("{n} token"), format!("{n} tokens")),
+        tw_api::LimitMeasure::Requests => tr!(
+            format!("{n} 次"),
+            format!("{n} requests");
+            format!("{n} 次"),
+            format!("{n} requests"),
+            format!("{n} solicitudes"),
+        ),
+        tw_api::LimitMeasure::Tokens => tr!(
+            format!("{n} token"),
+            format!("{n} tokens");
+            format!("{n} token"),
+            format!("{n} tokens"),
+            format!("{n} fichas"),
+        ),
         tw_api::LimitMeasure::Cost => n,
     };
     vec![
@@ -587,20 +657,38 @@ fn limit_phrase(
     match measure {
         LimitMeasure::Requests => tr!(
             format!("每{zh} {n} 次请求"),
-            format!("{n} requests per {en}")
+            format!("{n} requests per {en}");
+            format!("每{zh} {n} 次請求"),
+            format!("{n} requests per {en}"),
+            format!("{n} solicitudes por {en}"),
         ),
         LimitMeasure::Tokens => {
             let cache = if cache_reads {
-                tr!("（含缓存读取）", " (cache reads included)")
+                tr!(
+                    "（含缓存读取）",
+                    " (cache reads included)";
+                    "（含快取讀取）",
+                    " (cache reads included)",
+                    " (Caché lee incluido)",
+                )
             } else {
                 ""
             };
             tr!(
                 format!("每{zh} {n} token{cache}"),
-                format!("{n} tokens per {en}{cache}")
+                format!("{n} tokens per {en}{cache}");
+                format!("每{zh} {n} token{cache}"),
+                format!("{n} tokens per {en}{cache}"),
+                format!("{n} fichas por {en} {cache}"),
             )
         }
-        LimitMeasure::Cost => tr!(format!("每{zh} {n} 费用"), format!("{n} per {en}")),
+        LimitMeasure::Cost => tr!(
+            format!("每{zh} {n} 费用"),
+            format!("{n} per {en}");
+            format!("每{zh} {n} 費用"),
+            format!("{n} per {en}"),
+            format!("{n} por {en}"),
+        ),
     }
 }
 
@@ -632,30 +720,53 @@ pub fn plugin_failed(id: &str, name: &str, request: Option<u64>, why: &tw_api::M
         Some(r) => (
             tr!(
                 format!("插件「{name}」运行出错"),
-                format!("Plugin “{name}” Failed")
+                format!("Plugin “{name}” Failed");
+                format!("外掛「{name}」執行出錯"),
+                format!("Plugin “{name}” Failed"),
+                format!("Falló el complemento “{name}”"),
             ),
             match reason {
                 Some(why) => tr!(
                     format!("处理请求 #{r} 时出错：{why}。"),
-                    format!("It failed while handling request #{r}: {why}.")
+                    format!("It failed while handling request #{r}: {why}.");
+                    format!("處理請求 #{r} 時出錯：{why}。"),
+                    format!("It failed while handling request #{r}: {why}."),
+                    format!("Falló mientras manejaba la solicitud #{r}: {why}."),
                 ),
                 None => tr!(
                     format!("处理请求 #{r} 时出错。"),
-                    format!("It failed while handling request #{r}.")
+                    format!("It failed while handling request #{r}.");
+                    format!("處理請求 #{r} 時出錯。"),
+                    format!("It failed while handling request #{r}."),
+                    format!("Falló al manejar la solicitud #{r}."),
                 ),
             },
         ),
         None => (
             tr!(
                 format!("插件「{name}」已停止运行"),
-                format!("Plugin “{name}” Stopped Running")
+                format!("Plugin “{name}” Stopped Running");
+                format!("外掛「{name}」已停止執行"),
+                format!("Plugin “{name}” Stopped Running"),
+                format!("Complemento “{name}” Detiene la ejecución"),
             ),
             match reason {
-                Some(why) => tr!(format!("{why}。"), format!("{why}.")),
+                Some(why) => tr!(
+                    format!("{why}。"),
+                    format!("{why}.");
+                    format!("{why}。"),
+                    format!("{why}."),
+                    format!("{why}."),
+                ),
                 None => tr!(
                     "在插件页处理之前，此插件不再运行。".to_string(),
                     "Until it is dealt with on the Plugins page, the plugin does not run."
-                        .to_string()
+                        .to_string();
+                    "在外掛頁處理之前，此外掛不再執行。".to_string(),
+                    "Until it is dealt with on the Plugins page, the plugin does not run."
+                        .to_string(),
+                    "Hasta que no se trate en la página de Plugins, el plugin no se ejecuta."
+                        .to_string(),
                 ),
             },
         ),
@@ -671,13 +782,28 @@ pub fn plugin_failed(id: &str, name: &str, request: Option<u64>, why: &tw_api::M
 /// 错、交回的东西不合规矩）是 None
 fn plugin_reason(m: &tw_api::Msg) -> Option<String> {
     Some(match m.code.as_str() {
-        "gw.plugin.cpu_limit" => tr!("CPU 时间超出上限", "it used more CPU time than allowed").into(),
+        "gw.plugin.cpu_limit" => tr!(
+            "CPU 时间超出上限",
+            "it used more CPU time than allowed";
+            "CPU 時間超出上限",
+            "it used more CPU time than allowed",
+            "usó más tiempo de CPU de lo permitido",
+        ).into(),
         "gw.plugin.memory_limit" => {
-            tr!("内存超出上限", "it used more memory than allowed").into()
+            tr!(
+                "内存超出上限",
+                "it used more memory than allowed";
+                "記憶體超出上限",
+                "it used more memory than allowed",
+                "Utilizó más memoria de lo permitido",
+            ).into()
         }
         "gw.plugin.output_limit" => tr!(
             "返回的内容超出上限",
-            "it returned more output than allowed"
+            "it returned more output than allowed";
+            "返回的內容超出上限",
+            "it returned more output than allowed",
+            "Devolvió más salida de lo permitido",
         )
         .into(),
         // 不是插件的错：同时跑在回答上的插件到了上限，这一个没起来
@@ -686,17 +812,30 @@ fn plugin_reason(m: &tw_api::Msg) -> Option<String> {
                 format!("同时处理回答的插件已达上限（{max} 个），此回答未经此插件处理"),
                 format!(
                     "the limit of {max} plugins running on answers at once was reached, so it did not run on this answer"
-                )
+                );
+                format!("同時處理回答的外掛已達上限（{max} 個），此回答未經此外掛處理"),
+                format!(
+                    "the limit of {max} plugins running on answers at once was reached, so it did not run on this answer"
+                ),
+                format!(
+                    "el límite de {max} plugins que se ejecutan en las respuestas a la vez se alcanzó, por lo que no se ejecutó en esta respuesta"
+                ),
             ),
             None => tr!(
                 "同时处理回答的插件已达上限，此回答未经此插件处理",
-                "the limit of plugins running on answers at once was reached, so it did not run on this answer"
+                "the limit of plugins running on answers at once was reached, so it did not run on this answer";
+                "同時處理回答的外掛已達上限，此回答未經此外掛處理",
+                "the limit of plugins running on answers at once was reached, so it did not run on this answer",
+                "el límite de plugins que se ejecutan en las respuestas a la vez se alcanzó, por lo que no se ejecutó en esta respuesta",
             )
             .into(),
         },
         "gw.plugin.file_changed" | "gw.plugin.changed" => tr!(
             "插件文件已更改，在插件页审核并确认之前不再运行",
-            "its file changed, and it does not run until the change is reviewed and approved on the Plugins page"
+            "its file changed, and it does not run until the change is reviewed and approved on the Plugins page";
+            "外掛檔案已更改，在外掛頁稽核並確認之前不再執行",
+            "its file changed, and it does not run until the change is reviewed and approved on the Plugins page",
+            "su archivo cambió, y no se ejecuta hasta que el cambio sea revisado y aprobado en la página de Plugins",
         )
         .into(),
         _ => return None,
@@ -716,7 +855,10 @@ pub fn scan_alert(n: usize) -> Option<Signal> {
             Level::Warning,
             tr!(
                 "客户端配置中出现可疑内容",
-                "Suspicious Content in Client Configuration"
+                "Suspicious Content in Client Configuration";
+                "用戶端配置中出現可疑內容",
+                "Suspicious Content in Client Configuration",
+                "Contenido sospechoso en la configuración del cliente",
             ),
         )
         .body(tr!(
@@ -724,7 +866,16 @@ pub fn scan_alert(n: usize) -> Option<Signal> {
             match n {
                 1 => "1 new item. Details are on the MCP page.".to_string(),
                 n => format!("{n} new items. Details are on the MCP page."),
-            }
+            };
+            format!("新增 {n} 項，詳見 MCP 頁。"),
+            match n {
+                1 => "1 new item. Details are on the MCP page.".to_string(),
+                n => format!("{n} new items. Details are on the MCP page."),
+            },
+            match n {
+                1 => "1 elemento nuevo. Los detalles están en la página de MCP.".to_string(),
+                n => format!("{n} nuevos ítems. Los detalles están en la página de MCP."),
+            },
         ))
         .view(MCP)
         .event()
@@ -880,7 +1031,10 @@ fn unpriced(m: &tw_api::UnpricedModel) -> Signal {
         Level::Info,
         tr!(
             format!("模型「{model}」未定价"),
-            format!("No Price for “{model}”")
+            format!("No Price for “{model}”");
+            format!("模型「{model}」未定價"),
+            format!("No Price for “{model}”"),
+            format!("Sin precio para “{model}”"),
         ),
     )
     .body(tr!(
@@ -888,7 +1042,16 @@ fn unpriced(m: &tw_api::UnpricedModel) -> Signal {
         format!(
             "{n} {} through “{provider}” in the last 7 days could not be priced, so their cost is not counted. Set a price for it on the Upstreams page.",
             if n == 1 { "request" } else { "requests" }
-        )
+        );
+        format!("最近 7 天經「{provider}」的 {n} 次請求無法計價，費用未計入。在上游頁為它設定價格。"),
+        format!(
+            "{n} {} through “{provider}” in the last 7 days could not be priced, so their cost is not counted. Set a price for it on the Upstreams page.",
+            if n == 1 { "request" } else { "requests" }
+        ),
+        format!(
+            "{n} {} a través de “{provider}” en los últimos 7 días no se pudo calcular el precio, por lo que su costo no se cuenta. Fije un precio para ello en la página Upstreams.",
+            if n == 1 { "request" } else { "requests" }
+        ),
     ))
     .view(UPSTREAMS)
 }
@@ -915,38 +1078,44 @@ fn watched(
     let name = guard_rule_name(guard, rule, custom, &detail.rule_snapshot.name);
     let what = guard_name(guard);
     let answer = detail.direction == tw_api::SecurityDirection::Response;
-    let body = match (source, answer, crate::i18n::current()) {
-        (Some(s), false, crate::i18n::Lang::Zh) => {
-            let s = saved_source_zh(s);
-            format!("{what}：经上游「{provider}」的请求含有{s}，已记入安全日志。")
-        }
-        (Some(s), true, crate::i18n::Lang::Zh) => {
-            let s = saved_source_zh(s);
-            format!("{what}：上游「{provider}」的回答含有{s}，已记入安全日志。")
-        }
-        (Some(s), false, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => {
-            let s = saved_source_en(s);
-            format!(
-                "{what}: a request through upstream “{provider}” contained {s}. It was recorded in the security log."
+    let body = match (source, answer) {
+        (Some(source), false) => {
+            let s = saved_source(source);
+            tr!(
+                format!("{what}：经上游「{provider}」的请求含有{s}，已记入安全日志。"),
+                format!("{what}: a request through upstream “{provider}” contained {s}. It was recorded in the security log."),
+                format!("{what}：アップストリーム「{provider}」へのリクエストに{s}が含まれていました。セキュリティログに記録しました。");
+                format!("{what}：經由上游「{provider}」的請求包含{s}，已記錄到安全性記錄。"),
+                format!("{what}: 업스트림 「{provider}」에 보낸 요청에 {s}이(가) 들어 있었습니다. 보안 로그에 기록했습니다."),
+                format!("{what}: una solicitud al proveedor «{provider}» contenía {s}. Se anotó en el registro de seguridad.")
             )
         }
-        (Some(s), true, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => {
-            let s = saved_source_en(s);
-            format!(
-                "{what}: an answer from upstream “{provider}” contained {s}. It was recorded in the security log."
+        (Some(source), true) => {
+            let s = saved_source(source);
+            tr!(
+                format!("{what}：上游「{provider}」的回答含有{s}，已记入安全日志。"),
+                format!("{what}: an answer from upstream “{provider}” contained {s}. It was recorded in the security log."),
+                format!("{what}：アップストリーム「{provider}」の応答に{s}が含まれていました。セキュリティログに記録しました。");
+                format!("{what}：上游「{provider}」的回應包含{s}，已記錄到安全性記錄。"),
+                format!("{what}: 업스트림 「{provider}」의 응답에 {s}이(가) 들어 있었습니다. 보안 로그에 기록했습니다."),
+                format!("{what}: una respuesta del proveedor «{provider}» contenía {s}. Se anotó en el registro de seguridad.")
             )
         }
-        (None, false, crate::i18n::Lang::Zh) => {
-            format!("{what}：经上游「{provider}」的请求命中此规则，已记入安全日志。")
-        }
-        (None, true, crate::i18n::Lang::Zh) => {
-            format!("{what}：上游「{provider}」的回答命中此规则，已记入安全日志。")
-        }
-        (None, false, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => format!(
-            "{what}: a request through upstream “{provider}” matched this rule. It was recorded in the security log."
+        (None, false) => tr!(
+            format!("{what}：经上游「{provider}」的请求命中此规则，已记入安全日志。"),
+            format!("{what}: a request through upstream “{provider}” matched this rule. It was recorded in the security log."),
+            format!("{what}：アップストリーム「{provider}」へのリクエストがこのルールに一致しました。セキュリティログに記録しました。");
+            format!("{what}：經由上游「{provider}」的請求符合此規則，已記錄到安全性記錄。"),
+            format!("{what}: 업스트림 「{provider}」에 보낸 요청이 이 규칙과 일치했습니다. 보안 로그에 기록했습니다."),
+            format!("{what}: una solicitud al proveedor «{provider}» coincidió con esta regla. Se anotó en el registro de seguridad.")
         ),
-        (None, true, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => format!(
-            "{what}: an answer from upstream “{provider}” matched this rule. It was recorded in the security log."
+        (None, true) => tr!(
+            format!("{what}：上游「{provider}」的回答命中此规则，已记入安全日志。"),
+            format!("{what}: an answer from upstream “{provider}” matched this rule. It was recorded in the security log."),
+            format!("{what}：アップストリーム「{provider}」の応答がこのルールに一致しました。セキュリティログに記録しました。");
+            format!("{what}：上游「{provider}」的回應符合此規則，已記錄到安全性記錄。"),
+            format!("{what}: 업스트림 「{provider}」의 응답이 이 규칙과 일치했습니다. 보안 로그에 기록했습니다."),
+            format!("{what}: una respuesta del proveedor «{provider}» coincidió con esta regla. Se anotó en el registro de seguridad.")
         ),
     };
     let kind = if custom { "c" } else { "b" };
@@ -956,7 +1125,10 @@ fn watched(
             Level::Warning,
             tr!(
                 format!("安全规则「{name}」命中"),
-                format!("Security Rule “{name}” Matched")
+                format!("Security Rule “{name}” Matched");
+                format!("安全規則「{name}」命中"),
+                format!("Security Rule “{name}” Matched"),
+                format!("Regla de seguridad “{name}” igualada"),
             ),
         )
         .body(body)
@@ -964,50 +1136,56 @@ fn watched(
         .event()
         .merged(tr!(
             format!("「{name}」· {provider}"),
-            format!("“{name}” · {provider}")
+            format!("“{name}” · {provider}");
+            format!("「{name}」· {provider}"),
+            format!("“{name}” · {provider}"),
+            format!("“{name}” · {provider}"),
         )),
     )
 }
 
 /// 防护的名字，和安全页的页签一样
 fn guard_name(guard: &str) -> String {
-    tr!(
-        crate::core_text::table_zh("guard", guard).unwrap_or_else(|| guard.to_string()),
+    core_text::table_word(crate::i18n::current(), "guard", guard).unwrap_or_else(|| {
         match guard {
             "redact" => "Secrets & privacy",
             "inspect_tools" => "Dangerous commands",
             _ => "Content filter",
         }
         .to_string()
-    )
+    })
 }
 
 /// 保存的密钥是哪一处的，放进句中（「经上游「X」的请求含有上游「DeepSeek」的密钥」）。
 /// 和安全页上写的一样（`savedSourceText`）
-fn saved_source_zh(s: &tw_api::SavedSource) -> String {
+fn saved_source(s: &tw_api::SavedSource) -> String {
     use tw_api::SavedSourceKind as K;
     let n = &s.name;
     match s.kind {
-        K::UpstreamKey => format!("上游「{n}」的密钥"),
-        K::UpstreamHeader => format!("上游「{n}」请求头中的值"),
-        K::AccessKey => format!("网关密钥「{n}」"),
-        K::ProxyPassword => format!("代理「{n}」的密码"),
-        K::ControlKey => "远程控制密钥".to_string(),
-        K::SyncCredential => "同步与备份凭据".to_string(),
-    }
-}
-
-/// 同上，英文，句中的写法（小写开头）
-fn saved_source_en(s: &tw_api::SavedSource) -> String {
-    use tw_api::SavedSourceKind as K;
-    let n = &s.name;
-    match s.kind {
-        K::UpstreamKey => format!("the key of upstream “{n}”"),
-        K::UpstreamHeader => format!("a header value of upstream “{n}”"),
-        K::AccessKey => format!("gateway key “{n}”"),
-        K::ProxyPassword => format!("the password of proxy “{n}”"),
-        K::ControlKey => "the remote control key".to_string(),
-        K::SyncCredential => "a sync and backup credential".to_string(),
+        K::UpstreamKey => tr!(
+            format!("上游「{n}」的密钥"), format!("the key of upstream “{n}”"), format!("アップストリーム「{n}」のキー");
+            format!("上游「{n}」的金鑰"), format!("업스트림 「{n}」의 키"), format!("la clave del proveedor «{n}»")
+        ),
+        K::UpstreamHeader => tr!(
+            format!("上游「{n}」请求头中的值"), format!("a header value of upstream “{n}”"), format!("アップストリーム「{n}」のヘッダー値");
+            format!("上游「{n}」的請求標頭值"), format!("업스트림 「{n}」의 헤더 값"), format!("un valor de cabecera del proveedor «{n}»")
+        ),
+        K::AccessKey => tr!(
+            format!("网关密钥「{n}」"), format!("gateway key “{n}”"), format!("ゲートウェイキー「{n}」");
+            format!("閘道金鑰「{n}」"), format!("게이트웨이 키 「{n}」"), format!("la clave de la puerta de enlace «{n}»")
+        ),
+        K::ProxyPassword => tr!(
+            format!("代理「{n}」的密码"), format!("the password of proxy “{n}”"), format!("プロキシ「{n}」のパスワード");
+            format!("代理伺服器「{n}」的密碼"), format!("프록시 「{n}」의 비밀번호"), format!("la contraseña del proxy «{n}»")
+        ),
+        K::ControlKey => tr!(
+            "远程控制密钥", "the remote control key", "リモート制御キー";
+            "遠端控制金鑰", "원격 제어 키", "la clave de control remoto"
+        ).to_string(),
+        K::SyncCredential => tr!(
+            "同步与备份凭据", "a sync and backup credential", "同期とバックアップの認証情報";
+            "同步與備份認證資訊", "동기화 및 백업 인증 정보", "una credencial de sincronización y copias de seguridad"
+        ).to_string(),
     }
 }
 
@@ -1017,12 +1195,9 @@ fn guard_rule_name(guard: &str, rule: &str, custom: bool, english: &str) -> Stri
         return rule.to_string();
     }
     let english = if english.is_empty() { rule } else { english };
-    tr!(
-        core_text::rule_name_zh(guard, rule)
-            .unwrap_or(english)
-            .to_string(),
-        english.to_string()
-    )
+    core_text::rule_name(crate::i18n::current(), guard, rule)
+        .unwrap_or(english)
+        .to_string()
 }
 
 /// 一条内置的工具调用规则（危险命令和提示注入两组）
@@ -1132,13 +1307,23 @@ pub fn wedged() -> Signal {
     Signal::raised(
         "wedged",
         Level::Info,
-        tr!("网关曾无响应，已重启", "Gateway Stopped Responding and Was Restarted", "応答がなかったためゲートウェイを再起動しました"),
+        tr!(
+            "网关曾无响应，已重启",
+            "Gateway Stopped Responding and Was Restarted",
+            "応答がなかったためゲートウェイを再起動しました";
+            "閘道器曾無回應，已重啟",
+            "Gateway Stopped Responding and Was Restarted",
+            "Gateway dejó de responder y fue reiniciada",
+        ),
     )
     .body(
         tr!(
             "网关连续几次没有响应，已自动重启。重启期间的请求可能失败。",
             "The gateway did not respond several times in a row and was restarted automatically. Requests during the restart may have failed.",
-            "ゲートウェイが繰り返し応答しなかったため、自動で再起動しました。再起動中のリクエストは失敗した可能性があります。"
+            "ゲートウェイが繰り返し応答しなかったため、自動で再起動しました。再起動中のリクエストは失敗した可能性があります。";
+            "閘道器連續幾次沒有回應，已自動重啟。重啟期間的請求可能失敗。",
+            "The gateway did not respond several times in a row and was restarted automatically. Requests during the restart may have failed.",
+            "El gateway no respondió varias veces seguidas y se reinicia automáticamente. Las peticiones durante el reinicio pueden haber fallado.",
         )
         .to_string(),
     )
@@ -1173,12 +1358,21 @@ pub fn tray_failed() -> Signal {
     Signal::raised(
         "startup:tray",
         Level::Warning,
-        tr!(format!("{zh}图标未能显示"), title_en.to_string()),
+        tr!(
+            format!("{zh}图标未能显示"),
+            title_en.to_string();
+            format!("{zh}圖示未能顯示"),
+            title_en.to_string(),
+            title_en.to_string(),
+        ),
     )
     .body(
         tr!(
             "网关照常运行。窗口关闭后，再次打开应用即可回到主界面。",
-            "The gateway keeps running. After the window is closed, opening the app again brings it back."
+            "The gateway keeps running. After the window is closed, opening the app again brings it back.";
+            "閘道器照常執行。視窗關閉後，再次開啟應用即可回到主介面。",
+            "The gateway keeps running. After the window is closed, opening the app again brings it back.",
+            "La puerta de enlace sigue funcionando. Después de cerrar la ventana, abrir la aplicación de nuevo lo devuelve.",
         )
         .to_string(),
     )
@@ -1194,12 +1388,18 @@ pub fn window_failed() -> Signal {
         tr!(
             "主窗口未能打开",
             "Main Window Could Not Be Opened",
-            "メインウィンドウを開けませんでした"
+            "メインウィンドウを開けませんでした";
+            "主視窗未能開啟",
+            "Main Window Could Not Be Opened",
+            "No se pudo abrir la ventana principal",
         ),
     )
     .body(tr!(
         format!("网关照常运行。可以从{zh}再次打开主界面。"),
-        format!("The gateway keeps running. The window can be opened again from the {en}.")
+        format!("The gateway keeps running. The window can be opened again from the {en}.");
+        format!("閘道器照常執行。可以從{zh}再次開啟主介面。"),
+        format!("The gateway keeps running. The window can be opened again from the {en}."),
+        format!("La puerta de enlace sigue funcionando. La ventana se puede abrir de nuevo desde el {en}."),
     ))
     .event()
 }
@@ -1213,12 +1413,18 @@ pub fn picker_failed() -> Signal {
         tr!(
             "连接选择未能打开",
             "Connection Picker Could Not Be Opened",
-            "接続の選択画面を開けませんでした"
+            "接続の選択画面を開けませんでした";
+            "連線選擇未能開啟",
+            "연결 선택 창을 열 수 없음",
+            "No se pudo abrir el selector de conexión",
         ),
     )
     .body(tr!(
         format!("尚未连接 core。可以在{zh}的「连接」中选择要连接的 core。"),
-        format!("No core is connected yet. One can be chosen under Connection in the {en}.")
+        format!("No core is connected yet. One can be chosen under Connection in the {en}.");
+        format!("尚未連線 core。可以在{zh}的「連線」中選擇要連線的 core。"),
+        format!("No core is connected yet. One can be chosen under Connection in the {en}."),
+        format!("No hay núcleo conectado todavía. Uno puede ser elegido bajo Conexión en el {en}."),
     ))
     .event()
 }
@@ -1231,13 +1437,19 @@ pub fn remote_lost(name: &str) -> Signal {
         Level::Critical,
         tr!(
             format!("与 {name} 的连接已断开"),
-            format!("Disconnected from “{name}”")
+            format!("Disconnected from “{name}”");
+            format!("與 {name} 的連線已斷開"),
+            format!("Disconnected from “{name}”"),
+            format!("Desconectado de “{name}”"),
         ),
     )
     .body(
         tr!(
             "正在重新连接。连接恢复前，应用中的内容停留在断开时的状态。",
-            "Reconnecting. Until the connection is restored, the app shows the state at the time of the disconnect."
+            "Reconnecting. Until the connection is restored, the app shows the state at the time of the disconnect.";
+            "正在重新連線。連線恢復前，應用中的內容停留在斷開時的狀態。",
+            "Reconnecting. Until the connection is restored, the app shows the state at the time of the disconnect.",
+            "Reconectar. Hasta que se restaure la conexión, la aplicación muestra el estado en el momento de la desconexión.",
         )
         .to_string(),
     )
@@ -1257,12 +1469,44 @@ pub fn remote_back() -> Signal {
 fn window_label(w: &str) -> String {
     use crate::menubar::model::{Span, window_span};
     match w {
-        "weekly" => tr!("每周", "weekly").into(),
-        "5h" => tr!("5 小时", "5-hour").into(),
+        "weekly" => tr!(
+            "每周",
+            "weekly";
+            "每週",
+            "weekly",
+            "weekly",
+        )
+        .into(),
+        "5h" => tr!(
+            "5 小时",
+            "5-hour";
+            "5 小時",
+            "5-hour",
+            "5-hour",
+        )
+        .into(),
         other => match window_span(other) {
-            Some((n, Span::Days)) => tr!(format!("{n} 天"), format!("{n}-day")),
-            Some((n, Span::Hours)) => tr!(format!("{n} 小时"), format!("{n}-hour")),
-            Some((n, Span::Minutes)) => tr!(format!("{n} 分钟"), format!("{n}-minute")),
+            Some((n, Span::Days)) => tr!(
+                format!("{n} 天"),
+                format!("{n}-day");
+                format!("{n} 天"),
+                format!("{n}-day"),
+                format!("{n} días"),
+            ),
+            Some((n, Span::Hours)) => tr!(
+                format!("{n} 小时"),
+                format!("{n}-hour");
+                format!("{n} 小時"),
+                format!("{n}-hour"),
+                format!("{n}-hora"),
+            ),
+            Some((n, Span::Minutes)) => tr!(
+                format!("{n} 分钟"),
+                format!("{n}-minute");
+                format!("{n} 分鐘"),
+                format!("{n}-minute"),
+                format!("{n} minutos"),
+            ),
             None => other.to_string(),
         },
     }
@@ -1276,7 +1520,14 @@ fn window_label(w: &str) -> String {
 fn after(secs: u64) -> String {
     let [m, h, d] = [60.0, 3600.0, 86_400.0].map(|unit| (secs as f64 / unit).round() as u64);
     let (n, unit, unit_en) = if secs < 60 {
-        return tr!("，即将重置", " and resets shortly").into();
+        return tr!(
+            "，即将重置",
+            " and resets shortly";
+            "，即將重置",
+            " and resets shortly",
+            " y se reinicia en breve",
+        )
+        .into();
     } else if m < 60 {
         (m, "分钟", "minute")
     } else if h < 24 {
@@ -1287,6 +1538,9 @@ fn after(secs: u64) -> String {
     let plural = if n == 1 { "" } else { "s" };
     tr!(
         format!("，约 {n} {unit}后重置"),
-        format!(" and resets in about {n} {unit_en}{plural}")
+        format!(" and resets in about {n} {unit_en}{plural}");
+        format!("，約 {n} {unit}後重置"),
+        format!(" and resets in about {n} {unit_en}{plural}"),
+        format!(" y se reinicia en aproximadamente {n} {unit_en} {plural}"),
     )
 }

@@ -19,8 +19,11 @@ import { useSyncExternalStore } from "react";
  */
 export const LANG_NAMES = {
   zh: "简体中文",
+  "zh-Hant": "繁體中文",
   en: "English",
   ja: "日本語",
+  ko: "한국어",
+  es: "Español",
 } as const;
 export type Lang = keyof typeof LANG_NAMES;
 export const LANGUAGES: readonly Lang[] = Object.keys(LANG_NAMES) as Lang[];
@@ -38,7 +41,10 @@ export function isLang(value: unknown): value is Lang {
 
 export function preferredLanguage(tags: readonly string[]): Lang {
   for (const tag of tags) {
-    const language = tag.trim().toLowerCase().split(/[-_.@]/, 1)[0];
+    const [language, scriptOrRegion] = tag.trim().toLowerCase().split(/[-_.@]/, 2);
+    if (language === "zh" && ["hant", "tw", "hk", "mo"].includes(scriptOrRegion ?? "")) {
+      return "zh-Hant";
+    }
     if (isLang(language)) return language;
   }
   return "en";
@@ -85,12 +91,20 @@ export function useLang(): Lang {
 }
 
 export type Messages<T> = Readonly<Record<Lang, T>>;
+type Localizations<T> = Partial<Record<Exclude<Lang, "zh" | "en">, Partial<T>>>;
 
 /**
- * 定义一组文案。英文与中文同形，日文可省略尚未翻译的顶层条目。
+ * 定义一组文案。未翻译的顶层条目使用英文，繁体中文使用简体中文。
  */
-export function messages<T extends object>(zh: T, en: NoInfer<T>, ja?: Partial<NoInfer<T>>): Messages<T> {
-  return { zh, en, ja: ja ? { ...en, ...ja } : en };
+export function messages<T extends object>(zh: T, en: NoInfer<T>, locales: Localizations<NoInfer<T>> = {}): Messages<T> {
+  return {
+    zh,
+    en,
+    "zh-Hant": locales["zh-Hant"] ? { ...zh, ...locales["zh-Hant"] } : zh,
+    ja: locales.ja ? { ...en, ...locales.ja } : en,
+    ko: locales.ko ? { ...en, ...locales.ko } : en,
+    es: locales.es ? { ...en, ...locales.es } : en,
+  };
 }
 
 /** 组件里取文案 */

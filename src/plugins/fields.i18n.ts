@@ -42,4 +42,49 @@ export const pluginFieldsText = messages(
     settings: "Settings",
     numberBad: (label: string) => `“${label}” needs a number.`,
   },
+  {
+    "zh-Hant": {
+      matches: {
+        clients: "",
+        models: "按發給上游的模型名匹配；路由改寫過模型名的，按改寫之後的名字。",
+        upstreams: "按發往的上游匹配，請求和回答都適用。",
+      },
+      hint: {
+        clients: "用戶端的名字，例如 claude-code。可新增多個，支援 * 通配。",
+        models: "模型名，例如 deepseek-*。可新增多個，支援 * 通配。",
+        upstreams: "上游的名字。可新增多個，支援 * 通配。",
+      },
+      placeholder: { clients: "新增用戶端", models: "新增模型", upstreams: "新增上游" },
+      enterToAdd: "回車新增",
+      removeShort: "刪除",
+      remove: (x: string) => `刪除 ${x}`,
+      needOne: (part: string) => `${part}選了「指定」，至少新增一項。`,
+      settings: "設定項",
+      numberBad: (label: string) => `「${label}」需要填寫數字。`,
+    },
+    ko: {
+      removeShort: "제거",
+      settings: "설정",
+    },
+    es: {
+      some: "Específico",
+      matches: {
+        clients: "",
+        models: "Coincide con el nombre del modelo enviado en sentido ascendente; cuando el enrutamiento lo reescriba, el nombre reescrito.",
+        upstreams: "Coincide con el curso anterior a la solicitud va a, para solicitudes y respuestas por igual.",
+      },
+      hint: {
+        clients: "Nombres de clientes, como claude-code. Añadir tantos como sea necesario; * coincide con cualquier cosa.",
+        models: "Nombres de modelos, como deepseek-*. Agregue tantos como sea necesario; * coincide con cualquier cosa.",
+        upstreams: "Nombres ascendentes. Agrega tantos como sea necesario; * coincide con cualquier cosa.",
+      },
+      placeholder: { clients: "Añadir un cliente", models: "Añadir un modelo", upstreams: "Añadir un curso ascendente" },
+      enterToAdd: "Introduzca para añadir",
+      removeShort: "Quitar",
+      remove: (x: string) => `Eliminar ${x}`,
+      needOne: (part: string) => `${part} se establece en Específico: añadir al menos uno.`,
+      settings: "Configuración",
+      numberBad: (label: string) => `“${label}” necesita un número.`,
+    },
+  },
 );

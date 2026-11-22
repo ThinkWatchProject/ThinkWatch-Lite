@@ -16,4 +16,21 @@ export const partsText = messages(
     neverUsed: "Never used",
     inProgress: "In progress",
   },
+  {
+    "zh-Hant": {
+      neverUsed: "從未使用",
+      inProgress: "請求中",
+    },
+    ko: {
+      inProgress: "진행 중",
+    },
+    es: {
+      requests: (n: number) => {
+        const v = Math.round(n);
+        return v === 1 ? "1 solicitud" : `${v.toLocaleString()} solicitudes`;
+      },
+      neverUsed: "Nunca utilizado",
+      inProgress: "En curso",
+    },
+  },
 );

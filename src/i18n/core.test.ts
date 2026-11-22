@@ -20,6 +20,17 @@ function inLang<T>(lang: Lang, f: () => T): T {
 }
 
 describe("core 发来的消息", () => {
+  it.each([
+    ["zh-Hant", "上游回應超時。", "超時"],
+    ["ko", "업스트림 응답 시간이 초과되었습니다.", "초과"],
+    ["es", "Se agotó el tiempo de espera de respuesta del proveedor.", "tiempo de espera"],
+  ] as const)("uses and searches the %s Core error catalog", (lang, expected, query) => {
+    const code = "gw.upstream.timeout";
+    expect(inLang(lang, () => coreText({ code, text: "The upstream timed out." }))).toBe(expected);
+    expect(inLang(lang, () => codesMatching(query))).toContain(code);
+    expect(inLang(lang, () => coreText({ code: "future.code", text: "Original English" }))).toBe("Original English");
+  });
+
   it("translates and searches Japanese errors, using English for missing translations", () => {
     const m = {
       code: "gw.oauth.unreachable",

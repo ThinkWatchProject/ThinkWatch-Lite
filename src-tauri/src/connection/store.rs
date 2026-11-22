@@ -32,7 +32,18 @@ pub fn local_name() -> &'static str {
             "この Mac"
         } else {
             "この端末"
-        }
+        };
+        "本機",
+        if cfg!(target_os = "macos") {
+            "이 Mac"
+        } else {
+            "이 컴퓨터"
+        },
+        if cfg!(target_os = "macos") {
+            "Este Mac"
+        } else {
+            "Este equipo"
+        },
     )
 }
 

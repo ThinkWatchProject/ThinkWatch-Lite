@@ -2,8 +2,11 @@ import type { Msg } from "@/types";
 import { localizedPluginNames, pluginName } from "@/plugins/defaults";
 import { getLang, type Lang } from "./index";
 import CORE_ZH from "./core.zh.json";
+import CORE_HANT from "./core.zh-Hant.json";
 import CORE_JA from "./core.ja.json";
-import { GUARD_TABLES } from "./guard.i18n";
+import CORE_KO from "./core.ko.json";
+import CORE_ES from "./core.es.json";
+import { guardTables } from "./guard.i18n";
 import { render, wordsOf, type Args, type Tables } from "./template";
 
 /**
@@ -18,10 +21,13 @@ import { render, wordsOf, type Args, type Tables } from "./template";
  * 测速，`gw` 是网关的数据面，`control` 是控制面）。表里以 `//` 开头的键是分节的
  * 标题，不是码。
  */
-export const CORE_TABLES: Tables = { ...CORE_ZH.tables, ...GUARD_TABLES };
+export const CORE_TABLES: Tables = { ...CORE_ZH.tables, ...guardTables("zh") };
 const CATALOGS: Partial<Record<Lang, { tables: Tables; messages: Record<string, string> }>> = {
   zh: { tables: CORE_TABLES, messages: CORE_ZH.messages },
+  "zh-Hant": { tables: { ...CORE_HANT.tables, ...guardTables("zh-Hant") }, messages: CORE_HANT.messages },
   ja: CORE_JA,
+  ko: CORE_KO,
+  es: CORE_ES,
 };
 
 /**
@@ -34,7 +40,7 @@ const CATALOGS: Partial<Record<Lang, { tables: Tables; messages: Record<string, 
  * 自己也可能带着（`gw.oauth.not_configured` 就带），只看参数会把一句
  * 「上游某某的凭据」凭空加到前面。场合可以套好几层，由外往里一层层剥。
  */
-const CONTEXTS: { arg: string; en: string; zh: string; ja?: string }[] = CORE_ZH.contexts;
+const CONTEXTS: ({ arg: string; en: string } & Partial<Record<Exclude<Lang, "en">, string>>)[] = CORE_ZH.contexts;
 
 /**
  * 一句没有码的话，包成 [`Msg`]。

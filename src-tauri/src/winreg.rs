@@ -390,11 +390,13 @@ mod imp {
         out.push(match removed {
             Ok(()) => UninstallStep::done(tr!(
                 "已移除 thinkwatch:// 链接",
-                "thinkwatch:// links unregistered"
+                "thinkwatch:// links unregistered";
+                "已移除 thinkwatch:// 連結",
             )),
             Err(e) => UninstallStep::failed(tr!(
                 format!("未能移除 thinkwatch:// 链接（{e}）"),
-                format!("thinkwatch:// links could not be unregistered ({e})")
+                format!("thinkwatch:// links could not be unregistered ({e})");
+                format!("未能移除 thinkwatch:// 連結（{e}）"),
             )),
         });
     }
@@ -406,7 +408,8 @@ mod imp {
                 let other = command_exe(&cmd).unwrap_or(&cmd).to_string();
                 out.push(UninstallStep::done(tr!(
                     format!("开机启动项指向 {other}，未作更改"),
-                    format!("The launch-at-login entry points to {other} and was left unchanged")
+                    format!("The launch-at-login entry points to {other} and was left unchanged");
+                    format!("開機啟動項指向 {other}，未作更改"),
                 )));
                 return;
             }
@@ -419,12 +422,17 @@ mod imp {
             Err(e) => Err(e),
         };
         out.push(match removed {
-            Ok(()) => UninstallStep::done(tr!("已取消开机启动", "Launch at login turned off")),
+            Ok(()) => UninstallStep::done(tr!(
+                "已取消开机启动",
+                "Launch at login turned off";
+                "已取消開機啟動",
+            )),
             Err(e) => UninstallStep::failed(tr!(
                 format!("未能取消开机启动（{e}）。请在「设置 › 应用 › 启动」中关闭 ThinkWatch Lite。"),
                 format!(
                     "Launch at login could not be turned off ({e}). Turn off ThinkWatch Lite in Settings › Apps › Startup."
-                )
+                );
+                format!("未能取消開機啟動（{e}）。請在「設定 › 應用 › 啟動」中關閉 ThinkWatch Lite。"),
             )),
         });
     }
@@ -444,11 +452,13 @@ mod imp {
             out.push(match absent_is_none(hive.remove_tree(&aumid_key(aumid))) {
                 Ok(_) => UninstallStep::done(tr!(
                     "已移除系统通知的登记",
-                    "System notification registration removed"
+                    "System notification registration removed";
+                    "已移除系統通知的登記",
                 )),
                 Err(e) => UninstallStep::failed(tr!(
                     format!("未能移除系统通知的登记（{e}）"),
-                    format!("The system notification registration could not be removed ({e})")
+                    format!("The system notification registration could not be removed ({e})");
+                    format!("未能移除系統通知的登記（{e}）"),
                 )),
             });
         }
@@ -465,7 +475,8 @@ mod imp {
                 format!(
                     "The notification icon could not be deleted: {} ({e})",
                     icon.display()
-                )
+                );
+                format!("未能刪除通知圖示：{}（{e}）", icon.display()),
             ))),
         }
     }

@@ -234,4 +234,213 @@ export const securityLabelsText = messages(
       codepoints: (code: Code, ranges: string[]) => <>Code points {or(ranges.map(code), ", ", " and ")}</>,
     },
   },
+  {
+    "zh-Hant": {
+      guardShort: {
+        redact: "金鑰與隱私",
+        inspect_tools: "危險命令",
+        content: "內容過濾",
+      },
+      modes: {
+        enforce: "開啟",
+        observe: "監控",
+        off: "關閉",
+      },
+      monitoring: "監控中",
+      actions: {
+        recorded: "僅記錄",
+        replaced: "已替換",
+        cut: "已切斷",
+        stripped: "已刪除",
+        blocked: "已拒絕",
+      } as Record<string, string>,
+      ruleActions: {
+        placeholder: "替換為佔位符",
+        cut: "切斷",
+        block: "拒絕",
+        strip: "刪除",
+        replace: "替換",
+        record: "僅記錄",
+      } as Record<string, string>,
+      custom: "自定義",
+      toolResult: "工具結果",
+      parts: {
+        system: "系統提示",
+        message: (n: number) => `第 ${n} 條訊息`,
+        tool_result: "工具結果",
+        tool_call: "工具呼叫",
+        response_text: "回答 · 正文",
+      },
+      roles: {
+        user: "使用者",
+        assistant: "助手",
+        tool: "工具",
+        system: "系統",
+        developer: "開發者",
+      } as Record<string, string>,
+      directions: {
+        request: "請求",
+        response: "回答",
+      },
+      matching: {
+        contains: "包含",
+        regex: "正則",
+        codepoints: "碼位",
+      },
+      caseSensitive: "區分大小寫",
+      savedSource: {
+        "upstream-key": (name: string) => `上游「${name}」的金鑰`,
+        "upstream-header": (name: string) => `上游「${name}」請求頭中的值`,
+        "access-key": (name: string) => `閘道器金鑰「${name}」`,
+        "proxy-password": (name: string) => `代理「${name}」的密碼`,
+        "control-key": () => "遠端控制金鑰",
+        "sync-credential": () => "同步與備份憑據",
+      } as Record<SavedSourceKind, (name: string) => string>,
+      detail: {
+        times: (n: number) => `出現 ${n} 次`,
+        revealed: (text: string) => `隱藏內容「${text}」`,
+        chars: (n: number) => `共 ${n.toLocaleString()} 個字元`,
+      },
+      matcher: {
+        builtin: {
+          "credential-to-network": "憑據發往本機和該憑據的服務商以外的主機",
+          "file-to-network": "本地檔案的內容上傳到外部主機",
+          "thinkwatch-data": "路徑或命令指向 ThinkWatch 的資料目錄；只是提到不算",
+        } as Record<string, string>,
+        listSep: "、",
+        builtinOther: "由內建檢查判斷",
+        regex: (code: Code, pattern: string, cased: boolean) => (<>
+         正則 {code(pattern)}
+         {!cased && "，不区分大小写"}
+        </>),
+        contains: (code: Code, text: string, cased: boolean) => (<>
+         包含 {code(text)}，{cased ? "區分大小寫" : "不區分大小寫"}
+        </>),
+        codepoints: (code: Code, ranges: string[]) => <>碼位 {or(ranges.map(code), "、", "、")}</>,
+      },
+    },
+    ko: {
+      modes: {
+        enforce: "On",
+        observe: "Monitor",
+        off: "끄기",
+      },
+      ruleActions: {
+        placeholder: "Replace with placeholder",
+        cut: "Cut off",
+        block: "Refuse",
+        strip: "삭제",
+        replace: "Replace",
+        record: "Record only",
+      },
+      roles: {
+        user: "User",
+        assistant: "Assistant",
+        tool: "Tool",
+        system: "시스템 설정",
+        developer: "Developer",
+      },
+      directions: {
+        request: "요청",
+        response: "Answer",
+      },
+      day: {
+        today: "오늘",
+        yesterday: "Yesterday",
+      },
+    },
+    es: {
+      guards: {
+        redact: "Secretos y privacidad",
+        inspect_tools: "Comandos peligrosos",
+        content: "Filtro de contenido",
+      },
+      guardShort: {
+        redact: "Secretos",
+        inspect_tools: "Comandos",
+        content: "Contenido",
+      },
+      modes: {
+        enforce: "Activar",
+        observe: "Monitor",
+        off: "Desactivado",
+      },
+      monitoring: "Supervisión",
+      actions: {
+        recorded: "Grabado",
+        replaced: "Reemplazado",
+        cut: "Cortar",
+        stripped: "Suprimido",
+        blocked: "Denegada",
+      },
+      ruleActions: {
+        placeholder: "Reemplazar con marcador de posición",
+        cut: "Cortar",
+        block: "Rechazar",
+        strip: "Eliminar",
+        replace: "Sustitúyase",
+        record: "Grabación únicamente",
+      },
+      custom: "Personalizado",
+      toolResult: "resultado de la herramienta",
+      parts: {
+        system: "Indicación del sistema",
+        message: (n: number) => `Mensaje ${n}`,
+        tool_result: "Resultado de la herramienta",
+        tool_call: "Llamada de la herramienta",
+        response_text: "Respuesta · texto",
+      },
+      roles: {
+        user: "Usuario",
+        assistant: "Asistente",
+        tool: "Herramienta",
+        system: "Sistema",
+        developer: "Desarrollador",
+      },
+      directions: {
+        request: "Solicitud",
+        response: "Respuesta",
+      },
+      matching: {
+        contains: "Contiene",
+        regex: "Regex",
+        codepoints: "Puntos de código",
+      },
+      caseSensitive: "Caso correspondiente",
+      day: {
+        today: "Hoy",
+        yesterday: "Ayer",
+      },
+      savedSource: {
+        "upstream-key": (name: string) => `Clave de del proveedor “${name}”`,
+        "upstream-header": (name: string) => `Valor de la cabecera de del proveedor “${name}”`,
+        "access-key": (name: string) => `Clave de entrada “${name}”`,
+        "proxy-password": (name: string) => `Contraseña del proxy “${name}”`,
+        "control-key": () => "Tecla de control remoto",
+        "sync-credential": () => "Sincronización y credencial de respaldo",
+      },
+      detail: {
+        times: (n: number) => `${n} veces`,
+        revealed: (text: string) => `texto oculto “${text}”`,
+        chars: (n: number) => (n === 1 ? "1 carácter" : `${n.toLocaleString()} caracteres`),
+      },
+      matcher: {
+        builtin: {
+          "credential-to-network": "Una credencial enviada a un anfitrión distinto de esta máquina y al proveedor de la credencialidad",
+          "file-to-network": "El contenido de un archivo local subido a un host externo",
+          "thinkwatch-data": "Una ruta o comando que apunta al directorio de datos de ThinkWatch; una mención no cuenta",
+        },
+        listSep: ", ",
+        builtinOther: "Decidido por un cheque incorporado",
+        regex: (code: Code, pattern: string, cased: boolean) => (<>
+         Regex {code(pattern)}
+         {!cased && ", ignoring case"}
+        </>),
+        contains: (code: Code, text: string, cased: boolean) => (<>
+         Contiene {code(text)}, {cased ? "caso correspondiente" : "ignorando el caso"}
+        </>),
+        codepoints: (code: Code, ranges: string[]) => <>Puntos de código {or(ranges.map(code), ", ", " y ")}</>,
+      },
+    },
+  },
 );

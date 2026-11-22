@@ -15,4 +15,16 @@ export const fieldsText = messages(
     hiddenFromClients: "hidden from client lists",
     providers: (ps: readonly string[]) => ps.join(", "),
   },
+  {
+    "zh-Hant": {
+      noMatch: "無匹配項，可直接輸入完整模型名",
+      alias: "別名",
+      hiddenFromClients: "用戶端列表已隱藏",
+    },
+    es: {
+      modelName: "Nombre del modelo",
+      noMatch: "No hay modelo de coincidencia; cualquier nombre de modelo completo puede ser introducido",
+      hiddenFromClients: "ocultado de las listas de clientes",
+    },
+  },
 );

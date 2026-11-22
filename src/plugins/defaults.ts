@@ -20,18 +20,15 @@ import type { SettingSpecView } from "@/types";
 interface Words {
   name?: string;
   description?: string;
-  settings?: Record<string, string>;
+  settings?: Partial<Record<string, string>>;
 }
 
-interface Entry {
+type Entry = {
   id: string;
   manifest_name: string;
-  zh: Words;
-  en: Words;
-  ja: Words;
-}
+} & Record<Lang, Words>;
 
-const ENTRIES = (TABLE as unknown as { plugins: Entry[] }).plugins;
+const ENTRIES: Entry[] = TABLE.plugins;
 
 function wordsOf(id: string | null | undefined, name: string): Words | null {
   if (!id) return null;

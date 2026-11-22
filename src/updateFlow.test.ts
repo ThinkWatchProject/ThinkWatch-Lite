@@ -6,8 +6,11 @@ describe("更新说明按界面语言选取", () => {
   it("分别展示中文和英文，并保留 Markdown 的换行", () => {
     const notes = { zh: "  - 修复路由\n- 改进更新\n", en: "  - Fixed routing\n- Improved updates\n" };
     expect(releaseNotesFor(notes, "zh")).toBe("- 修复路由\n- 改进更新");
+    expect(releaseNotesFor(notes, "zh-Hant")).toBe("- 修复路由\n- 改进更新");
     expect(releaseNotesFor(notes, "en")).toBe("- Fixed routing\n- Improved updates");
     expect(releaseNotesFor(notes, "ja")).toBe("- Fixed routing\n- Improved updates");
+    expect(releaseNotesFor(notes, "ko")).toBe("- Fixed routing\n- Improved updates");
+    expect(releaseNotesFor(notes, "es")).toBe("- Fixed routing\n- Improved updates");
   });
 
   it("旧清单只有中文时英文界面隐藏说明", () => {

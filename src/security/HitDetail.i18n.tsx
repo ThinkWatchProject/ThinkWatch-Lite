@@ -111,4 +111,88 @@ export const hitDetailText = messages(
     openRequest: (id: number) => `Open request #${id}`,
     openSession: "View session",
   },
+  {
+    "zh-Hant": {
+      rule: "規則",
+      outcome: "處置",
+      request: "請求",
+      session: "會話",
+      total: (where: string, n: number) => `${where}中共 ${n.toLocaleString()} 處`,
+      more: (n: number) => `另有 ${n.toLocaleString()} 處未列出`,
+      showAll: (n: number) => `展開全部（共 ${n.toLocaleString()} 處）`,
+      showAllText: "展開全部",
+      collapse: "摺疊",
+      builtinOf: (version: string) => `core ${version} 內建`,
+      recorded: {
+        request: "命中的內容照常發往上游，未做改動。",
+        response: "命中的內容照常返回用戶端，未做改動。",
+      },
+      replacedWith: "發往上游的內容中替換為",
+      cutCall: (tool: string) => `被切斷的 ${tool} 呼叫，引數如下`,
+      truncated: "引數超過 4 KiB，僅保留開頭部分。",
+      clientNotice: "用戶端收到的提示",
+      notSent: "請求未發往上游。",
+      clientReply: "用戶端收到的回覆",
+      stripped: {
+        request: (n: number) => `刪除 ${n.toLocaleString()} 處：命中內容在發往上游之前刪除。`,
+        response: (n: number) => `刪除 ${n.toLocaleString()} 處：命中內容在返回用戶端之前刪除。`,
+      },
+      replacedText: {
+        request: (n: number, text: ReactNode) => (<>
+         替換 {n.toLocaleString()} 處：命中內容在發往上游之前替換為 {text}，不可還原。
+        </>),
+        response: (n: number, text: ReactNode) => (<>
+         替換 {n.toLocaleString()} 處：命中內容在返回用戶端之前替換為 {text}，不可還原。
+        </>),
+      },
+      sentModel: (model: string) => `發往上游的模型為 ${model}`,
+      openRequest: (id: number) => `開啟請求 #${id}`,
+      openSession: "檢視會話",
+    },
+    ko: {
+      locations: "위치",
+      rule: "규칙",
+      request: "요청",
+    },
+    es: {
+      locations: "Ubicación",
+      rule: "Regla",
+      outcome: "Medidas adoptadas",
+      request: "Solicitud",
+      session: "Sesión",
+      total: (where: string, n: number) => `${count(n, "igualar", "coincidencias")} en el ${where.toLowerCase()}`,
+      more: (n: number) => `${count(n, "más coincidencia", "más coincidencias")} no incluido en la lista`,
+      showAll: (n: number) => `Mostrar todo (${n.toLocaleString()})`,
+      showAllText: "Mostrar todo",
+      collapse: "Colapso",
+      builtinOf: (version: string) => `Construido en el núcleo ${version}`,
+      recorded: {
+        request: "El contenido emparejado se envió al principio sin cambios.",
+        response: "El contenido emparejado fue devuelto al cliente sin cambios.",
+      },
+      replacedWith: "Reemplazado en lo que se envió a la corriente",
+      cutCall: (tool: string) => `La ${tool} llamada que fue cortada, con sus argumentos`,
+      truncated: "Los argumentos superan los 4 KiB; sólo se mantiene el principio.",
+      clientNotice: "Aviso recibido por el cliente",
+      notSent: "La solicitud no se envió a las del proveedor.",
+      clientReply: "Respuesta recibida por el cliente",
+      stripped: {
+        request: (n: number) => `${count(n, "el segmento correspondiente fue", "los segmentos emparejados fueron")} Suprimida antes de que se enviara la solicitud.`,
+        response: (n: number) => `${count(n, "el segmento correspondiente fue", "los segmentos emparejados fueron")} eliminado antes de que la respuesta llegara al cliente.`,
+      },
+      replacedText: {
+        request: (n: number, text: ReactNode) => (<>
+         {count(n, "el segmento correspondiente fue", "los segmentos emparejados fueron")} sustituido por {text} before the request was sent; this
+         cannot be restored.
+        </>),
+        response: (n: number, text: ReactNode) => (<>
+         {count(n, "el segmento correspondiente fue", "los segmentos emparejados fueron")} sustituido por {text} before the answer reached the
+         client; this cannot be restored.
+        </>),
+      },
+      sentModel: (model: string) => `enviado a la parte anterior como ${model}`,
+      openRequest: (id: number) => `Abrir petición #${id}`,
+      openSession: "Ver sesión",
+    },
+  },
 );

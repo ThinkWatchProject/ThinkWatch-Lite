@@ -235,7 +235,8 @@ impl Files {
                 Err(e) if e.kind() == io::ErrorKind::NotFound => {}
                 Err(e) => log.push(UninstallStep::failed(tr!(
                     format!("未能删除 {}（{e}）", path.display()),
-                    format!("{} could not be deleted ({e})", path.display())
+                    format!("{} could not be deleted ({e})", path.display());
+                    format!("未能刪除 {}（{e}）", path.display()),
                 ))),
             }
         }
@@ -246,7 +247,8 @@ impl Files {
             if log.is_empty() {
                 log.push(UninstallStep::done(tr!(
                     "已移除应用菜单中的条目",
-                    "The application menu entry was removed"
+                    "The application menu entry was removed";
+                    "已移除應用選單中的條目",
                 )));
             }
         }

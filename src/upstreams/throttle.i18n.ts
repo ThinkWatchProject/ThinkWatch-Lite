@@ -49,4 +49,35 @@ export const throttleText = messages(
     limitsTitle: "Usage limits",
     paused: (status: number, d: string) => `${status} · Paused ${d}`,
   },
+  {
+    "zh-Hant": {
+      minutes: (m: number) => `${m} 分鐘`,
+      hours: (h: number) => `${h} 小時`,
+      hourMin: (h: number, m: number) => `${h} 小時 ${m} 分`,
+      rateLimited: (left: string) => `速率限制中 · ${left}後恢復`,
+      windowFull: (left: string) => `用量已滿 · ${left}後恢復`,
+      periodUsedUp: {
+        day: "今日用量已滿",
+        week: "本週用量已滿",
+        month: "本月用量已滿",
+      },
+      rateLimitedTip: (at: string) => `上游返回 429，${at} 恢復傳送。`,
+      resumesAt: (at: string) => `${at} 恢復傳送。`,
+      paused: (status: number, d: string) => `${status} · 暫停 ${d}`,
+    },
+    es: {
+      hours: (h: number) => unit(h, "hora", "horas"),
+      rateLimited: (left: string) => `Tasa limitada · volver en ${left}`,
+      windowFull: (left: string) => `Límite de uso alcanzado · en ${left}`,
+      periodUsedUp: {
+        day: "Límite de uso diario alcanzado",
+        week: "Límite de uso semanal alcanzado",
+        month: "Límite de uso mensual alcanzado",
+      },
+      rateLimitedTip: (at: string) => `La del proveedor respondió 429. El envío continúa ${at}.`,
+      resumesAt: (at: string) => `Envío de currículums ${at}.`,
+      limitsTitle: "Límites de uso",
+      paused: (status: number, d: string) => `${status} · Pausa ${d}`,
+    },
+  },
 );

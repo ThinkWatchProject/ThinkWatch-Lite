@@ -13,7 +13,7 @@ import type {
   SecurityOutcome,
   SecurityRuleView,
 } from "@/types";
-import { guardKindZh, guardRuleText } from "@/i18n/guard.i18n";
+import { guardKind, guardRuleText } from "@/i18n/guard.i18n";
 import { catalogRule } from "./catalog";
 import { securityLabelsText } from "./labels.i18n";
 
@@ -89,7 +89,7 @@ export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
  * 自定义那一组照样叫「自定义」，其余写 slug。
  */
 export function kindName(guard: Guard, kinds: readonly Pick<SecurityKindView, "slug" | "name">[] | undefined, slug: string): string {
-  const translated = getLang() === "zh" ? guardKindZh(guard, slug) : undefined;
+  const translated = guardKind(guard, slug);
   if (translated) return translated;
   const k = kinds?.find((x) => x.slug === slug);
   if (k) return k.name;

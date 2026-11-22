@@ -1,6 +1,6 @@
 //! 系统通知和菜单栏使用的 core 消息翻译。
 //!
-//! 界面和 Rust 共用 `src/i18n/core.zh.json` 和 `src/i18n/core.ja.json`。
+//! 界面和 Rust 共用 `src/i18n/core.*.json`。
 //! 句子的写法（参数、查词表、可有可无的一段）和界面 `src/i18n/template.ts` 是
 //! 同一套，两边跑同一份用例（`src/i18n/core.zh.cases.json`）。
 //!
@@ -30,8 +30,8 @@ struct Table {
 struct Context {
     arg: String,
     en: String,
-    zh: String,
-    ja: Option<String>,
+    #[serde(flatten)]
+    copy: HashMap<String, String>,
 }
 
 const SOURCE: &str = include_str!("../../src/i18n/core.zh.json");
@@ -52,26 +52,48 @@ struct RuleCopy {
     about: Option<String>,
 }
 
-fn guards() -> &'static HashMap<String, GuardCopy> {
-    static GUARDS: OnceLock<HashMap<String, GuardCopy>> = OnceLock::new();
-    GUARDS.get_or_init(|| {
-        serde_json::from_str(include_str!("../../src/i18n/guard.zh.json"))
-            .expect("guard.zh.json is valid")
-    })
+fn guards(lang: Lang) -> Option<&'static HashMap<String, GuardCopy>> {
+    static ZH: OnceLock<HashMap<String, GuardCopy>> = OnceLock::new();
+    static HANT: OnceLock<HashMap<String, GuardCopy>> = OnceLock::new();
+    let (cell, source) = match lang {
+        Lang::Zh => (&ZH, include_str!("../../src/i18n/guard.zh.json")),
+        Lang::ZhHant => (&HANT, include_str!("../../src/i18n/guard.zh-Hant.json")),
+        _ => return None,
+    };
+    Some(cell.get_or_init(|| serde_json::from_str(source).expect("guard catalog is valid")))
 }
 
-pub fn rule_name_zh(guard: &str, id: &str) -> Option<&'static str> {
-    Some(&guards().get(guard)?.rules.get(id)?.name)
+pub fn rule_name(lang: Lang, guard: &str, id: &str) -> Option<&'static str> {
+    Some(&guards(lang)?.get(guard)?.rules.get(id)?.name)
 }
 
 fn table() -> &'static Table {
-    static T: OnceLock<Table> = OnceLock::new();
-    T.get_or_init(|| {
-        let mut table: Table = serde_json::from_str(SOURCE).expect("core.zh.json is valid");
+    catalog(Lang::Zh).expect("Chinese catalog is available")
+}
+
+fn catalog(lang: Lang) -> Option<&'static Table> {
+    static ZH: OnceLock<Table> = OnceLock::new();
+    static HANT: OnceLock<Table> = OnceLock::new();
+    static JA: OnceLock<Table> = OnceLock::new();
+    static KO: OnceLock<Table> = OnceLock::new();
+    static ES: OnceLock<Table> = OnceLock::new();
+    let (cell, source) = match lang {
+        Lang::Zh => (&ZH, SOURCE),
+        Lang::ZhHant => (&HANT, include_str!("../../src/i18n/core.zh-Hant.json")),
+        Lang::Ja => (&JA, include_str!("../../src/i18n/core.ja.json")),
+        Lang::Ko => (&KO, include_str!("../../src/i18n/core.ko.json")),
+        Lang::Es => (&ES, include_str!("../../src/i18n/core.es.json")),
+        Lang::En => return None,
+    };
+    Some(cell.get_or_init(|| {
+        let mut table: Table = serde_json::from_str(source).expect("Core message catalog is valid");
+        let Some(guards) = guards(lang) else {
+            return table;
+        };
         for (key, guard) in [("scan_rule", "inspect_tools"), ("content_rule", "content")] {
             table.tables.insert(
                 key.into(),
-                guards()[guard]
+                guards[guard]
                     .rules
                     .iter()
                     .map(|(id, copy)| (id.clone(), copy.name.clone()))
@@ -80,22 +102,14 @@ fn table() -> &'static Table {
         }
         table.tables.insert(
             "rule_why".into(),
-            guards()["inspect_tools"]
+            guards["inspect_tools"]
                 .rules
                 .iter()
                 .filter_map(|(id, copy)| Some((id.clone(), copy.why.clone()?)))
                 .collect(),
         );
         table
-    })
-}
-
-fn japanese() -> &'static Table {
-    static JA: OnceLock<Table> = OnceLock::new();
-    JA.get_or_init(|| {
-        serde_json::from_str(include_str!("../../src/i18n/core.ja.json"))
-            .expect("core.ja.json is valid")
-    })
+    }))
 }
 
 /// 一条 core 消息在当前语言下怎么说
@@ -104,8 +118,8 @@ pub fn text(m: &Msg) -> String {
 }
 
 /// 词表里的一项（`guard`、`content_rule`…），中文。表或项不在是 `None`
-pub fn table_zh(table: &str, key: &str) -> Option<String> {
-    self::table().tables.get(table)?.get(key).cloned()
+pub fn table_word(lang: Lang, table: &str, key: &str) -> Option<String> {
+    catalog(lang)?.tables.get(table)?.get(key).cloned()
 }
 
 /// 同 [`text`]，去掉句末的句号：后面还要接自己的一句时用
@@ -127,11 +141,7 @@ fn zh(m: &Msg) -> Option<String> {
 }
 
 fn localized(m: &Msg, lang: Lang) -> Option<String> {
-    let t = match lang {
-        Lang::Zh => table(),
-        Lang::Ja => japanese(),
-        Lang::En => return None,
-    };
+    let t = catalog(lang)?;
     if m.code.starts_with("//") {
         return None;
     }
@@ -157,11 +167,7 @@ fn localized(m: &Msg, lang: Lang) -> Option<String> {
             else {
                 continue;
             };
-            let copy = if lang == Lang::Zh {
-                &c.zh
-            } else {
-                c.ja.as_ref()?
-            };
+            let copy = c.copy.get(lang.as_str())?;
             leads.push_str(&render(copy, &local_args, &t.tables)?);
             leads.push('：');
             rest = after;
@@ -392,7 +398,7 @@ mod tests {
             ("inspect_tools", view.inspect_tools),
             ("content", view.content),
         ] {
-            let copy = &guards()[guard];
+            let copy = &guards(Lang::Zh).unwrap()[guard];
             for rule in &detail.rules {
                 let r = copy
                     .rules
@@ -428,7 +434,7 @@ mod tests {
         }
         for rule in &tw_guard::tools::rules::builtin().injection {
             assert!(
-                rule_name_zh("inspect_tools", &rule.id).is_some(),
+                rule_name(Lang::Zh, "inspect_tools", &rule.id).is_some(),
                 "{}",
                 rule.id
             );
@@ -438,13 +444,16 @@ mod tests {
     /// 表里每一句、每一层场合都写得对：写坏了的那句会悄悄退回英文
     #[test]
     fn every_template_in_the_table_parses() {
-        let t = table();
-        for (code, s) in &t.messages {
-            compile(s).unwrap_or_else(|e| panic!("{code}: {e}"));
+        for lang in [Lang::Zh, Lang::ZhHant, Lang::Ja, Lang::Ko, Lang::Es] {
+            for (code, s) in &catalog(lang).unwrap().messages {
+                compile(s).unwrap_or_else(|e| panic!("{lang:?} {code}: {e}"));
+            }
         }
-        for c in &t.contexts {
+        for c in &table().contexts {
             compile(&c.en).unwrap();
-            compile(&c.zh).unwrap();
+            for copy in c.copy.values() {
+                compile(copy).unwrap();
+            }
         }
     }
 

@@ -7,7 +7,8 @@
 
 const q = new URLSearchParams(location.search);
 const wanted = q.get("lang");
-export const lang = wanted === "en" || wanted === "ja" ? wanted : "zh";
+export const lang = wanted === "en" || wanted === "ja" || wanted === "zh-Hant" || wanted === "ko" || wanted === "es"
+  ? wanted : "zh";
 
 window.__TW_LANG__ = lang;
 window.__TW_PLATFORM__ = "macos";

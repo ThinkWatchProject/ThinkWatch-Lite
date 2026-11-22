@@ -149,19 +149,28 @@ fn why_not(e: &std::io::Error) -> String {
         std::io::ErrorKind::NotFound => tr!(
             "文件不存在",
             "the file does not exist",
-            "ファイルが存在しません"
+            "ファイルが存在しません";
+            "檔案不存在",
+            "the file does not exist",
+            "el archivo no existe",
         )
         .into(),
         std::io::ErrorKind::PermissionDenied => tr!(
             "没有执行权限",
             "it is not allowed to run",
-            "実行権限がありません"
+            "実行権限がありません";
+            "沒有執行許可權",
+            "it is not allowed to run",
+            "no está permitido correr",
         )
         .into(),
         _ if e.raw_os_error() == Some(libc::ENOEXEC) => tr!(
             "不是这台电脑能运行的程序",
             "it is not a program this computer can run",
-            "この端末で実行できないプログラムです"
+            "この端末で実行できないプログラムです";
+            "不是這臺電腦能執行的程式",
+            "it is not a program this computer can run",
+            "no es un programa que este equipo puede ejecutar",
         )
         .into(),
         _ => {
@@ -790,7 +799,10 @@ impl Supervisor {
                 self.set(CoreState::Failed {
                     reason: tr!(
                         format!("无法运行 {path}：{why}"),
-                        format!("{path} could not be run: {why}")
+                        format!("{path} could not be run: {why}");
+                        format!("無法執行 {path}：{why}"),
+                        format!("{path} could not be run: {why}"),
+                        format!("{path} no pudo ejecutarse: {why}"),
                     ),
                 });
                 return Err(e.into());

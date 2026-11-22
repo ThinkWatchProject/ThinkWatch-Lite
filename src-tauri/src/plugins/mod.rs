@@ -158,7 +158,8 @@ pub async fn plugin_approve_confirmed(
     let (Some(current), Some(sha)) = (source.current, source.current_sha256) else {
         return Err(CmdError::plain(tr!(
             "插件文件已不存在或无法读取。",
-            "The plugin file no longer exists or cannot be read."
+            "The plugin file no longer exists or cannot be read.";
+            "外掛檔案已不存在或無法讀取。",
         )));
     };
     let read = inspect(c, &current).await?;
@@ -254,7 +255,8 @@ async fn inspect(c: &ControlClient, source: &str) -> Out<Read> {
     if source.len() > MAX_SOURCE {
         return Err(CmdError::plain(tr!(
             "插件文件超过 1 MB 的上限。",
-            "The plugin file is over the 1 MB limit."
+            "The plugin file is over the 1 MB limit.";
+            "外掛檔案超過 1 MB 的上限。",
         )));
     }
     let i: PluginInspection = c
@@ -273,7 +275,8 @@ async fn inspect(c: &ControlClient, source: &str) -> Out<Read> {
     let manifest = i.manifest.ok_or_else(|| {
         CmdError::plain(tr!(
             "代码里没有可用的插件清单。",
-            "The code has no usable plugin manifest."
+            "The code has no usable plugin manifest.";
+            "程式碼裡沒有可用的外掛清單。",
         ))
     })?;
     Ok(Read {
@@ -318,7 +321,8 @@ async fn installed(c: &ControlClient, id: &str) -> Out<PluginView> {
     all.into_iter().find(|p| p.id == id).ok_or_else(|| {
         CmdError::plain(tr!(
             format!("插件「{id}」不存在，可能已被删除。"),
-            format!("Plugin “{id}” does not exist; it may have been deleted.")
+            format!("Plugin “{id}” does not exist; it may have been deleted.");
+            format!("外掛「{id}」不存在，可能已被刪除。"),
         ))
     })
 }
@@ -339,7 +343,8 @@ async fn confirmed(app: &tauri::AppHandle, ask: words::Ask) -> Out<bool> {
     confirm::ask(app, ask).await.map_err(|confirm::Busy| {
         CmdError::plain(tr!(
             "另一个确认窗口尚未关闭。",
-            "Another confirmation dialog is still open."
+            "Another confirmation dialog is still open.";
+            "另一個確認視窗尚未關閉。",
         ))
     })
 }
@@ -347,7 +352,8 @@ async fn confirmed(app: &tauri::AppHandle, ask: words::Ask) -> Out<bool> {
 fn changed_meanwhile() -> CmdError {
     CmdError::plain(tr!(
         "插件文件在确认过程中再次被改动，请重新打开审核窗口。",
-        "The plugin file changed again during the review. Open the review again."
+        "The plugin file changed again during the review. Open the review again.";
+        "外掛檔案在確認過程中再次被改動，請重新開啟稽核視窗。",
     ))
 }
 

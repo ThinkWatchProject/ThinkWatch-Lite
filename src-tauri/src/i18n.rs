@@ -1,4 +1,4 @@
-//! 界面语言：简体中文、英文和日文。
+//! 选择 Lite 的界面语言，并注入各窗口。
 //!
 //! **语言由这里决定，界面只是照着用。**设置里选过的优先，没选过就看系统
 //! 的首选语言列表，找不到支持的语言时用英文。托盘菜单和系统通知
@@ -17,28 +17,28 @@ use std::sync::atomic::{AtomicU8, Ordering};
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[repr(u8)]
 pub enum Lang {
     #[default]
     Zh,
     En,
     Ja,
+    #[serde(rename = "zh-Hant")]
+    ZhHant,
+    Ko,
+    Es,
 }
 
 impl Lang {
-    fn code(self) -> u8 {
-        match self {
-            Lang::Zh => 0,
-            Lang::En => 1,
-            Lang::Ja => 2,
-        }
-    }
-
     /// 网页和设置文件里用的写法
     pub fn as_str(self) -> &'static str {
         match self {
             Lang::Zh => "zh",
             Lang::En => "en",
             Lang::Ja => "ja",
+            Lang::ZhHant => "zh-Hant",
+            Lang::Ko => "ko",
+            Lang::Es => "es",
         }
     }
 }
@@ -61,6 +61,9 @@ pub fn current() -> Lang {
     match CURRENT.load(Ordering::Relaxed) {
         1 => Lang::En,
         2 => Lang::Ja,
+        3 => Lang::ZhHant,
+        4 => Lang::Ko,
+        5 => Lang::Es,
         _ => Lang::Zh,
     }
 }
@@ -75,7 +78,7 @@ pub fn with_lang<R>(lang: Lang, f: impl FnOnce() -> R) -> R {
 }
 
 pub fn set(lang: Lang) {
-    CURRENT.store(lang.code(), Ordering::Relaxed);
+    CURRENT.store(lang as u8, Ordering::Relaxed);
 }
 
 /// 设置里的选择落到实际用哪种语言。
@@ -85,14 +88,16 @@ pub fn effective(setting: Option<Lang>) -> Lang {
 
 /// 按一个语言标签（`zh-Hans-CN`、`en-US`、`zh_TW.UTF-8`）挑语言。
 ///
-/// **繁体也归中文。**界面只有简体一种中文，而读繁体的人读简体，比读英文
-/// 近得多。
 fn from_tag(tag: &str) -> Option<Lang> {
     let tag = tag.trim().to_ascii_lowercase();
-    match tag.split(['-', '_', '.', '@']).next()? {
+    let mut parts = tag.split(['-', '_', '.', '@']);
+    match parts.next()? {
+        "zh" if matches!(parts.next(), Some("hant" | "tw" | "hk" | "mo")) => Some(Lang::ZhHant),
         "zh" => Some(Lang::Zh),
         "en" => Some(Lang::En),
         "ja" => Some(Lang::Ja),
+        "ko" => Some(Lang::Ko),
+        "es" => Some(Lang::Es),
         _ => None,
     }
 }
@@ -205,15 +210,29 @@ fn script_for(lang: Lang) -> String {
 macro_rules! tr {
     ($zh:expr, $en:expr $(,)?) => {
         match $crate::i18n::current() {
-            $crate::i18n::Lang::Zh => $zh,
-            $crate::i18n::Lang::En | $crate::i18n::Lang::Ja => $en,
+            $crate::i18n::Lang::Zh | $crate::i18n::Lang::ZhHant => $zh,
+            _ => $en,
         }
     };
     ($zh:expr, $en:expr, $ja:expr $(,)?) => {
         match $crate::i18n::current() {
-            $crate::i18n::Lang::Zh => $zh,
-            $crate::i18n::Lang::En => $en,
+            $crate::i18n::Lang::Zh | $crate::i18n::Lang::ZhHant => $zh,
             $crate::i18n::Lang::Ja => $ja,
+            _ => $en,
+        }
+    };
+    ($zh:expr, $en:expr $(, $ja:expr)?; $hant:expr, $ko:expr, $es:expr $(,)?) => {
+        match $crate::i18n::current() {
+            $crate::i18n::Lang::ZhHant => $hant,
+            $crate::i18n::Lang::Ko => $ko,
+            $crate::i18n::Lang::Es => $es,
+            _ => $crate::tr!($zh, $en $(, $ja)?),
+        }
+    };
+    ($zh:expr, $en:expr $(, $ja:expr)?; $hant:expr $(,)?) => {
+        match $crate::i18n::current() {
+            $crate::i18n::Lang::ZhHant => $hant,
+            _ => $crate::tr!($zh, $en $(, $ja)?),
         }
     };
 }
@@ -224,19 +243,18 @@ mod tests {
 
     #[test]
     fn language_tags_and_preference_order() {
-        for tag in [
-            "zh",
-            "zh-Hans",
-            "zh-Hans-CN",
-            "zh-Hant-TW",
-            "zh_CN.UTF-8",
-            "ZH-hk",
-        ] {
+        for tag in ["zh", "zh-Hans", "zh-Hans-CN", "zh_CN.UTF-8", "zh-Hans-TW"] {
             assert_eq!(from_tag(tag), Some(Lang::Zh), "{tag}");
         }
         for tag in ["ja", "ja-JP", " JA_jp.UTF-8 "] {
             assert_eq!(from_tag(tag), Some(Lang::Ja), "{tag}");
         }
+        for tag in ["zh-Hant", "zh-Hant-TW", "zh_TW.UTF-8", "ZH-hk", "zh-MO"] {
+            assert_eq!(from_tag(tag), Some(Lang::ZhHant), "{tag}");
+        }
+        assert_eq!(from_tag("ko_KR.UTF-8"), Some(Lang::Ko));
+        assert_eq!(from_tag("es-419"), Some(Lang::Es));
+        assert_eq!(from_tag("es-MX"), Some(Lang::Es));
         assert_eq!(preferred_language(["fr-FR", "ja-JP", "en-US"]), Lang::Ja);
         assert_eq!(preferred_language(["en-US", "ja-JP"]), Lang::En);
         assert_eq!(preferred_language(["fr-FR", "zhuang", ""]), Lang::En);
@@ -254,7 +272,19 @@ mod tests {
     /// 每次都要跟着改，改的时候没人会重新想一遍它到底在保证什么。
     #[test]
     fn the_injected_line_names_the_language_and_the_platform() {
-        for (lang, tag) in [(Lang::En, "en"), (Lang::Zh, "zh"), (Lang::Ja, "ja")] {
+        for (lang, tag) in [
+            (Lang::En, "en"),
+            (Lang::Zh, "zh"),
+            (Lang::Ja, "ja"),
+            (Lang::ZhHant, "zh-Hant"),
+            (Lang::Ko, "ko"),
+            (Lang::Es, "es"),
+        ] {
+            assert_eq!(serde_json::to_value(lang).unwrap(), tag);
+            assert_eq!(
+                serde_json::from_value::<Lang>(serde_json::json!(tag)).unwrap(),
+                lang
+            );
             let line = script_for(lang);
             assert!(
                 line.contains(&format!("window.__TW_LANG__ = \"{tag}\"")),
@@ -299,7 +329,7 @@ mod tests {
         );
         assert_eq!(
             pick(&[("LC_ALL", "zh_TW.UTF-8"), ("LC_MESSAGES", "en_US.UTF-8")]),
-            Lang::Zh
+            Lang::ZhHant
         );
         // 空值等于没设
         assert_eq!(pick(&[("LC_ALL", ""), ("LANG", "zh_CN.UTF-8")]), Lang::Zh);
