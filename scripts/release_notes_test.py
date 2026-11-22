@@ -164,6 +164,27 @@ class Manifest(unittest.TestCase):
         self.assertEqual(manifest.PLATFORMS["windows-x86_64-portable"], "-windows-x64-portable.zip")
         self.assertEqual(manifest.PLATFORMS["windows-aarch64-portable"], "-windows-arm64-portable.zip")
 
+    def test_update_notes_keep_the_legacy_field_and_add_english(self):
+        d = notes_dir(self, {
+            "tag.txt": " \n- 修复路由\n",
+            "2026.9.16.md": "\n- Fixed routing\n",
+        })
+        self.assertEqual(
+            manifest.update_notes("2026.9.16", d / "tag.txt", d),
+            {"notes": "- 修复路由", "notes_en": "- Fixed routing"},
+        )
+
+    def test_publishing_requires_both_summaries_for_the_same_release(self):
+        d = notes_dir(self, {
+            "tag.txt": "修复路由",
+            "empty-tag.txt": "\n ",
+            "2026.9.15.md": "Previous release",
+        })
+        with self.assertRaisesRegex(rn.NotesError, r"release-notes/2026\.9\.16\.md"):
+            manifest.update_notes("2026.9.16", d / "tag.txt", d)
+        with self.assertRaisesRegex(rn.NotesError, "缺少中文发布说明"):
+            manifest.update_notes("2026.9.15", d / "empty-tag.txt", d)
+
 
 class Summary(unittest.TestCase):
     def test_absent_is_none(self):

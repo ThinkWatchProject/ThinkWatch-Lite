@@ -891,7 +891,8 @@ impl Notices {
                     level,
                     title: tr!(
                         format!("{} 条安全规则命中", batch.len()),
-                        format!("{} Security Rules Matched", batch.len())
+                        format!("{} Security Rules Matched", batch.len());
+                        format!("{} 條安全規則命中", batch.len()),
                     ),
                     body: merged_body(batch.iter().map(|(_, line)| line.as_str()).collect()),
                     count: 1,
@@ -944,7 +945,8 @@ impl Notices {
                                 level: Level::Info,
                                 title: tr!(
                                     format!("{}（时断时续）", o.notice.title),
-                                    format!("{} (Intermittent)", o.notice.title)
+                                    format!("{} (Intermittent)", o.notice.title);
+                                    format!("{}（時斷時續）", o.notice.title),
                                 ),
                                 at_ms,
                                 ..o.notice.clone()
@@ -976,7 +978,8 @@ impl Notices {
                     level: Level::Info,
                     title: tr!(
                         format!("{}已恢复", was.notice.title),
-                        format!("Resolved: {}", was.notice.title)
+                        format!("Resolved: {}", was.notice.title);
+                        format!("{}已恢復", was.notice.title),
                     ),
                     body: String::new(),
                     view: was.notice.view.clone(),
@@ -1041,7 +1044,15 @@ fn merged_body(lines: Vec<&str>) -> String {
                 "{}{more}. All were recorded in the security log.",
                 shown.join("; ")
             )
-        }
+        };
+        {
+            let more = if rest > 0 {
+                format!("等 {n} 條")
+            } else {
+                String::new()
+            };
+            format!("{}{more}。均已記入安全日誌。", shown.join("；"))
+        },
     )
 }
 
@@ -1056,7 +1067,8 @@ fn with_held(body: String, held: usize) -> String {
             format!("{body} (1 more notice pending)")
         } else {
             format!("{body} ({held} more notices pending)")
-        }
+        };
+        format!("{body}（另有 {held} 項待處理）"),
     )
 }
 

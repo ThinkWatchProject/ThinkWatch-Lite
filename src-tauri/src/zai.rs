@@ -100,7 +100,8 @@ fn pending_url(id: &str) -> Result<String, String> {
         .ok_or_else(|| {
             tr!(
                 "这次登录已经结束，请重新发起",
-                "This sign-in has ended; start a new one"
+                "This sign-in has ended; start a new one";
+                "這次登入已經結束，請重新發起",
             )
             .to_string()
         })

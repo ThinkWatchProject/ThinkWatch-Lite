@@ -196,7 +196,7 @@ export default function SecurityPage({
 
   /** 启用、停用一条规则。可撤销：先拨过去，写完给「撤销」 */
   function toggle(guard: Guard, r: SecurityRuleView, enabled: boolean) {
-    const name = viewName(r);
+    const name = viewName(guard, r);
     void undoable({
       message: enabled ? t.ruleOn(name) : t.ruleOff(name),
       apply: () =>
@@ -223,7 +223,7 @@ export default function SecurityPage({
         ),
       );
     void undoable({
-      message: t.actionSet(viewName(r), lt.ruleActions[action] ?? action),
+      message: t.actionSet(viewName(guard, r), lt.ruleActions[action] ?? action),
       apply: () =>
         detail.mutate((d) => ({
           ...d!,
@@ -264,7 +264,7 @@ export default function SecurityPage({
         guard,
         editing: null,
         seed: {
-          name: viewName(r),
+          name: viewName(guard, r),
           pattern: written?.pattern ?? "",
           match: written?.match,
           cased: written?.cased,

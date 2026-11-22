@@ -16,4 +16,22 @@ export const partsText = messages(
     authRejected: "Credential rejected",
     keyDisabled: "Disabled",
   },
+  {
+    "zh-Hant": {
+      circuitOpen: "熔斷中",
+      needsLogin: "需要重新登入",
+      authRejected: "憑據被拒",
+    },
+    ko: {
+      disabled: "비활성화됨",
+      keyDisabled: "비활성화됨",
+    },
+    es: {
+      disabled: "Desactivado",
+      circuitOpen: "Circuito abierto",
+      needsLogin: "Inicie sesión de nuevo",
+      authRejected: "Credenciales rechazadas",
+      keyDisabled: "Desactivado",
+    },
+  },
 );

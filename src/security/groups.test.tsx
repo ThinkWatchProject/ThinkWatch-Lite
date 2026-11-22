@@ -33,18 +33,18 @@ const rule = (x: Partial<SecurityRuleView>): SecurityRuleView => ({
 });
 
 const RULES = [
-  rule({ id: "anthropic-api-key", name: "Anthropic API key", name_zh: "Anthropic API 密钥", kind: "ai-services" }),
-  rule({ id: "openai-api-key", name: "OpenAI API key", name_zh: "OpenAI API 密钥", kind: "ai-services", enabled: false }),
-  rule({ id: "github-token", name: "GitHub token", name_zh: "GitHub 令牌", kind: "dev-platforms" }),
-  rule({ id: "passport", name: "Passport number", name_zh: "护照号码", kind: "id-documents" }),
+  rule({ id: "anthropic-api-key", name: "Anthropic API key", kind: "ai-services" }),
+  rule({ id: "openai-api-key", name: "OpenAI API key", kind: "ai-services", enabled: false }),
+  rule({ id: "github-personal-token", name: "GitHub personal access token", kind: "dev-platforms" }),
+  rule({ id: "cn-passport", name: "Chinese passport number", kind: "id-documents" }),
   rule({ id: "客户编号", name: "客户编号", custom: true, kind: "custom" }),
 ];
 
-const KINDS: SecurityKindView[] = [
-  { slug: "ai-services", name: "AI services", name_zh: "AI 服务" },
-  { slug: "dev-platforms", name: "Developer platforms", name_zh: "开发平台" },
-  { slug: "id-documents", name: "ID documents", name_zh: "证件" },
-  { slug: "custom", name: "Custom", name_zh: "自定义" },
+const KINDS: Pick<SecurityKindView, "slug" | "name">[] = [
+  { slug: "ai-services", name: "AI services" },
+  { slug: "dev-platforms", name: "Developer platforms" },
+  { slug: "id-documents", name: "ID documents" },
+  { slug: "custom", name: "Custom" },
 ];
 
 const hit = (rule: string, count: number, custom = false): SecurityRuleHits => ({ rule, custom, count });
@@ -104,21 +104,21 @@ describe("命中次数", () => {
   });
 
   it("组头写条数、启用条数和命中次数；没有命中的不写次数", () => {
-    const html = table("", countHits([hit("github-token", 2)]));
+    const html = table("", countHits([hit("github-personal-token", 2)]));
     expect(heads(html)).toEqual([
-      "开发平台 · 1 条 · 已开 1 条 · 最近 7 天命中 2 次",
+      "代码托管与软件发布 · 1 条 · 已开 1 条 · 最近 7 天命中 2 次",
       "AI 服务 · 2 条 · 已开 1 条",
-      "证件 · 1 条 · 已开 1 条",
+      "证件号码 · 1 条 · 已开 1 条",
       "自定义 · 1 条 · 已开 1 条",
     ]);
   });
 
   it("英文界面同一句", () => {
     setLang("en");
-    expect(heads(table("", countHits([hit("passport", 3)])))[0]).toBe(
+    expect(heads(table("", countHits([hit("cn-passport", 3)])))[0]).toBe(
       "ID documents · 1 rule · 1 on · 3 matches in the last 7 days",
     );
-    expect(heads(table("", countHits([hit("passport", 1)])))[0]).toBe(
+    expect(heads(table("", countHits([hit("cn-passport", 1)])))[0]).toBe(
       "ID documents · 1 rule · 1 on · 1 match in the last 7 days",
     );
   });
@@ -141,14 +141,14 @@ describe("组的先后", () => {
   });
 
   it("次数尚未读到：照 core 的顺序", () => {
-    expect(heads(table()).map((h) => h.split(" · ")[0])).toEqual(["AI 服务", "开发平台", "证件", "自定义"]);
+    expect(heads(table()).map((h) => h.split(" · ")[0])).toEqual(["AI 服务", "代码托管与软件发布", "证件号码", "自定义"]);
   });
 
   it("检索时照样有命中的排在前面", () => {
-    // 「p」筛出 AI 服务的两条（api）和证件（passport）
-    const hits = countHits([hit("passport", 1)]);
-    expect(heads(table("p", hits)).map((h) => h.split(" · ")[0])).toEqual(["证件", "AI 服务"]);
-    expect(heads(table("", hits)).map((h) => h.split(" · ")[0])).toEqual(["证件", "AI 服务", "开发平台", "自定义"]);
+    // 「p」匹配 API、passport 和 personal token。命中的证件组仍然排在最前。
+    const hits = countHits([hit("cn-passport", 1)]);
+    expect(heads(table("p", hits)).map((h) => h.split(" · ")[0])).toEqual(["证件号码", "AI 服务", "代码托管与软件发布"]);
+    expect(heads(table("", hits)).map((h) => h.split(" · ")[0])).toEqual(["证件号码", "AI 服务", "代码托管与软件发布", "自定义"]);
   });
 });
 
@@ -170,7 +170,7 @@ describe("展开与收起", () => {
     const html = table();
     expect(ruleRows(html)).toBe(2);
     expect(html).toContain("Anthropic API 密钥");
-    expect(html).not.toContain("GitHub 令牌");
+    expect(html).not.toContain("GitHub 个人令牌");
   });
 
   it("存的东西坏了、或者读不到：照默认收起", () => {
@@ -188,10 +188,10 @@ describe("展开与收起", () => {
   it("检索时匹配的组自动展开，筛掉的行不画", () => {
     fakeStorage();
     const html = table("令牌");
-    expect(heads(html)).toEqual(["开发平台 · 1 条 · 已开 1 条"]);
+    expect(heads(html)).toEqual(["代码托管与软件发布 · 1 条 · 已开 1 条"]);
     expect(html).toContain('aria-expanded="true"');
     expect(ruleRows(html)).toBe(1);
-    expect(html).toContain("GitHub 令牌");
+    expect(html).toContain("GitHub 个人令牌");
   });
 
   it("检索时收起的组只在这一次检索里算；不检索时按记下的", () => {

@@ -82,21 +82,30 @@ impl std::fmt::Display for ConnectError {
             ConnectError::Unreachable { addr } => {
                 tr!(
                     format!("无法连接到 {addr}"),
-                    format!("Cannot connect to {addr}")
+                    format!("Cannot connect to {addr}");
+                    format!("無法連線到 {addr}"),
                 )
             }
             ConnectError::Closed { addr } => tr!(
                 format!("{addr} 关闭了连接"),
-                format!("{addr} closed the connection")
+                format!("{addr} closed the connection");
+                format!("{addr} 關閉了連線"),
             ),
-            ConnectError::WrongKey => tr!("密钥不正确", "The key is not correct").into(),
+            ConnectError::WrongKey => tr!(
+                "密钥不正确",
+                "The key is not correct";
+                "金鑰不正確",
+            )
+            .into(),
             ConnectError::VersionMismatch { ours, theirs } => tr!(
                 format!("版本不一致：服务器 core {theirs}，本应用需要 {ours}"),
-                format!("Version mismatch: the server runs core {theirs}; this app needs {ours}")
+                format!("Version mismatch: the server runs core {theirs}; this app needs {ours}");
+                format!("版本不一致：伺服器 core {theirs}，本應用需要 {ours}"),
             ),
             ConnectError::Timeout { addr } => tr!(
                 format!("连接 {addr} 超时"),
-                format!("Connecting to {addr} timed out")
+                format!("Connecting to {addr} timed out");
+                format!("連線 {addr} 超時"),
             ),
         };
         f.write_str(&s)
@@ -232,7 +241,8 @@ fn link_error(e: tw_link::LinkError, addr: &str) -> ConnectError {
             let with_proto = |v: &str, p: u32| -> String {
                 tr!(
                     format!("{v}（控制面协议 {p}）"),
-                    format!("{v} (control protocol {p})")
+                    format!("{v} (control protocol {p})");
+                    format!("{v}（控制面協議 {p}）"),
                 )
             };
             if peer_version == REQUIRED_CORE {

@@ -81,4 +81,63 @@ export const rotateDialogText = messages(
     rotateAndSync: "Rotate and sync",
     rotate: "Rotate",
   },
+  {
+    "zh-Hant": {
+      doneTitle: "金鑰已更換",
+      synced: (key: ReactNode, clients: string[]) => (<>
+        {key}
+        {` 的新金鑰已寫入 ${clients.join("、")} 的配置檔案。`}
+       </>),
+      shown: (key: ReactNode) => (<>
+        {key}
+        {" 的新金鑰如下。"}
+       </>),
+      newKey: "新金鑰",
+      restart: (client: string) => `請重新啟動 ${client}`,
+      stillOld: "正在執行的視窗仍在使用原金鑰，重啟後恢復。",
+      writeFailed: (client: string) => `未能寫入 ${client} 的配置`,
+      enterManually: (error: string, client: string) => `${error}。金鑰已更換，請在 ${client} 中手動填寫新金鑰。`,
+      updateElsewhere: "使用原金鑰的地方需要改成新金鑰，否則將無法連線。",
+      title: (name: string) => `更換金鑰「${name}」`,
+      description: (owner: string | null) => owner
+        ? `原金鑰立即失效。新金鑰會同時寫入 ${owner} 的配置檔案。`
+        : "原金鑰立即失效。使用原金鑰的地方需要改成新金鑰。",
+      needsRestart: (client: string) => `${client} 需要重新啟動`,
+      readsAtStart: (client: string) => `${client} 在啟動時讀取配置，更換後正在執行的視窗會無法連線，需要重新啟動它。`,
+      isDefault: "這是預設金鑰",
+      defaultClients: "手動配置了這把金鑰的用戶端都會無法連線，需要逐個改成新金鑰。",
+      rotateAndSync: "更換並同步",
+      rotate: "更換",
+    },
+    es: {
+      doneTitle: "Tecla rotada",
+      synced: (key: ReactNode, clients: string[]) => (<>
+        {"La nueva clave para "}
+        {key}
+        {` ha sido escrito en la configuración ${andList(clients)} ${clients.length === 1 ? "archivo" : "archivos"}.`}
+       </>),
+      shown: (key: ReactNode) => (<>
+        {"La nueva clave para "}
+        {key}
+        {" se muestra a continuación."}
+       </>),
+      newKey: "Nueva tecla",
+      restart: (client: string) => `Reiniciar ${client}`,
+      stillOld: "Windows que ya se están ejecutando todavía utilizan la vieja clave. Reiniciar restaura la conexión.",
+      writeFailed: (client: string) => `No se pudo escribir a la configuración ${client}`,
+      enterManually: (error: string, client: string) => `${error}. La clave ha sido rotada, por lo que la nueva clave tiene que ser introducida manualmente ${client}.`,
+      updateElsewhere: "Cualquier cosa que use la vieja llave debe ser cambiada a la nueva llave, o no se conectará.",
+      done: "Hecho",
+      title: (name: string) => `Girar la tecla “${name}”`,
+      description: (owner: string | null) => owner
+        ? `La clave actual deja de funcionar inmediatamente. La nueva clave también se escribe en el archivo de configuraciónuración ${owner}.`
+        : "La llave actual deja de funcionar inmediatamente. Cualquier cosa que la use debe ser cambiada a la nueva llave.",
+      needsRestart: (client: string) => `${client} necesita reiniciar`,
+      readsAtStart: (client: string) => `${client} lee su configuración al iniciar. Una vez rotada la tecla, las ventanas que ya se están ejecutando no pueden conectarse hasta que ${client} se reinicie.`,
+      isDefault: "Esta es la clave predeterminada",
+      defaultClients: "Los clientes configurados manualmente con esta clave no se conectarán, y cada uno debe ser cambiado a la nueva clave.",
+      rotateAndSync: "Rotar y sincronizar",
+      rotate: "Rotar",
+    },
+  },
 );

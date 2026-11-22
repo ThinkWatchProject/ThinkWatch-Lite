@@ -30,4 +30,32 @@ export const reloginText = messages(
     cancelSignIn: "Cancel sign-in",
     finish: "Done",
   },
+  {
+    "zh-Hant": {
+      chatgptTitle: "重新登入 ChatGPT 帳號",
+      chatgptDesc: (name: ReactNode) => <>為上游 {name} 換一次登入憑據。模型範圍、計費方式等設定保持不變。</>,
+      zaiTitle: (site: string) => `登入 ${site} 帳號`,
+      zaiDesc: (name: ReactNode) => <>登入帳號，為上游 {name} 換一把新金鑰。模型範圍、計費方式等設定保持不變。</>,
+      name: "名稱",
+      cancelSignIn: "取消登入",
+    },
+    ko: {
+      name: "이름",
+    },
+    es: {
+      chatgptTitle: "Inicie sesión en ChatGPT de nuevo",
+      chatgptDesc: (name: ReactNode) => (<>
+        Reemplaza la credencial de inicio de sesión para el curso previo {name}. Model scope, billing and other settings stay
+        unchanged.
+       </>),
+      zaiTitle: (site: string) => `Inicia sesión en ${site}`,
+      zaiDesc: (name: ReactNode) => (<>
+        Inicia sesión en la cuenta y reemplaza la clave del cursor {name}. Model scope, billing and other
+        settings stay unchanged.
+       </>),
+      name: "Nombre",
+      cancelSignIn: "Cancelar el inicio de sesión",
+      finish: "Hecho",
+    },
+  },
 );

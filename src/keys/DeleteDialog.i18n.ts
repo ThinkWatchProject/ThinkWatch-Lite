@@ -15,4 +15,18 @@ export const deleteDialogText = messages(
     keepIt:
       "This key was generated when the client was connected. Keeping it lets the next connection reuse it, with nothing to reconfigure.",
   },
+  {
+    "zh-Hant": {
+      title: (name: string) => `刪除金鑰「${name}」`,
+      description: "刪除後，使用這把金鑰的用戶端將立即無法連線。可從備份中恢復。",
+      regenerated: (client: string) => `${client} 再次接管時會重新生成一把`,
+      keepIt: "這把金鑰是接管時生成的。保留它，下次接管可以直接複用，不必重新配置。",
+    },
+    es: {
+      title: (name: string) => `Suprímase la clave “${name}”`,
+      description: "Los clientes que utilizan esta llave pierden acceso inmediatamente. La llave se puede restaurar desde las copias de seguridad.",
+      regenerated: (client: string) => `${client} obtiene una nueva clave cuando se conecta de nuevo`,
+      keepIt: "Esta clave fue generada cuando el cliente estaba conectado. Mantenerla permite que la siguiente conexión la reutilice, sin nada que reconfigurar.",
+    },
+  },
 );

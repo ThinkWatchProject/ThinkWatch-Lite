@@ -72,7 +72,8 @@ pub async fn save_export(
     let picked = rx.await.map_err(|_| {
         tr!(
             "无法打开存储对话框。",
-            "The save dialog could not be opened."
+            "The save dialog could not be opened.";
+            "無法開啟儲存對話方塊。",
         )
     })?;
     let Some(picked) = picked else {
@@ -81,13 +82,15 @@ pub async fn save_export(
     let path = picked.into_path().map_err(|e| {
         tr!(
             format!("无法使用所选的位置：{e}"),
-            format!("The chosen location cannot be used: {e}")
+            format!("The chosen location cannot be used: {e}");
+            format!("無法使用所選的位置：{e}"),
         )
     })?;
     crate::atomic_file::write(&path, &bytes).map_err(|e| {
         tr!(
             format!("无法写入文件 {}：{e}", path.display()),
-            format!("The file {} could not be written: {e}", path.display())
+            format!("The file {} could not be written: {e}", path.display());
+            format!("無法寫入檔案 {}：{e}", path.display()),
         )
     })?;
     Ok(Some(path.display().to_string()))
@@ -100,25 +103,29 @@ pub fn read_pack(path: &Path) -> Result<PickedFile, String> {
     let meta = std::fs::metadata(path).map_err(|e| {
         tr!(
             format!("无法读取 {shown}：{e}"),
-            format!("{shown} could not be read: {e}")
+            format!("{shown} could not be read: {e}");
+            format!("無法讀取 {shown}：{e}"),
         )
     })?;
     if !meta.is_file() {
         return Err(tr!(
             format!("{shown} 不是文件。"),
-            format!("{shown} is not a file.")
+            format!("{shown} is not a file.");
+            format!("{shown} 不是檔案。"),
         ));
     }
     if meta.len() > MAX_PACK {
         return Err(tr!(
             format!("{shown} 超过 16 MiB，不是配置包。"),
-            format!("{shown} is larger than 16 MiB and is not a config pack.")
+            format!("{shown} is larger than 16 MiB and is not a config pack.");
+            format!("{shown} 超過 16 MiB，不是配置包。"),
         ));
     }
     let bytes = std::fs::read(path).map_err(|e| {
         tr!(
             format!("无法读取 {shown}：{e}"),
-            format!("{shown} could not be read: {e}")
+            format!("{shown} could not be read: {e}");
+            format!("無法讀取 {shown}：{e}"),
         )
     })?;
     let name = path
@@ -158,7 +165,8 @@ pub async fn open_import(
     let picked = rx.await.map_err(|_| {
         tr!(
             "无法打开「打开」对话框。",
-            "The open dialog could not be opened."
+            "The open dialog could not be opened.";
+            "無法開啟「開啟」對話方塊。",
         )
     })?;
     let Some(picked) = picked else {
@@ -167,7 +175,8 @@ pub async fn open_import(
     let path = picked.into_path().map_err(|e| {
         tr!(
             format!("无法使用所选的文件：{e}"),
-            format!("The chosen file cannot be used: {e}")
+            format!("The chosen file cannot be used: {e}");
+            format!("無法使用所選的檔案：{e}"),
         )
     })?;
     tokio::task::spawn_blocking(move || read_pack(&path))

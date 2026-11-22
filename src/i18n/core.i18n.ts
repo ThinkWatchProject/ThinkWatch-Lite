@@ -1,20 +1,17 @@
 import type { Msg } from "@/types";
 import { localizedPluginNames, pluginName } from "@/plugins/defaults";
-import { getLang } from "./index";
+import { getLang, type Lang } from "./index";
 import CORE_ZH from "./core.zh.json";
+import CORE_HANT from "./core.zh-Hant.json";
+import CORE_JA from "./core.ja.json";
+import CORE_KO from "./core.ko.json";
+import CORE_ES from "./core.es.json";
+import { guardTables } from "./guard.i18n";
 import { render, wordsOf, type Args, type Tables } from "./template";
 
 /**
- * core 发来的那些码，中文怎么说。
- *
- * **只有中文一份，没有英文那一份。**core 给的 `text` 已经是英文了 ——
- * 再在这里抄一份英文，core 一改措辞两边就对不上，而那份抄本没有任何
- * 东西在守着它。所以英文界面直接用 `text`，这张表只回答一个问题：
- * 「这句话中文怎么说」。
- *
- * **表在 `core.zh.json`，不在这里。**系统通知的正文是 Rust 写的（`notices::rules`），
- * 也要按码说中文；表写成数据，两边读同一份（Rust 那边 `include_str!`），不会一边
- * 改了一边没改。句子的写法见 `template.ts`：参数、查词表、可有可无的一段。
+ * Core 消息按稳定的码翻译。界面和 Rust 系统通知共用 JSON 词表。
+ * 句子的写法见 `template.ts`：参数、查词表、可有可无的一段。
  *
  * **码不在表里就显示 `text`。**两种情况会走到这条退路，而且都该走：
  * 这句还没进词表，或者这条消息只是把更深一层的原话原样带出来（`{detail}`
@@ -24,8 +21,14 @@ import { render, wordsOf, type Args, type Tables } from "./template";
  * 测速，`gw` 是网关的数据面，`control` 是控制面）。表里以 `//` 开头的键是分节的
  * 标题，不是码。
  */
-export const CORE_TABLES: Tables = CORE_ZH.tables;
-const MESSAGES: Record<string, string> = CORE_ZH.messages;
+export const CORE_TABLES: Tables = { ...CORE_ZH.tables, ...guardTables("zh") };
+const CATALOGS: Partial<Record<Lang, { tables: Tables; messages: Record<string, string> }>> = {
+  zh: { tables: CORE_TABLES, messages: CORE_ZH.messages },
+  "zh-Hant": { tables: { ...CORE_HANT.tables, ...guardTables("zh-Hant") }, messages: CORE_HANT.messages },
+  ja: CORE_JA,
+  ko: CORE_KO,
+  es: CORE_ES,
+};
 
 /**
  * 原因外面套的那一层场合：哪个上游的凭据、哪个代理的密码、Z.ai 登录卡在哪一步。
@@ -37,7 +40,7 @@ const MESSAGES: Record<string, string> = CORE_ZH.messages;
  * 自己也可能带着（`gw.oauth.not_configured` 就带），只看参数会把一句
  * 「上游某某的凭据」凭空加到前面。场合可以套好几层，由外往里一层层剥。
  */
-const CONTEXTS: { arg: string; en: string; zh: string }[] = CORE_ZH.contexts;
+const CONTEXTS: ({ arg: string; en: string } & Partial<Record<Exclude<Lang, "en">, string>>)[] = CORE_ZH.contexts;
 
 /**
  * 一句没有码的话，包成 [`Msg`]。
@@ -58,8 +61,7 @@ export function plain(text: string): Msg {
 export function coreText(m: Msg | string | null | undefined, pluginId?: string | null): string {
   if (m == null) return "";
   if (typeof m === "string") return m;
-  if (getLang() === "en") return m.text;
-  return zhOf(m, pluginId) ?? m.text;
+  return translated(m, getLang(), pluginId) ?? m.text;
 }
 
 /**
@@ -71,29 +73,38 @@ export function coreText(m: Msg | string | null | undefined, pluginId?: string |
  * 插件页上也叫这个名字）。知道是哪个插件的（`pluginId`）按 id 认，不知道的按名字认。
  */
 export function zhOf(m: Msg, pluginId?: string | null): string | undefined {
-  const say = MESSAGES[m.code];
+  return translated(m, "zh", pluginId);
+}
+
+function translated(m: Msg, lang: Lang, pluginId?: string | null): string | undefined {
+  const catalog = CATALOGS[lang];
+  if (!catalog || lang === "en") return undefined;
+  const { messages, tables } = catalog;
+  const say = messages[m.code];
   if (!say || m.code.startsWith("//")) return undefined;
   const args: Args = m.args ?? {};
   // 填进中文句子的参数。认场合比的是英文原句，那边照旧用原样的参数
-  const zhArgs: Args = args.plugin === undefined ? args : { ...args, plugin: pluginName(pluginId, args.plugin, "zh") };
+  const localArgs: Args = args.plugin === undefined ? args : { ...args, plugin: pluginName(pluginId, args.plugin, lang) };
   const leads: string[] = [];
   for (let rest = m.text; ; ) {
-    let hit: { zh: string; en: string } | undefined;
+    let hit: { local: string; en: string } | undefined;
     for (const c of CONTEXTS) {
       if (args[c.arg] === undefined) continue;
       const en = render(c.en, args, CORE_TABLES);
       if (en === undefined || !rest.startsWith(`${en}: `)) continue;
-      const zh = render(c.zh, zhArgs, CORE_TABLES);
-      if (zh === undefined) return undefined;
-      hit = { zh, en };
+      const copy = c[lang];
+      if (copy === undefined) return undefined;
+      const local = render(copy, localArgs, tables);
+      if (local === undefined) return undefined;
+      hit = { local, en };
       break;
     }
     if (!hit) break;
-    leads.push(`${hit.zh}：`);
+    leads.push(`${hit.local}：`);
     rest = rest.slice(hit.en.length + 2);
   }
-  const zh = render(say, zhArgs, CORE_TABLES);
-  return zh === undefined ? undefined : leads.join("") + zh;
+  const local = render(say, localArgs, tables);
+  return local === undefined ? undefined : leads.join("") + local;
 }
 
 /**
@@ -111,12 +122,15 @@ export function zhOf(m: Msg, pluginId?: string | null): string | undefined {
  * 英文界面上看到的就是原句，交空的。`q` 已经去掉首尾空白、转了小写。
  */
 export function codesMatching(q: string): string[] {
-  if (!q || getLang() === "en") return [];
-  const pluginNamed = localizedPluginNames("zh").some((n) => n.toLowerCase().includes(q));
+  const lang = getLang();
+  const catalog = CATALOGS[lang];
+  if (!q || !catalog) return [];
+  const { messages, tables } = catalog;
+  const pluginNamed = localizedPluginNames(lang).some((n) => n.toLowerCase().includes(q));
   const out: string[] = [];
-  for (const [code, say] of Object.entries(MESSAGES)) {
+  for (const [code, say] of Object.entries(messages)) {
     if (code.startsWith("//")) continue;
-    if (wordsOf(say, CORE_TABLES).some((w) => w.toLowerCase().includes(q)) || (pluginNamed && say.includes("{plugin}")))
+    if (wordsOf(say, tables).some((w) => w.toLowerCase().includes(q)) || (pluginNamed && say.includes("{plugin}")))
       out.push(code);
   }
   return out;

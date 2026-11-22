@@ -11,4 +11,12 @@ export const keyLabelText = messages(
     named: (name: string) => ` (${name})`,
     bare: (name: string) => `Key ${name}`,
   },
+  {
+    "zh-Hant": {
+      bare: (name: string) => `金鑰 ${name}`,
+    },
+    es: {
+      bare: (name: string) => `Clave ${name}`,
+    },
+  },
 );

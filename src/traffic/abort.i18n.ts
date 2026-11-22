@@ -20,4 +20,22 @@ export const abortText = messages(
     confirm: "Abort",
     failed: "Not aborted",
   },
+  {
+    "zh-Hant": {
+      abortRequest: "中止請求",
+      abortSession: "中止會話",
+      title: "中止會話",
+      body: (n: number) => `此會話中正在進行的 ${n} 個請求將立即停止，用戶端會收到錯誤。已完成的請求不受影響。`,
+    },
+    es: {
+      abortRequest: "Abortar solicitud",
+      abortSession: "Abortar sesión",
+      title: "Abortar sesión",
+      body: (n: number) => n === 1
+        ? "La solicitud en curso en esta sesión se detiene inmediatamente, y su cliente recibe un error. Las solicitudes terminadas no se ven afectadas."
+        : `Las ${n} solicitudes en curso en esta sesión se detienen inmediatamente, y sus clientes reciben un error. Las solicitudes terminadas no se ven afectadas.`,
+      confirm: "Abortar",
+      failed: "Sin abortar",
+    },
+  },
 );

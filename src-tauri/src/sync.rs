@@ -84,11 +84,13 @@ pub fn wanted(b: &SyncView) -> Said {
                         "1 Sync Conflict".to_string()
                     } else {
                         format!("{n} Sync Conflicts")
-                    }
+                    };
+                    format!("同步有 {n} 項衝突"),
                 ),
                 tr!(
                     "本机与其他设备将同一对象修改为不同内容。处理之前，本机保留当前内容。",
-                    "This device and another one changed the same item in different ways. Until it is resolved, this device keeps its own version."
+                    "This device and another one changed the same item in different ways. Until it is resolved, this device keeps its own version.";
+                    "本機與其他裝置將同一物件修改為不同內容。處理之前，本機保留當前內容。",
                 )
                 .to_string(),
             ),
@@ -102,11 +104,16 @@ pub fn wanted(b: &SyncView) -> Said {
     let said: Option<(&'static str, String, String)> = match b.state {
         SyncState::Unreachable => Some((
             "sync:unreachable",
-            tr!("无法连接同步位置", "Sync Location Unreachable").to_string(),
+            tr!(
+                "无法连接同步位置",
+                "Sync Location Unreachable";
+                "無法連線同步位置",
+            ).to_string(),
             if why.is_empty() {
                 tr!(
                     "恢复后自动继续，本机的修改在恢复后上传。",
-                    "Syncing continues once it is reachable again; changes made on this device are uploaded then."
+                    "Syncing continues once it is reachable again; changes made on this device are uploaded then.";
+                    "恢復後自動繼續，本機的修改在恢復後上傳。",
                 )
                 .to_string()
             } else {
@@ -114,16 +121,22 @@ pub fn wanted(b: &SyncView) -> Said {
                     format!("{why}。恢复后自动继续，本机的修改在恢复后上传。"),
                     format!(
                         "{why}. Syncing continues once it is reachable again; changes made on this device are uploaded then."
-                    )
+                    );
+                    format!("{why}。恢復後自動繼續，本機的修改在恢復後上傳。"),
                 )
             },
         )),
         SyncState::AuthFailed => Some((
             "sync:auth",
-            tr!("同步位置拒绝访问", "Sync Location Denied Access").to_string(),
+            tr!(
+                "同步位置拒绝访问",
+                "Sync Location Denied Access";
+                "同步位置拒絕訪問",
+            ).to_string(),
             tr!(
                 "请在设置中修改同步位置的连接参数。",
-                "Change the sync location's connection details in Settings."
+                "Change the sync location's connection details in Settings.";
+                "請在設定中修改同步位置的連線引數。",
             )
             .to_string(),
         )),
@@ -131,21 +144,28 @@ pub fn wanted(b: &SyncView) -> Said {
             "sync:locked",
             tr!(
                 "同步口令已在其他设备上更改",
-                "Sync Passphrase Changed on Another Device"
+                "Sync Passphrase Changed on Another Device";
+                "同步口令已在其他裝置上更改",
             )
             .to_string(),
             tr!(
                 "在设置中输入新的同步口令后继续同步。",
-                "Enter the new sync passphrase in Settings to continue syncing."
+                "Enter the new sync passphrase in Settings to continue syncing.";
+                "在設定中輸入新的同步口令後繼續同步。",
             )
             .to_string(),
         )),
         SyncState::TooNew => Some((
             "sync:too_new",
-            tr!("同步已暂停", "Sync Paused").to_string(),
+            tr!(
+                "同步已暂停",
+                "Sync Paused";
+                "同步已暫停",
+            ).to_string(),
             tr!(
                 "其他设备使用较新版本，更新 ThinkWatch Lite 后继续同步。",
-                "Another device uses a newer version. Update ThinkWatch Lite to continue syncing."
+                "Another device uses a newer version. Update ThinkWatch Lite to continue syncing.";
+                "其他裝置使用較新版本，更新 ThinkWatch Lite 後繼續同步。",
             )
             .to_string(),
         )),
@@ -153,31 +173,43 @@ pub fn wanted(b: &SyncView) -> Said {
             "sync:keyring",
             tr!(
                 "同步位置上的同步密钥不可用",
-                "Sync Key at the Sync Location Unavailable"
+                "Sync Key at the Sync Location Unavailable";
+                "同步位置上的同步金鑰不可用",
             )
             .to_string(),
             tr!(
                 "同步已暂停。在设置中重新上传本机配置，或停止同步。",
-                "Syncing is paused. Upload this device's configuration again in Settings, or stop syncing."
+                "Syncing is paused. Upload this device's configuration again in Settings, or stop syncing.";
+                "同步已暫停。在設定中重新上傳本機配置，或停止同步。",
             )
             .to_string(),
         )),
         SyncState::Emptied => Some((
             "sync:emptied",
-            tr!("同步位置为空", "Sync Location Empty").to_string(),
+            tr!(
+                "同步位置为空",
+                "Sync Location Empty";
+                "同步位置為空",
+            ).to_string(),
             tr!(
                 "同步已暂停。在设置中重新上传本机配置，或停止同步。",
-                "Syncing is paused. Upload this device's configuration again in Settings, or stop syncing."
+                "Syncing is paused. Upload this device's configuration again in Settings, or stop syncing.";
+                "同步已暫停。在設定中重新上傳本機配置，或停止同步。",
             )
             .to_string(),
         )),
         SyncState::Misconfigured => Some((
             "sync:misconfigured",
-            tr!("同步设置无法使用", "Sync Settings Unusable").to_string(),
+            tr!(
+                "同步设置无法使用",
+                "Sync Settings Unusable";
+                "同步設定無法使用",
+            ).to_string(),
             if why.is_empty() {
                 tr!(
                     "请在设置中修改同步位置的连接参数或出站代理。",
-                    "Change the sync location's connection details or outbound proxy in Settings."
+                    "Change the sync location's connection details or outbound proxy in Settings.";
+                    "請在設定中修改同步位置的連線引數或出站代理。",
                 )
                 .to_string()
             } else {
@@ -185,7 +217,8 @@ pub fn wanted(b: &SyncView) -> Said {
                     format!("{why}。请在设置中修改同步位置的连接参数或出站代理。"),
                     format!(
                         "{why}. Change the sync location's connection details or outbound proxy in Settings."
-                    )
+                    );
+                    format!("{why}。請在設定中修改同步位置的連線引數或出站代理。"),
                 )
             },
         )),
@@ -298,14 +331,16 @@ fn restart_needed(client: &str, name: &str) -> Signal {
         Level::Warning,
         tr!(
             format!("{name} 的网关密钥已更新"),
-            format!("“{name}” Gateway Key Updated")
+            format!("“{name}” Gateway Key Updated");
+            format!("{name} 的閘道器金鑰已更新"),
         ),
     )
     .body(tr!(
         format!("网关密钥经同步或恢复更换，已写入 {name} 的配置。重新启动 {name} 后生效。"),
         format!(
             "The gateway key changed through sync or a restore and has been written to {name}'s configuration. Restart {name} for it to take effect."
-        )
+        );
+        format!("閘道器金鑰經同步或恢復更換，已寫入 {name} 的配置。重新啟動 {name} 後生效。"),
     ))
     .view("clients")
     .event()
@@ -319,14 +354,16 @@ fn rewrite_failed(client: &str, name: &str, why: &Msg) -> Signal {
         Level::Warning,
         tr!(
             format!("未能更新 {name} 的网关密钥"),
-            format!("Gateway Key Not Updated for “{name}”")
+            format!("Gateway Key Not Updated for “{name}”");
+            format!("未能更新 {name} 的閘道器金鑰"),
         ),
     )
     .body(tr!(
         format!("网关密钥经同步或恢复更换，但未能写入 {name} 的配置：{why}。"),
         format!(
             "The gateway key changed through sync or a restore, but it could not be written to {name}'s configuration: {why}."
-        )
+        );
+        format!("閘道器金鑰經同步或恢復更換，但未能寫入 {name} 的配置：{why}。"),
     ))
     .view("clients")
     .event()
@@ -481,7 +518,8 @@ pub async fn pick_sync_folder(
     if state.link.is_remote() {
         return Err(tr!(
             "连接远程 core 时，同步文件夹是服务器上的路径，请手动填写。",
-            "With a remote core, the sync folder is a path on the server; type it in."
+            "With a remote core, the sync folder is a path on the server; type it in.";
+            "連線遠端 core 時，同步資料夾是伺服器上的路徑，請手動填寫。",
         )
         .into());
     }
@@ -495,7 +533,8 @@ pub async fn pick_sync_folder(
     let picked = rx.await.map_err(|_| {
         tr!(
             "无法打开选择文件夹的对话框。",
-            "The folder dialog could not be opened."
+            "The folder dialog could not be opened.";
+            "無法開啟選擇資料夾的對話方塊。",
         )
     })?;
     let Some(picked) = picked else {
@@ -504,7 +543,8 @@ pub async fn pick_sync_folder(
     let path = picked.into_path().map_err(|e| {
         tr!(
             format!("无法使用所选的文件夹：{e}"),
-            format!("The chosen folder cannot be used: {e}")
+            format!("The chosen folder cannot be used: {e}");
+            format!("無法使用所選的資料夾：{e}"),
         )
     })?;
     Ok(Some(path.display().to_string()))

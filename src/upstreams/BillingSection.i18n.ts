@@ -47,4 +47,48 @@ export const billingSectionText = messages(
     linkSheetDetail: (multiplier: number, overrides: number) =>
       `Created with the upstream · multiplier ×${multiplier} · ${overrides === 1 ? "1 model" : `${overrides} models`} priced separately`,
   },
+  {
+    "zh-Hant": {
+      billing: "計費方式",
+      sheet: "價目表",
+      defaultSheet: "預設價目表",
+      newSheet: "新建價目表…",
+      usedBy: "使用此價目表的上游",
+      editSheet: "編輯價目表",
+      effective: "生效價格",
+      unit: "美元 / 百萬 tokens",
+      empty: "模型列表為空。獲取模型列表後顯示各模型的生效價格。",
+      source: "來源",
+      unpriced: (n: number) => `${n} 個模型無法計價，這些模型的請求無法計算費用。`,
+      setPrices: "設定價格…",
+      linkSheet: (name: string) => `新價目表「${name}」`,
+      linkSheetDetail: (multiplier: number, overrides: number) => `隨上游一起建立 · 倍率 ×${multiplier} · ${overrides} 個模型單獨定價`,
+    },
+    ko: {
+      model: "모델",
+      source: "출처",
+    },
+    es: {
+      newUpstream: "(nuevas del proveedor)",
+      billing: "Facturas",
+      sheet: "Ficha de precios",
+      defaultSheet: "Ficha de precios por defecto",
+      newSheet: "Nueva hoja de precios…",
+      usedBy: "Upstreams usando esta hoja de precios",
+      editSheet: "Editar hoja de precios",
+      effective: "Precios efectivos",
+      unit: "USD / millones de fichas",
+      empty: "La lista de modelos está vacía. Los precios efectivos aparecen una vez que se obtiene la lista de modelo.",
+      model: "Modelo",
+      source: "Origen",
+      estimated: " (estimado)",
+      unpriced: (n: number) => n === 1
+        ? "1 modelo no tiene precio; el costo de sus solicitudes no puede calcularse."
+        : `${n} los modelos no tienen precio; el costo de sus solicitudes no puede calcularse.`,
+      setPrices: "Fijar precios…",
+      linkSheet: (name: string) => `Nueva hoja de precios “${name}”`,
+      unnamed: "sin título",
+      linkSheetDetail: (multiplier: number, overrides: number) => `Creado con el multiplicador · del proveedor ×${multiplier} · ${overrides === 1 ? "1 modelo" : `${overrides} modelos`} precio por separado`,
+    },
+  },
 );

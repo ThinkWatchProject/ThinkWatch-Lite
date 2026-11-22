@@ -6,7 +6,9 @@
 // 文案写成「这台电脑」。所以这里不 import 任何东西。
 
 const q = new URLSearchParams(location.search);
-const lang = q.get("lang") === "en" ? "en" : "zh";
+const wanted = q.get("lang");
+export const lang = wanted === "en" || wanted === "ja" || wanted === "zh-Hant" || wanted === "ko" || wanted === "es"
+  ? wanted : "zh";
 
 window.__TW_LANG__ = lang;
 window.__TW_PLATFORM__ = "macos";
@@ -14,7 +16,7 @@ window.__TW_PLATFORM__ = "macos";
 // 不设它，侧栏按实色画，和别的平台一样
 // 热启动：core 已经在跑，窗口取好首屏的数才露面，没有启动画面
 (window as { __TW_WARM__?: boolean }).__TW_WARM__ = true;
-document.documentElement.lang = lang === "en" ? "en" : "zh-CN";
+document.documentElement.lang = lang === "zh" ? "zh-CN" : lang;
 
 /**
  * 定住的时钟：2026-09-25（周五）16:42:07，**本地时间**。

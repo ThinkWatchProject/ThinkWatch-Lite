@@ -9,4 +9,12 @@ export const writeText = messages(
     approvedMissing:
       "The approved code of this plugin is missing, so it cannot be switched on or off. Save the code in the plugin's Code tab first.",
   },
+  {
+    "zh-Hant": {
+      approvedMissing: "此外掛已確認的程式碼不存在，無法切換開關。請先在此外掛的內碼表中儲存程式碼。",
+    },
+    es: {
+      approvedMissing: "Falta el código aprobado de este plugin, por lo que no se puede activar o desactivar. Guardar el código en la pestaña Código del plugin primero.",
+    },
+  },
 );

@@ -24,4 +24,29 @@ export const timeConditionText = messages(
     rawHint: "Unrecognised form; example: mon-fri 09:00-18:00",
     note: "Local time of the machine the gateway runs on. An end earlier than the start is an overnight window; a whole day is 00:00–24:00.",
   },
+  {
+    "zh-Hant": {
+      window: (n: number) => `第 ${n} 個時段`,
+      start: (n: number) => `第 ${n} 個時段的開始時間`,
+      end: (n: number) => `第 ${n} 個時段的結束時間`,
+      removeWindow: (n: number) => `移除第 ${n} 個時段`,
+      addWindow: "新增時段",
+      rawHint: "無法識別的寫法，示例：mon-fri 09:00-18:00",
+      note: "按閘道器所在機器的本地時間。結束早於開始的為跨夜時段；全天寫 00:00–24:00。",
+    },
+    ko: {
+      remove: "제거",
+    },
+    es: {
+      days: { mon: "Mon", tue: "Mar", wed: "Mié", thu: "Thu", fri: "Fri", sat: "Sáb", sun: "Sol" },
+      window: (n: number) => `Ventana temporal ${n}`,
+      start: (n: number) => `Inicio de la ventana de tiempo ${n}`,
+      end: (n: number) => `Ventana de fin de tiempo ${n}`,
+      remove: "Quitar",
+      removeWindow: (n: number) => `Eliminar ventana de tiempo ${n}`,
+      addWindow: "Añadir ventana de tiempo",
+      rawHint: "Forma no reconocida; ejemplo: mon-fri 09:00-18:00",
+      note: "Hora local de la máquina en la puerta de entrada. Un final anterior al inicio es una ventana de noche; todo el día es de 00:00 a 24:00.",
+    },
+  },
 );

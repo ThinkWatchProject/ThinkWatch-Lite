@@ -20,7 +20,8 @@ pub fn reveal(path: &str) -> Result<(), String> {
     } else {
         Err(tr!(
             format!("无法在访达中显示 {path}"),
-            format!("{path} could not be shown in Finder")
+            format!("{path} could not be shown in Finder");
+            format!("無法在訪達中顯示 {path}"),
         )
         .to_string())
     }
@@ -41,7 +42,8 @@ pub fn reveal(path: &str) -> Result<(), String> {
         .map_err(|e| {
             tr!(
                 format!("无法在文件资源管理器中显示 {path}：{e}"),
-                format!("{path} could not be shown in File Explorer: {e}")
+                format!("{path} could not be shown in File Explorer: {e}");
+                format!("無法在檔案資源管理器中顯示 {path}：{e}"),
             )
             .to_string()
         })
@@ -73,7 +75,8 @@ fn absolute(path: &str) -> Result<(), String> {
     } else {
         Err(tr!(
             format!("配置文件的路径不是绝对路径：{path}"),
-            format!("The configuration file path is not absolute: {path}")
+            format!("The configuration file path is not absolute: {path}");
+            format!("配置檔案的路徑不是絕對路徑：{path}"),
         )
         .to_string())
     }
@@ -109,7 +112,8 @@ pub fn reveal(path: &str) -> Result<(), String> {
         .map_err(|e| {
             tr!(
                 format!("无法在文件管理器中显示 {path}：{e}"),
-                format!("{path} could not be shown in the file manager: {e}")
+                format!("{path} could not be shown in the file manager: {e}");
+                format!("無法在檔案管理器中顯示 {path}：{e}"),
             )
             .to_string()
         })
@@ -119,7 +123,8 @@ pub fn reveal(path: &str) -> Result<(), String> {
 pub fn reveal(path: &str) -> Result<(), String> {
     Err(tr!(
         format!("这个平台上还不能打开文件管理器：{path}"),
-        format!("Opening a file manager is not supported on this platform yet: {path}")
+        format!("Opening a file manager is not supported on this platform yet: {path}");
+        format!("這個平臺上還不能開啟檔案管理器：{path}"),
     )
     .to_string())
 }
