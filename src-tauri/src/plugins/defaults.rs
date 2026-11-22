@@ -32,6 +32,7 @@ struct Entry {
     manifest_name: String,
     zh: Words,
     en: Words,
+    ja: Words,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +63,7 @@ fn words(e: &Entry, lang: Lang) -> &Words {
     match lang {
         Lang::Zh => &e.zh,
         Lang::En => &e.en,
+        Lang::Ja => &e.ja,
     }
 }
 

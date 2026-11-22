@@ -99,7 +99,8 @@ const TITLE: &str = "ThinkWatch Lite";
 pub(crate) fn running_text() -> &'static str {
     tr!(
         "ThinkWatch Lite 已在运行",
-        "ThinkWatch Lite is already running"
+        "ThinkWatch Lite is already running",
+        "ThinkWatch Lite はすでに実行中です"
     )
 }
 
@@ -111,14 +112,18 @@ pub(crate) fn ask_text(running: &str) -> (&'static str, String, [&'static str; 2
             format!("运行中的程序位于：{running}。同一时间只能运行一个 ThinkWatch Lite。"),
             format!(
                 "The running program is at {running}. Only one ThinkWatch Lite can run at a time."
+            ),
+            format!(
+                "実行中のアプリは {running} にあります。同時に実行できる ThinkWatch Lite は 1 つです。"
             )
         ),
         [
             tr!(
                 "停止运行中的程序并启动此程序",
-                "Stop the running program and start this one"
+                "Stop the running program and start this one",
+                "実行中のアプリを終了してこちらを起動"
             ),
-            tr!("取消", "Cancel"),
+            tr!("取消", "Cancel", "キャンセル"),
         ],
     )
 }
@@ -127,7 +132,8 @@ pub(crate) fn ask_text(running: &str) -> (&'static str, String, [&'static str; 2
 pub(crate) fn waiting_text() -> &'static str {
     tr!(
         "正在等待进行中的请求完成…",
-        "Waiting for requests in progress to finish…"
+        "Waiting for requests in progress to finish…",
+        "処理中のリクエストの完了を待っています…"
     )
 }
 
@@ -135,7 +141,8 @@ pub(crate) fn waiting_text() -> &'static str {
 pub(crate) fn unsupported_text() -> &'static str {
     tr!(
         "运行中的程序不支持切换，请先退出该程序。",
-        "The running program does not support switching. Quit it first."
+        "The running program does not support switching. Quit it first.",
+        "実行中のアプリは切り替えに対応していません。先に終了してください。"
     )
 }
 
@@ -143,7 +150,8 @@ pub(crate) fn unsupported_text() -> &'static str {
 pub(crate) fn elevated_text() -> &'static str {
     tr!(
         "运行中的程序以管理员身份运行，无法从此处停止。请先退出该程序。",
-        "The running program runs as administrator and cannot be stopped from here. Quit it first."
+        "The running program runs as administrator and cannot be stopped from here. Quit it first.",
+        "実行中のアプリは管理者権限で動作しています。そのアプリを終了してから再試行してください。"
     )
 }
 
@@ -151,7 +159,8 @@ pub(crate) fn elevated_text() -> &'static str {
 pub(crate) fn timeout_text() -> &'static str {
     tr!(
         "运行中的程序未能退出。",
-        "The running program did not quit."
+        "The running program did not quit.",
+        "実行中のアプリを終了できませんでした。"
     )
 }
 

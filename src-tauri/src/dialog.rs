@@ -206,7 +206,7 @@ mod imp {
             let title_w = wide(title);
             let instruction_w = wide(instruction);
             let content_w = wide(content);
-            let cancel = wide(tr!("取消", "Cancel"));
+            let cancel = wide(tr!("取消", "Cancel", "キャンセル"));
             let button = TASKDIALOG_BUTTON {
                 nButtonID: WAIT_BUTTON,
                 pszButtonText: cancel.as_ptr(),

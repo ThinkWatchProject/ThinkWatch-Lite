@@ -498,7 +498,7 @@ async fn a_safe_mode_core_that_exits_reports_what_it_said() {
     let bin = {
         let bin = dir.join("fake-core");
         let script = format!(
-            "#!/bin/sh\n[ \"$1\" = {WARM} ] && exit 0\necho 'Error: loading /x/config.yaml' >&2\necho '' >&2\necho 'Caused by:' >&2\necho '    已有 twcore 实例正在运行（pid 7）。' >&2\nexit 1\n"
+            "#!/bin/sh\n[ \"$1\" = {WARM} ] && exit 0\necho 'Error: loading /x/config.yaml' >&2\necho '' >&2\necho 'Caused by:' >&2\necho '    A twcore instance is already running (PID 7).' >&2\nexit 1\n"
         );
         std::fs::write(&bin, script).unwrap();
         use std::os::unix::fs::PermissionsExt;
@@ -528,7 +528,7 @@ async fn a_safe_mode_core_that_exits_reports_what_it_said() {
     assert!(reason.starts_with("loading /x/config.yaml\n"), "{reason}");
     #[cfg(unix)]
     assert!(
-        reason.ends_with("已有 twcore 实例正在运行（pid 7）。"),
+        reason.ends_with("A twcore instance is already running (PID 7)."),
         "{reason}"
     );
 }

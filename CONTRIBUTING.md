@@ -129,6 +129,14 @@ Warnings are errors. The toolchain is `stable`, so a newer stable than
 your local one can surface lints you cannot see — `rustup update stable`
 before blaming CI.
 
+## Translating protection rules
+
+When updating the Core pin, update `src/i18n/guard.zh.json` for any
+added or changed security rules. Use the guard and rule ID for a rule,
+or the guard and slug for a group. The security UI, messages and native
+notifications share this catalog. Core supplies the English fallback,
+and prefix descriptions are rendered from the live matcher.
+
 ## Things this UI must not do
 
 These are load-bearing and a PR that breaks one will be asked to change:

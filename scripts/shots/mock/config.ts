@@ -36,7 +36,7 @@ import REQUESTS from "../core/requests.json";
 import { P } from "./params";
 import { HOUR, MIN, NOW, clone, msg } from "./util";
 
-const en = P.lang === "en";
+const en = P.lang !== "zh";
 
 /** 一个类型「放宽」之后的样子：`"free" | "per-token"` 这类取值放宽成 string，结构不变 */
 type Widen<T> = T extends string

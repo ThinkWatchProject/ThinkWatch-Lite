@@ -20,4 +20,12 @@ export const rangeText = messages(
     since: (date: string) => `Since ${date}`,
     sameLength: "period",
   },
+  {
+    label: "期間",
+    live: "リアルタイム",
+    preset: { "1d": "24 時間", "7d": "7 日間", "30d": "30 日間" },
+    custom: "カスタム",
+    since: (date: string) => `${date} から`,
+    sameLength: "同じ長さの期間",
+  },
 );

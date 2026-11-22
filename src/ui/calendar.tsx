@@ -1,5 +1,7 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { useLang } from "@/i18n"
+import { ja } from "react-day-picker/locale/ja"
 import {
   DayPicker,
   getDefaultClassNames,
@@ -16,7 +18,7 @@ function Calendar({
   showOutsideDays = true,
   captionLayout = "label",
   buttonVariant = "ghost",
-  locale,
+  locale: localeProp,
   formatters,
   components,
   ...props
@@ -24,6 +26,8 @@ function Calendar({
   buttonVariant?: React.ComponentProps<typeof Button>["variant"]
 }) {
   const defaultClassNames = getDefaultClassNames()
+  const lang = useLang()
+  const locale = localeProp ?? (lang === "ja" ? ja : undefined)
 
   return (
     <DayPicker

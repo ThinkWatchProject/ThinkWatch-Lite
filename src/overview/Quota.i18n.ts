@@ -37,4 +37,18 @@ export const quotaText = messages(
     exhausted: "Used up",
     gaugeLabel: (name: string, window: string) => `${name} ${window} quota`,
   },
+  {
+    title: "利用枠と残高",
+    showUpstreams: "アップストリームで表示",
+    wallet: "残高",
+    total: "総利用枠",
+    scoped: (window: string, scope: string) => `${window}（${scope}）`,
+    resetAt: (clock: string) => `${clock} にリセット`,
+    used: (percent: number) => `${percent}%`,
+    gaugeTip: (window: string, percent: number, left: string | null, reset: string | null) =>
+      `${window}の利用枠を ${percent}% 使用${left ? `、${left}` : ""}${reset ? `、${reset}` : ""}`,
+    nearlyOut: "残りわずか",
+    exhausted: "使い切りました",
+    gaugeLabel: (name: string, window: string) => `${name} の${window}の利用枠`,
+  },
 );

@@ -28,6 +28,7 @@ interface Entry {
   manifest_name: string;
   zh: Words;
   en: Words;
+  ja: Words;
 }
 
 const ENTRIES = (TABLE as unknown as { plugins: Entry[] }).plugins;

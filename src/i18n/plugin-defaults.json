@@ -11,6 +11,11 @@
       },
       "en": {
         "settings": { "language": "Answer language" }
+      },
+      "ja": {
+        "name": "回答言語の指定",
+        "description": "システムプロンプトの末尾に、指定した言語で回答するよう指示を追加します。",
+        "settings": { "language": "回答言語" }
       }
     },
     {
@@ -23,6 +28,11 @@
       },
       "en": {
         "settings": { "windows_client": "The client runs on Windows (otherwise WSL)" }
+      },
+      "ja": {
+        "name": "WSL パスの変換",
+        "description": "ツール呼び出しの引数に含まれるパスを、クライアントで開ける WSL または Windows 形式に変換します。回答と会話履歴の両方に適用されます。",
+        "settings": { "windows_client": "クライアントは Windows で実行（オフの場合は WSL）" }
       }
     }
   ]

@@ -7,4 +7,7 @@ export const syncBackupText = messages(
   {
     title: "Sync and backup",
   },
+  {
+    title: "同期とバックアップ",
+  },
 );

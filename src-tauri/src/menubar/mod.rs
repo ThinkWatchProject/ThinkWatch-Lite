@@ -672,7 +672,11 @@ async fn background(app: &tauri::AppHandle, action: Action) {
         tracing::warn!("菜单里的操作没做成：{e}");
         say(
             app,
-            tr!("操作未完成", "The Action Did Not Complete"),
+            tr!(
+                "操作未完成",
+                "The Action Did Not Complete",
+                "操作を完了できませんでした"
+            ),
             &why(e),
         );
     }
@@ -717,7 +721,11 @@ async fn check_updates(app: &tauri::AppHandle) {
         Ok(Some(found)) => crate::updater::present_update(app, found),
         Ok(None) => say(
             app,
-            tr!("已是最新版本", "ThinkWatch Lite Is Up to Date"),
+            tr!(
+                "已是最新版本",
+                "ThinkWatch Lite Is Up to Date",
+                "ThinkWatch Lite は最新です"
+            ),
             &tr!(
                 format!(
                     "ThinkWatch Lite {} 是最新版本。",
@@ -726,10 +734,22 @@ async fn check_updates(app: &tauri::AppHandle) {
                 format!(
                     "ThinkWatch Lite {} is the latest version.",
                     app.package_info().version
+                ),
+                format!(
+                    "ThinkWatch Lite {} は最新バージョンです。",
+                    app.package_info().version
                 )
             ),
         ),
-        Err(e) => say(app, tr!("无法检查更新", "Updates Could Not Be Checked"), &e),
+        Err(e) => say(
+            app,
+            tr!(
+                "无法检查更新",
+                "Updates Could Not Be Checked",
+                "更新を確認できませんでした"
+            ),
+            &e,
+        ),
     }
 }
 

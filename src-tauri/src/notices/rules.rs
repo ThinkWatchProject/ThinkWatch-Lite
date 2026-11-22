@@ -27,15 +27,19 @@ use super::{Change, Level, Signal};
 fn l1_step(s: &tw_api::L1Stage) -> String {
     use tw_api::{L1Peer, L1Step};
     let step: &str = match s.step {
-        L1Step::Config => tr!("配置", "configuration"),
-        L1Step::Dns => tr!("DNS 解析", "DNS lookup"),
-        L1Step::Tcp => tr!("TCP 握手", "TCP handshake"),
-        L1Step::Tls => tr!("TLS 握手", "TLS handshake"),
-        L1Step::Handshake => tr!("代理握手", "proxy handshake"),
+        L1Step::Config => tr!("配置", "configuration", "設定"),
+        L1Step::Dns => tr!("DNS 解析", "DNS lookup", "DNS 名前解決"),
+        L1Step::Tcp => tr!("TCP 握手", "TCP handshake", "TCP ハンドシェイク"),
+        L1Step::Tls => tr!("TLS 握手", "TLS handshake", "TLS ハンドシェイク"),
+        L1Step::Handshake => tr!("代理握手", "proxy handshake", "プロキシのハンドシェイク"),
     };
     // 代理握手本来就只对着代理，再加一句「到代理」是废话
     if s.peer == L1Peer::Proxy && s.step != L1Step::Handshake {
-        tr!(format!("到代理的{step}"), format!("{step} to the proxy"))
+        tr!(
+            format!("到代理的{step}"),
+            format!("{step} to the proxy"),
+            format!("プロキシへの{step}")
+        )
     } else {
         step.to_string()
     }
@@ -290,18 +294,29 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
             ..
         } if origin == "external" => {
             let at = line
-                .map(|l| tr!(format!("第 {l} 行："), format!("Line {l}: ")))
+                .map(|l| {
+                    tr!(
+                        format!("第 {l} 行："),
+                        format!("Line {l}: "),
+                        format!("{l} 行目：")
+                    )
+                })
                 .unwrap_or_default();
             let message = core_text::clause(message);
             vec![
                 Signal::raised(
                     "config",
                     Level::Warning,
-                    tr!("配置文件未通过校验", "Config File Failed Validation"),
+                    tr!(
+                        "配置文件未通过校验",
+                        "Config File Failed Validation",
+                        "設定ファイルの検証に失敗"
+                    ),
                 )
                 .body(tr!(
                     format!("{at}{message}。上一版配置仍在服务。"),
-                    format!("{at}{message}. The previous configuration remains in effect.")
+                    format!("{at}{message}. The previous configuration remains in effect."),
+                    format!("{at}{message}。以前の設定で動作を続けています。")
                 ))
                 .view(SETTINGS),
             ]
@@ -320,11 +335,19 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
                 Signal::raised(
                     "listen",
                     Level::Warning,
-                    tr!("监听设置未生效", "Listen Settings Not in Effect"),
+                    tr!(
+                        "监听设置未生效",
+                        "Listen Settings Not in Effect",
+                        "リッスン設定が未適用"
+                    ),
                 )
                 .body(tr!(
                     format!("{}网关仍在 {at} 上监听。", core_text::text(e)),
-                    format!("{} The gateway is still listening on {at}.", e.text)
+                    format!("{} The gateway is still listening on {at}.", e.text),
+                    format!(
+                        "{} ゲートウェイは引き続き {at} でリッスンしています。",
+                        core_text::text(e)
+                    )
                 ))
                 // 设置页并滚到「网关监听」那一节：未生效的原因也写在那里
                 .view(LISTEN_SETTINGS),
@@ -437,14 +460,19 @@ pub fn from_event(ev: &Event) -> Vec<Signal> {
         } if *source != "aborted" => {
             let why = core_text::clause(message);
             vec![
-                Signal::raised("failed", Level::Info, tr!("请求失败", "Request Failed"))
-                    .body(tr!(
-                        format!("「{model}」：{why}。"),
-                        format!("“{model}”: {why}.")
-                    ))
-                    .view(FAILED_REQUESTS)
-                    .event()
-                    .gathered(),
+                Signal::raised(
+                    "failed",
+                    Level::Info,
+                    tr!("请求失败", "Request Failed", "リクエスト失敗"),
+                )
+                .body(tr!(
+                    format!("「{model}」：{why}。"),
+                    format!("“{model}”: {why}."),
+                    format!("「{model}」：{why}。")
+                ))
+                .view(FAILED_REQUESTS)
+                .event()
+                .gathered(),
             ]
         }
         Event::PluginFailed {
@@ -896,13 +924,13 @@ fn watched(
             let s = saved_source_zh(s);
             format!("{what}：上游「{provider}」的回答含有{s}，已记入安全日志。")
         }
-        (Some(s), false, crate::i18n::Lang::En) => {
+        (Some(s), false, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => {
             let s = saved_source_en(s);
             format!(
                 "{what}: a request through upstream “{provider}” contained {s}. It was recorded in the security log."
             )
         }
-        (Some(s), true, crate::i18n::Lang::En) => {
+        (Some(s), true, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => {
             let s = saved_source_en(s);
             format!(
                 "{what}: an answer from upstream “{provider}” contained {s}. It was recorded in the security log."
@@ -914,10 +942,10 @@ fn watched(
         (None, true, crate::i18n::Lang::Zh) => {
             format!("{what}：上游「{provider}」的回答命中此规则，已记入安全日志。")
         }
-        (None, false, crate::i18n::Lang::En) => format!(
+        (None, false, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => format!(
             "{what}: a request through upstream “{provider}” matched this rule. It was recorded in the security log."
         ),
-        (None, true, crate::i18n::Lang::En) => format!(
+        (None, true, crate::i18n::Lang::En | crate::i18n::Lang::Ja) => format!(
             "{what}: an answer from upstream “{provider}” matched this rule. It was recorded in the security log."
         ),
     };
@@ -983,22 +1011,16 @@ fn saved_source_en(s: &tw_api::SavedSource) -> String {
     }
 }
 
-/// 规则的名字，和安全页上的一样：自定义规则就是用户起的名字；内置的取 core 规则目录里的
-/// 中英文名（钉着的这一版 tw-guard，安全页上 core 给的是同一份）。目录里没有的（连着的远程
-/// core 更新、多了规则），用事件里的英文名
+/// 内置规则和安全页共用客户端词表。新规则缺译时用事件里的英文名。
 fn guard_rule_name(guard: &str, rule: &str, custom: bool, english: &str) -> String {
     if custom {
         return rule.to_string();
     }
     let english = if english.is_empty() { rule } else { english };
-    let zh = match guard {
-        "redact" => tw_guard::redact::rules::builtin(rule).map(|b| b.name_zh.to_string()),
-        "content" => tw_guard::content::builtin(rule).map(|b| b.name_zh.clone()),
-        _ => tool_rule(rule).map(|r| r.name_zh.clone()),
-    };
     tr!(
-        zh.filter(|z| !z.is_empty())
-            .unwrap_or_else(|| english.to_string()),
+        core_text::rule_name_zh(guard, rule)
+            .unwrap_or(english)
+            .to_string(),
         english.to_string()
     )
 }
@@ -1028,12 +1050,13 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
             Signal::raised(
                 "gateway",
                 Level::Critical,
-                tr!("网关未在转发", "Gateway Not Forwarding"),
+                tr!("网关未在转发", "Gateway Not Forwarding", "ゲートウェイは転送停止中"),
             )
             .body(
                 tr!(
                     "已连续启动失败，当前只有配置和历史可用。",
-                    "Startup failed several times in a row. Only configuration and history are available."
+                    "Startup failed several times in a row. Only configuration and history are available.",
+                    "起動に繰り返し失敗しました。設定と履歴は引き続き利用できます。"
                 )
                 .to_string(),
             )
@@ -1046,12 +1069,13 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
             Signal::raised(
                 "gateway",
                 Level::Critical,
-                tr!("网关无法启动", "Gateway Cannot Start"),
+                tr!("网关无法启动", "Gateway Cannot Start", "ゲートウェイを起動できません"),
             )
             .body(
                 tr!(
                     "core 启动后退出，转发已停止。打开窗口可以查看原因并重试。",
-                    "core exited right after starting, so forwarding has stopped. Open the window to see why and try again."
+                    "core exited right after starting, so forwarding has stopped. Open the window to see why and try again.",
+                    "core が起動直後に終了し、転送を停止しました。ウィンドウを開いて原因を確認し、再試行してください。"
                 )
                 .to_string(),
             )
@@ -1064,12 +1088,13 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
             Signal::raised(
                 "gateway",
                 Level::Critical,
-                tr!("网关无法启动", "Gateway Cannot Start"),
+                tr!("网关无法启动", "Gateway Cannot Start", "ゲートウェイを起動できません"),
             )
             .body(
                 tr!(
                     "core 程序未能运行，转发已停止。打开窗口可以查看原因并重试。",
-                    "The core program could not run, so forwarding has stopped. Open the window to see why and try again."
+                    "The core program could not run, so forwarding has stopped. Open the window to see why and try again.",
+                    "core を実行できなかったため、転送を停止しました。ウィンドウを開いて原因を確認し、再試行してください。"
                 )
                 .to_string(),
             )
@@ -1082,13 +1107,14 @@ pub fn from_core_state(state: &crate::supervisor::CoreState) -> Vec<Signal> {
             Signal::raised(
                 "gateway",
                 Level::Critical,
-                tr!("网关反复退出", "Gateway Keeps Exiting"),
+                tr!("网关反复退出", "Gateway Keeps Exiting", "ゲートウェイが繰り返し終了しています"),
             )
             .body(tr!(
                 format!("已连续重启 {attempt} 次，转发可能时断时续。"),
                 format!(
                     "The gateway restarted {attempt} times in a row. Forwarding may be intermittent."
-                )
+                ),
+                format!("{attempt} 回連続で再起動しました。転送が断続的に停止する場合があります。")
             ))
             .view(SETTINGS)
             .now()
@@ -1106,12 +1132,13 @@ pub fn wedged() -> Signal {
     Signal::raised(
         "wedged",
         Level::Info,
-        tr!("网关曾无响应，已重启", "Gateway Stopped Responding and Was Restarted"),
+        tr!("网关曾无响应，已重启", "Gateway Stopped Responding and Was Restarted", "応答がなかったためゲートウェイを再起動しました"),
     )
     .body(
         tr!(
             "网关连续几次没有响应，已自动重启。重启期间的请求可能失败。",
-            "The gateway did not respond several times in a row and was restarted automatically. Requests during the restart may have failed."
+            "The gateway did not respond several times in a row and was restarted automatically. Requests during the restart may have failed.",
+            "ゲートウェイが繰り返し応答しなかったため、自動で再起動しました。再起動中のリクエストは失敗した可能性があります。"
         )
         .to_string(),
     )
@@ -1164,7 +1191,11 @@ pub fn window_failed() -> Signal {
     Signal::raised(
         "startup:window",
         Level::Warning,
-        tr!("主窗口未能打开", "Main Window Could Not Be Opened"),
+        tr!(
+            "主窗口未能打开",
+            "Main Window Could Not Be Opened",
+            "メインウィンドウを開けませんでした"
+        ),
     )
     .body(tr!(
         format!("网关照常运行。可以从{zh}再次打开主界面。"),
@@ -1179,7 +1210,11 @@ pub fn picker_failed() -> Signal {
     Signal::raised(
         "startup:picker",
         Level::Warning,
-        tr!("连接选择未能打开", "Connection Picker Could Not Be Opened"),
+        tr!(
+            "连接选择未能打开",
+            "Connection Picker Could Not Be Opened",
+            "接続の選択画面を開けませんでした"
+        ),
     )
     .body(tr!(
         format!("尚未连接 core。可以在{zh}的「连接」中选择要连接的 core。"),

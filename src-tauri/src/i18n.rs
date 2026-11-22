@@ -1,7 +1,7 @@
-//! 界面语言：简体中文或英文。
+//! 界面语言：简体中文、英文和日文。
 //!
 //! **语言由这里决定，界面只是照着用。**设置里选过的优先，没选过就看系统
-//! 的首选语言：中文（`zh-*`）用中文，其余一律英文。托盘菜单和系统通知
+//! 的首选语言列表，找不到支持的语言时用英文。托盘菜单和系统通知
 //! 在没有窗口的时候也要说话，所以这个判断不能放在网页里。
 //!
 //! 网页拿到的是加载之前注入的 `window.__TW_LANG__`（见 [`init_script`]），
@@ -9,11 +9,9 @@
 //!
 //! **core 不做翻译，只说英文。**它发来的每一句给人看的话都是一条
 //! `tw_api::Msg`：一个稳定的码、填进句子的参数，以及英文原句。界面拿码去
-//! `src/i18n/core.i18n.ts` 里找中文；码不在表里就显示那句英文 —— 一句英文
-//! 总好过一个码。
+//! `src/i18n/core.i18n.ts` 里找翻译；码不在表里就显示英文原句。
 //!
-//! 这个模块只管 Rust 这一侧（托盘、系统通知）自己要说的话。core 的码在
-//! 这里只翻一处：通知里「卡在哪一步」那几个词（见 `notices::rules`）。
+//! Rust 自己的文案用 `tr!`，Core 的消息交给 `core_text`。
 
 use std::sync::atomic::{AtomicU8, Ordering};
 
@@ -23,6 +21,7 @@ pub enum Lang {
     #[default]
     Zh,
     En,
+    Ja,
 }
 
 impl Lang {
@@ -30,6 +29,7 @@ impl Lang {
         match self {
             Lang::Zh => 0,
             Lang::En => 1,
+            Lang::Ja => 2,
         }
     }
 
@@ -38,6 +38,7 @@ impl Lang {
         match self {
             Lang::Zh => "zh",
             Lang::En => "en",
+            Lang::Ja => "ja",
         }
     }
 }
@@ -59,6 +60,7 @@ pub fn current() -> Lang {
     }
     match CURRENT.load(Ordering::Relaxed) {
         1 => Lang::En,
+        2 => Lang::Ja,
         _ => Lang::Zh,
     }
 }
@@ -85,13 +87,21 @@ pub fn effective(setting: Option<Lang>) -> Lang {
 ///
 /// **繁体也归中文。**界面只有简体一种中文，而读繁体的人读简体，比读英文
 /// 近得多。
-pub fn from_tag(tag: &str) -> Lang {
+fn from_tag(tag: &str) -> Option<Lang> {
     let tag = tag.trim().to_ascii_lowercase();
-    if tag == "zh" || tag.starts_with("zh-") || tag.starts_with("zh_") {
-        Lang::Zh
-    } else {
-        Lang::En
+    match tag.split(['-', '_', '.', '@']).next()? {
+        "zh" => Some(Lang::Zh),
+        "en" => Some(Lang::En),
+        "ja" => Some(Lang::Ja),
+        _ => None,
     }
+}
+
+#[cfg(any(target_os = "macos", windows, test))]
+fn preferred_language<T: AsRef<str>>(tags: impl IntoIterator<Item = T>) -> Lang {
+    tags.into_iter()
+        .find_map(|tag| from_tag(tag.as_ref()))
+        .unwrap_or(Lang::En)
 }
 
 /// 系统的首选语言。
@@ -101,18 +111,16 @@ pub fn from_tag(tag: &str) -> Lang {
 /// 本地化 —— 中文系统上网页里拿到的也可能是 `en-US`。
 pub fn system() -> Lang {
     #[cfg(target_os = "macos")]
-    {
-        use objc2_foundation::NSLocale;
-        if let Some(first) = NSLocale::preferredLanguages().firstObject() {
-            return from_tag(&first.to_string());
-        }
-    }
+    use objc2_foundation::NSLocale;
+    #[cfg(target_os = "macos")]
+    return preferred_language(
+        NSLocale::preferredLanguages()
+            .iter()
+            .map(|tag| tag.to_string()),
+    );
     #[cfg(windows)]
-    if let Some(tag) = user_locale() {
-        return from_tag(&tag);
-    }
-    // **这几个变量是 unix 的东西。**Windows 上它们通常根本不存在，上面那一支
-    // 答不出来时落到这里，而那时英文是唯一诚实的默认。
+    return preferred_language(user_ui_languages());
+    #[cfg(not(any(target_os = "macos", windows)))]
     from_env(|k| std::env::var(k).ok())
 }
 
@@ -122,40 +130,46 @@ pub fn system() -> Lang {
 ///
 /// `C` / `POSIX` 是「不要本地化」的那一档：直接英文，不再往下找 —— 用户在
 /// 前面那一级明确关掉了语言，不该再去 `LANG` 里翻出一个中文来。
+#[cfg(any(not(any(target_os = "macos", windows)), test))]
 fn from_env(var: impl Fn(&str) -> Option<String>) -> Lang {
-    let Some(tag) = ["LC_ALL", "LC_MESSAGES", "LANG"]
+    ["LC_ALL", "LC_MESSAGES", "LANG"]
         .into_iter()
         .find_map(|k| var(k).filter(|v| !v.is_empty()))
-    else {
-        return Lang::En;
-    };
-    // `C.UTF-8` 也是它
-    let base = tag.split(['.', '@']).next().unwrap_or_default();
-    if base == "C" || base == "POSIX" {
-        Lang::En
-    } else {
-        from_tag(&tag)
-    }
+        .and_then(|tag| from_tag(&tag))
+        .unwrap_or(Lang::En)
 }
 
-/// 这个用户在 Windows 里选的语言，形如 `zh-CN`。
-///
-/// **问 `GetUserDefaultLocaleName`，不看 `LANG`。**后者在 Windows 上只有装了
-/// Git Bash 之类的机器才有，而它记的是那套工具的偏好，不是用户在系统设置里
-/// 选的那个 —— 照它走的话，一台中文系统会因为装过 Git 而说英文。
+/// Windows 的显示语言和首选语言列表。
 #[cfg(windows)]
-fn user_locale() -> Option<String> {
-    use windows_sys::Win32::Globalization::GetUserDefaultLocaleName;
+fn user_ui_languages() -> Vec<String> {
+    use windows_sys::Win32::Globalization::{GetUserPreferredUILanguages, MUI_LANGUAGE_NAME};
 
-    // `LOCALE_NAME_MAX_LENGTH` 是 85，连 NUL 在内。
-    let mut buf = [0u16; 85];
-    // SAFETY: 缓冲区是本地数组，长度如实告知。
-    let n = unsafe { GetUserDefaultLocaleName(buf.as_mut_ptr(), buf.len() as i32) };
-    if n <= 0 {
-        return None;
+    let mut count = 0;
+    let mut size = 0;
+    // SAFETY: A null buffer requests the required size in UTF-16 units.
+    let ok = unsafe {
+        GetUserPreferredUILanguages(
+            MUI_LANGUAGE_NAME,
+            &mut count,
+            std::ptr::null_mut(),
+            &mut size,
+        )
+    };
+    if ok == 0 || size == 0 {
+        return Vec::new();
     }
-    // 返回的长度**含结尾的 NUL**，所以要去掉一个
-    Some(String::from_utf16_lossy(&buf[..(n as usize) - 1]))
+    let mut buf = vec![0u16; size as usize];
+    // SAFETY: buf has the capacity given in size and all output pointers are valid.
+    let ok = unsafe {
+        GetUserPreferredUILanguages(MUI_LANGUAGE_NAME, &mut count, buf.as_mut_ptr(), &mut size)
+    };
+    if ok == 0 {
+        return Vec::new();
+    }
+    buf.split(|unit| *unit == 0)
+        .take(count as usize)
+        .map(String::from_utf16_lossy)
+        .collect()
 }
 
 /// 注进每个窗口的那一行：页面加载之前就知道用哪种语言。
@@ -183,7 +197,7 @@ fn script_for(lang: Lang) -> String {
     )
 }
 
-/// 按当前语言二选一。
+/// 按当前语言选择文案。日文缺失时使用英文。
 ///
 /// **两种说法写在一起。**分开放在两份词表里的话，改了一边忘了另一边是
 /// 迟早的事；并排写着，漏一边在代码评审里一眼就能看见。
@@ -192,7 +206,14 @@ macro_rules! tr {
     ($zh:expr, $en:expr $(,)?) => {
         match $crate::i18n::current() {
             $crate::i18n::Lang::Zh => $zh,
+            $crate::i18n::Lang::En | $crate::i18n::Lang::Ja => $en,
+        }
+    };
+    ($zh:expr, $en:expr, $ja:expr $(,)?) => {
+        match $crate::i18n::current() {
+            $crate::i18n::Lang::Zh => $zh,
             $crate::i18n::Lang::En => $en,
+            $crate::i18n::Lang::Ja => $ja,
         }
     };
 }
@@ -202,7 +223,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chinese_tags_pick_chinese_and_everything_else_english() {
+    fn language_tags_and_preference_order() {
         for tag in [
             "zh",
             "zh-Hans",
@@ -211,17 +232,21 @@ mod tests {
             "zh_CN.UTF-8",
             "ZH-hk",
         ] {
-            assert_eq!(from_tag(tag), Lang::Zh, "{tag}");
+            assert_eq!(from_tag(tag), Some(Lang::Zh), "{tag}");
         }
-        for tag in ["en", "en-US", "ja-JP", "fr_FR.UTF-8", "zhuang", ""] {
-            assert_eq!(from_tag(tag), Lang::En, "{tag}");
+        for tag in ["ja", "ja-JP", " JA_jp.UTF-8 "] {
+            assert_eq!(from_tag(tag), Some(Lang::Ja), "{tag}");
         }
+        assert_eq!(preferred_language(["fr-FR", "ja-JP", "en-US"]), Lang::Ja);
+        assert_eq!(preferred_language(["en-US", "ja-JP"]), Lang::En);
+        assert_eq!(preferred_language(["fr-FR", "zhuang", ""]), Lang::En);
     }
 
     #[test]
     fn a_choice_in_settings_wins_over_the_system() {
         assert_eq!(effective(Some(Lang::En)), Lang::En);
         assert_eq!(effective(Some(Lang::Zh)), Lang::Zh);
+        assert_eq!(effective(Some(Lang::Ja)), Lang::Ja);
     }
 
     /// **断言的是「里面有什么」，不是「一字不差是什么」。**这一行还会再长
@@ -229,7 +254,7 @@ mod tests {
     /// 每次都要跟着改，改的时候没人会重新想一遍它到底在保证什么。
     #[test]
     fn the_injected_line_names_the_language_and_the_platform() {
-        for (lang, tag) in [(Lang::En, "en"), (Lang::Zh, "zh")] {
+        for (lang, tag) in [(Lang::En, "en"), (Lang::Zh, "zh"), (Lang::Ja, "ja")] {
             let line = script_for(lang);
             assert!(
                 line.contains(&format!("window.__TW_LANG__ = \"{tag}\"")),
@@ -267,6 +292,7 @@ mod tests {
             })
         }
         assert_eq!(pick(&[("LANG", "zh_CN.UTF-8")]), Lang::Zh);
+        assert_eq!(pick(&[("LANG", "ja_JP.UTF-8")]), Lang::Ja);
         assert_eq!(
             pick(&[("LC_MESSAGES", "en_US.UTF-8"), ("LANG", "zh_CN.UTF-8")]),
             Lang::En
@@ -291,5 +317,10 @@ mod tests {
     fn tr_picks_by_the_language_of_this_thread() {
         assert_eq!(with_lang(Lang::En, || tr!("关闭", "Close")), "Close");
         assert_eq!(with_lang(Lang::Zh, || tr!("关闭", "Close")), "关闭");
+        assert_eq!(with_lang(Lang::Ja, || tr!("关闭", "Close")), "Close");
+        assert_eq!(
+            with_lang(Lang::Ja, || tr!("关闭", "Close", "閉じる")),
+            "閉じる"
+        );
     }
 }

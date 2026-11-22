@@ -111,7 +111,7 @@ export const securityLabelsText = messages(
     matcher: {
       /**
        * 危险命令里代码实现的检查（`builtin`），按检查名说它查什么。密钥与隐私的内置规则不在
-       * 这里：它们的说明由 core 给（`about` / `about_zh`）
+       * 这里：它们使用客户端词表和 Core 的英文 `about`
        */
       builtin: {
         "credential-to-network": "凭据发往本机和该凭据的服务商以外的主机",

@@ -130,12 +130,14 @@ impl Today {
         if self.unpriced > 0 {
             Some(tr!(
                 format!("{} 条无法计价", self.unpriced),
-                format!("{} unpriced", self.unpriced)
+                format!("{} unpriced", self.unpriced),
+                format!("料金不明 {} 件", self.unpriced)
             ))
         } else if self.no_usage > 0 {
             Some(tr!(
                 format!("{} 条无用量", self.no_usage),
-                format!("{} with no usage", self.no_usage)
+                format!("{} with no usage", self.no_usage),
+                format!("使用量なし {} 件", self.no_usage)
             ))
         } else {
             None
@@ -749,6 +751,11 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
                     "{} tokens today, {} cost",
                     tokens_short(t.tokens),
                     t.cost(cost_long)
+                ),
+                format!(
+                    "今日のトークン {}、費用 {}",
+                    tokens_short(t.tokens),
+                    t.cost(cost_long)
                 )
             ));
         }
@@ -762,6 +769,10 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
                 format!(
                     "{percent}% of the {} limit used on {provider}",
                     window_label(&w.window)
+                ),
+                format!(
+                    "{provider} の{}の利用枠を {percent}% 使用",
+                    window_label(&w.window)
                 )
             ));
         }
@@ -769,17 +780,17 @@ fn tooltip(s: &Snapshot, tight: Option<(&str, &Window)>) -> String {
             parts.push(live_count(s.in_progress()));
         }
     }
-    parts.join(tr!("，", ", "))
+    parts.join(tr!("，", ", ", "、"))
 }
 
 fn state_text(g: &Gateway) -> &'static str {
     match g {
-        Gateway::Starting => tr!("正在启动", "Starting"),
-        Gateway::Running => tr!("运行中", "Running"),
-        Gateway::SafeMode => tr!("未在转发", "Not Forwarding"),
-        Gateway::Failed => tr!("无法启动", "Cannot Start"),
-        Gateway::Stopped => tr!("未运行", "Not Running"),
-        Gateway::Unlinked => tr!("未连接", "Not Connected"),
+        Gateway::Starting => tr!("正在启动", "Starting", "起動中"),
+        Gateway::Running => tr!("运行中", "Running", "実行中"),
+        Gateway::SafeMode => tr!("未在转发", "Not Forwarding", "転送停止中"),
+        Gateway::Failed => tr!("无法启动", "Cannot Start", "起動できません"),
+        Gateway::Stopped => tr!("未运行", "Not Running", "停止中"),
+        Gateway::Unlinked => tr!("未连接", "Not Connected", "未接続"),
     }
 }
 
@@ -790,7 +801,8 @@ fn live_count(n: usize) -> String {
             "1 request in progress".to_string()
         } else {
             format!("{n} requests in progress")
-        }
+        },
+        format!("処理中のリクエスト {n} 件")
     )
 }
 
@@ -806,7 +818,11 @@ fn rows(s: &Snapshot) -> Vec<Row> {
             ..Item::new(
                 "open",
                 "macwindow",
-                tr!("打开主界面", "Open ThinkWatch Lite"),
+                tr!(
+                    "打开主界面",
+                    "Open ThinkWatch Lite",
+                    "ThinkWatch Lite を開く"
+                ),
                 Action::OpenMain,
             )
         }),
@@ -821,13 +837,13 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 out.push(Row::Item(Item::new(
                     "retry",
                     "arrow.clockwise",
-                    tr!("立即重试", "Retry Now"),
+                    tr!("立即重试", "Retry Now", "今すぐ再試行"),
                     Action::RetryConnection,
                 )));
                 out.push(Row::Item(Item::new(
                     "why",
                     "info.circle",
-                    tr!("查看原因…", "Show Details…"),
+                    tr!("查看原因…", "Show Details…", "詳細を表示…"),
                     Action::OpenMain,
                 )));
             }
@@ -835,13 +851,13 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 out.push(Row::Item(Item::new(
                     "restart",
                     "arrow.clockwise",
-                    tr!("重新启动网关", "Restart Gateway"),
+                    tr!("重新启动网关", "Restart Gateway", "ゲートウェイを再起動"),
                     Action::RestartGateway,
                 )));
                 out.push(Row::Item(Item::new(
                     "why",
                     "info.circle",
-                    tr!("查看原因…", "Show Details…"),
+                    tr!("查看原因…", "Show Details…", "詳細を表示…"),
                     Action::OpenMain,
                 )));
             }
@@ -852,7 +868,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
     }
 
     if s.notices_on && !s.notices.is_empty() {
-        out.push(section(tr!("提醒", "Notices"), None));
+        out.push(section(tr!("提醒", "Notices", "通知"), None));
         for n in s.notices.iter().take(MAX_NOTICES) {
             out.push(Row::Notice {
                 level: n.level,
@@ -867,7 +883,8 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 "bell",
                 tr!(
                     format!("全部提醒（{}）…", s.notices.len()),
-                    format!("All Notices ({})…", s.notices.len())
+                    format!("All Notices ({})…", s.notices.len()),
+                    format!("すべての通知（{} 件）…", s.notices.len())
                 ),
                 Action::AllNotices,
             )));
@@ -894,10 +911,18 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 Item::new(
                     &format!("resets:{}", q.provider),
                     "arrow.counterclockwise.circle",
-                    tr!("额度重置卡…", "Quota Reset Credits…"),
+                    tr!(
+                        "额度重置卡…",
+                        "Quota Reset Credits…",
+                        "利用枠リセットクレジット…"
+                    ),
                     Action::Open("upstreams".into()),
                 )
-                .right(tr!(format!("可用 {n} 张"), format!("{n} available"))),
+                .right(tr!(
+                    format!("可用 {n} 张"),
+                    format!("{n} available"),
+                    format!("{n} 件利用可能")
+                )),
             ));
         }
     }
@@ -905,7 +930,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
 
     if s.in_progress() > 0 {
         out.push(section(
-            tr!("进行中", "In Progress"),
+            tr!("进行中", "In Progress", "処理中"),
             Some(s.in_progress().to_string()),
         ));
         for l in s.live.iter().take(MAX_LIVE) {
@@ -931,7 +956,11 @@ fn rows(s: &Snapshot) -> Vec<Row> {
                 ..Item::new(
                     "live-more",
                     "",
-                    tr!(format!("另有 {more} 个"), format!("{more} more")),
+                    tr!(
+                        format!("另有 {more} 个"),
+                        format!("{more} more"),
+                        format!("他 {more} 件")
+                    ),
                     Action::Open("requests".into()),
                 )
             }));
@@ -967,7 +996,11 @@ fn rows(s: &Snapshot) -> Vec<Row> {
     let copy = Item::new(
         "copy-address",
         "doc.on.doc",
-        tr!("复制网关地址", "Copy Gateway Address"),
+        tr!(
+            "复制网关地址",
+            "Copy Gateway Address",
+            "ゲートウェイアドレスをコピー"
+        ),
         Action::CopyAddress,
     );
     out.push(Row::Item(match &s.addr {
@@ -977,7 +1010,7 @@ fn rows(s: &Snapshot) -> Vec<Row> {
     out.push(Row::Item(Item::new(
         "copy-key",
         "key",
-        tr!("复制默认密钥", "Copy Default Key"),
+        tr!("复制默认密钥", "Copy Default Key", "既定のキーをコピー"),
         Action::CopyKey,
     )));
     out.push(Row::Separator);
@@ -993,21 +1026,30 @@ fn status(s: &Snapshot) -> Row {
             StateTone::Warn,
             Some(tr!(
                 "已连续启动失败，当前只有配置和历史可用。",
-                "Startup failed several times in a row. Only configuration and history are available."
+                "Startup failed several times in a row. Only configuration and history are available.",
+                "起動に繰り返し失敗しました。設定と履歴は引き続き利用できます。"
             )),
         ),
         Gateway::Failed => (
             StateTone::Bad,
             Some(tr!(
                 "core 程序未能运行，转发已停止。",
-                "The core program could not run, so forwarding has stopped."
+                "The core program could not run, so forwarding has stopped.",
+                "core を実行できなかったため、転送を停止しました。"
             )),
         ),
         Gateway::Stopped => (
             StateTone::Bad,
-            Some(tr!("转发已停止。", "Forwarding has stopped.")),
+            Some(tr!(
+                "转发已停止。",
+                "Forwarding has stopped.",
+                "転送が停止しています。"
+            )),
         ),
-        Gateway::Unlinked => (StateTone::Bad, Some(tr!("正在重新连接。", "Reconnecting."))),
+        Gateway::Unlinked => (
+            StateTone::Bad,
+            Some(tr!("正在重新连接。", "Reconnecting.", "再接続しています。")),
+        ),
     };
     Row::Status {
         state: state_text(&s.gateway).to_string(),
@@ -1030,13 +1072,18 @@ fn dash(s: &Snapshot) -> Dash {
                     "1 request".to_string()
                 } else {
                     format!("{n} requests")
-                }
+                },
+                format!("{n} 件")
             ),
             failed: false,
         });
         if t.failed > 0 {
             meta.push(Meta {
-                text: tr!(format!("失败 {}", t.failed), format!("{} failed", t.failed)),
+                text: tr!(
+                    format!("失败 {}", t.failed),
+                    format!("{} failed", t.failed),
+                    format!("失敗 {} 件", t.failed)
+                ),
                 failed: true,
             });
         }
@@ -1046,7 +1093,7 @@ fn dash(s: &Snapshot) -> Dash {
         });
     }
     Dash {
-        title: tr!("今日", "Today").to_string(),
+        title: tr!("今日", "Today", "今日").to_string(),
         state: state_text(&s.gateway).to_string(),
         tone: StateTone::Ok,
         server: s.remote.clone(),
@@ -1058,7 +1105,8 @@ fn dash(s: &Snapshot) -> Dash {
                 "token"
             } else {
                 "tokens"
-            }
+            },
+            "トークン"
         )
         .to_string(),
         meta,
@@ -1079,17 +1127,27 @@ fn dash(s: &Snapshot) -> Dash {
                     } else {
                         "requests"
                     }
-                )
+                ),
+                format!("今日のトークン {tokens}、リクエスト {requests} 件")
             );
             if t.failed > 0 {
                 tip.push_str(&tr!(
                     format!("，失败 {} 次", t.failed),
-                    format!(", {} failed", t.failed)
+                    format!(", {} failed", t.failed),
+                    format!("、失敗 {} 件", t.failed)
                 ));
             }
-            tip.push_str(&tr!(format!("，费用 {cost}"), format!(", {cost} cost")));
+            tip.push_str(&tr!(
+                format!("，费用 {cost}"),
+                format!(", {cost} cost"),
+                format!("、費用 {cost}")
+            ));
             if let Some(note) = t.cost_note() {
-                tip.push_str(&tr!(format!("（{note}）"), format!(" ({note})")));
+                tip.push_str(&tr!(
+                    format!("（{note}）"),
+                    format!(" ({note})"),
+                    format!("（{note}）")
+                ));
             }
             tip
         }),
@@ -1113,7 +1171,11 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
             ..Item::new(
                 "update",
                 "arrow.down.circle",
-                tr!(format!("安装新版本 {v}…"), format!("Install Version {v}…")),
+                tr!(
+                    format!("安装新版本 {v}…"),
+                    format!("Install Version {v}…"),
+                    format!("バージョン {v} をインストール…")
+                ),
                 Action::InstallUpdate,
             )
         }));
@@ -1122,7 +1184,7 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
         Item::new(
             "settings",
             "gearshape",
-            tr!("设置…", "Settings…"),
+            tr!("设置…", "Settings…", "設定…"),
             Action::Settings,
         )
         .key(","),
@@ -1132,7 +1194,7 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
         out.push(Row::Item(Item::new(
             "update",
             "arrow.down.circle",
-            tr!("检查更新…", "Check for Updates…"),
+            tr!("检查更新…", "Check for Updates…", "更新を確認…"),
             Action::CheckUpdates,
         )));
     }
@@ -1141,7 +1203,11 @@ fn app_items(s: &Snapshot, out: &mut Vec<Row>) {
         Item::new(
             "quit",
             "power",
-            tr!("退出 ThinkWatch Lite…", "Quit ThinkWatch Lite…"),
+            tr!(
+                "退出 ThinkWatch Lite…",
+                "Quit ThinkWatch Lite…",
+                "ThinkWatch Lite を終了…"
+            ),
             Action::Quit,
         )
         .key("q"),
@@ -1153,7 +1219,7 @@ fn connections(s: &Snapshot) -> Item {
     let mut item = Item::new(
         "connections",
         "network",
-        tr!("连接", "Connection"),
+        tr!("连接", "Connection", "接続"),
         Action::OpenMain,
     );
     item.action = None;
@@ -1168,7 +1234,7 @@ fn connections(s: &Snapshot) -> Item {
         })
         .collect();
     subs.push(SubItem {
-        title: tr!("管理连接…", "Manage Connections…").to_string(),
+        title: tr!("管理连接…", "Manage Connections…", "接続を管理…").to_string(),
         checked: false,
         action: Action::Settings,
         sep_before: true,
@@ -1183,7 +1249,7 @@ fn window_row(w: &Window, now_ms: u64) -> WindowRow {
         return WindowRow {
             label: window_label(&w.window),
             percent: None,
-            reset: tr!("已重置", "Reset").to_string(),
+            reset: tr!("已重置", "Reset", "リセット済み").to_string(),
             tone: Tone::Normal,
             detail: None,
         };
@@ -1204,12 +1270,24 @@ fn window_row(w: &Window, now_ms: u64) -> WindowRow {
 /// 「45 分钟」），认不出来的原样显示
 pub fn window_label(window: &str) -> String {
     match window {
-        "5h" => tr!("5 小时", "5h").to_string(),
-        "weekly" => tr!("每周", "Weekly").to_string(),
+        "5h" => tr!("5 小时", "5h", "5 時間").to_string(),
+        "weekly" => tr!("每周", "Weekly", "毎週").to_string(),
         other => match window_span(other) {
-            Some((n, Span::Days)) => tr!(format!("{n} 天"), english_count(n, "day")),
-            Some((n, Span::Hours)) => tr!(format!("{n} 小时"), english_count(n, "hour")),
-            Some((n, Span::Minutes)) => tr!(format!("{n} 分钟"), english_count(n, "minute")),
+            Some((n, Span::Days)) => tr!(
+                format!("{n} 天"),
+                english_count(n, "day"),
+                format!("{n} 日")
+            ),
+            Some((n, Span::Hours)) => tr!(
+                format!("{n} 小时"),
+                english_count(n, "hour"),
+                format!("{n} 時間")
+            ),
+            Some((n, Span::Minutes)) => tr!(
+                format!("{n} 分钟"),
+                english_count(n, "minute"),
+                format!("{n} 分")
+            ),
             None => other.to_string(),
         },
     }
@@ -1256,7 +1334,8 @@ fn credits_left(c: QuotaCredits) -> String {
     let (left, total) = (count(c.remaining), count(c.total));
     tr!(
         format!("剩余 {left} / {total} 积分"),
-        format!("{left} / {total} credits left")
+        format!("{left} / {total} credits left"),
+        format!("残り {left} / {total} クレジット")
     )
 }
 
@@ -1269,14 +1348,26 @@ fn count(n: f64) -> String {
 /// 不够用，不是为了对表。**取整之后再定单位**：59.5 分钟是「1 小时」，不是「60 分钟」
 pub fn resets_in(secs: u64) -> String {
     let [m, h, d] = [60.0, 3600.0, 86_400.0].map(|unit| (secs as f64 / unit).round() as u64);
-    let (zh, en) = if secs == 0 {
-        ("刚刚".to_string(), "now".to_string())
+    let (zh, en, ja) = if secs == 0 {
+        ("刚刚".to_string(), "now".to_string(), "今すぐ".to_string())
     } else if secs < 60 {
-        ("1 分钟内".to_string(), "within 1 min".to_string())
+        (
+            "1 分钟内".to_string(),
+            "within 1 min".to_string(),
+            "1 分以内に".to_string(),
+        )
     } else if m < 60 {
-        (format!("{m} 分钟后"), format!("in {m} min"))
+        (
+            format!("{m} 分钟后"),
+            format!("in {m} min"),
+            format!("{m} 分後に"),
+        )
     } else if h < 24 {
-        (format!("{h} 小时后"), format!("in {h} h"))
+        (
+            format!("{h} 小时后"),
+            format!("in {h} h"),
+            format!("{h} 時間後に"),
+        )
     } else {
         (
             format!("{d} 天后"),
@@ -1285,9 +1376,14 @@ pub fn resets_in(secs: u64) -> String {
             } else {
                 format!("in {d} days")
             },
+            format!("{d} 日後に"),
         )
     };
-    tr!(format!("{zh}重置"), format!("Resets {en}"))
+    tr!(
+        format!("{zh}重置"),
+        format!("Resets {en}"),
+        format!("{ja}リセット")
+    )
 }
 
 /// `x` 按 `digits` 位小数写出来。**写出来的数到了 `limit` 就不算**（进位进到了下一档）：
@@ -1327,7 +1423,11 @@ pub fn rate_short(rate: u32) -> String {
 
 /// 菜单和悬停提示里的生成速度：「42 token/秒」
 fn rate_long(r: u32) -> String {
-    tr!(format!("{r} token/秒"), format!("{r} tokens/s"))
+    tr!(
+        format!("{r} token/秒"),
+        format!("{r} tokens/s"),
+        format!("{r} トークン/秒")
+    )
 }
 
 /// 菜单里的费用：地方够，满 $1000 之前都写到分。$999.996 写到分是「$1000.00」，那已经是

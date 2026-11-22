@@ -49,7 +49,11 @@ interface SectionDef {
   local?: boolean;
 }
 
-const pick = <T,>(m: Messages<T>, get: (t: T) => string): Messages<string> => ({ zh: get(m.zh), en: get(m.en) });
+const pick = <T,>(m: Messages<T>, get: (t: T) => string): Messages<string> => ({
+  zh: get(m.zh),
+  en: get(m.en),
+  ja: get(m.ja),
+});
 
 export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: "connections", title: pick(connText, (t) => t.title) },

@@ -24,4 +24,15 @@ export const rangeListText = messages(
     restore: "Restore defaults",
     bad: (v: string) => `“${v}” is not a range or an address; it is written as 192.168.1.0/24 or 192.168.1.5.`,
   },
+  {
+    placeholder: "例：192.168.1.0/24",
+    enterToAdd: "Enter で追加",
+    single: "単一アドレス",
+    remove: (c: string) => `${c} を削除`,
+    removeShort: "削除",
+    what: "接続を許可するネットワーク範囲またはアドレスを追加できます。この端末からは常に接続できます。",
+    empty: "許可された範囲がないため、この端末からのみ接続できます。",
+    restore: "初期設定に戻す",
+    bad: (v: string) => `「${v}」は無効です。192.168.1.0/24 や 192.168.1.5 の形式で入力してください。`,
+  },
 );

@@ -21,4 +21,13 @@ export const kitText = messages(
     loadFailed: "Could not load",
     configFailed: "The gateway configuration could not be read",
   },
+  {
+    index: "設定項目",
+    unsaved: "未保存の変更があります",
+    saved: "保存しました",
+    discard: "変更を破棄",
+    offline: "core に接続すると設定できます。",
+    loadFailed: "読み込めませんでした",
+    configFailed: "ゲートウェイの設定を読み込めませんでした",
+  },
 );

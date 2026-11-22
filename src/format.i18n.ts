@@ -36,4 +36,18 @@ export const formatText = messages(
       days: (n: number) => (n === 1 ? "in 1 day" : `in ${n} days`),
     },
   },
+  {
+    span: {
+      seconds: (n: number) => `${n} 秒`,
+      minutes: (n: number) => `${n} 分`,
+      hours: (n: string) => `${n} 時間`,
+    },
+    resetIn: {
+      now: "今",
+      underMinute: "1 分以内",
+      minutes: (n: number) => `${n} 分後`,
+      hours: (n: number) => `${n} 時間後`,
+      days: (n: number) => `${n} 日後`,
+    },
+  },
 );

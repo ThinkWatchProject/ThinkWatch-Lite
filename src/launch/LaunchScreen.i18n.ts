@@ -14,4 +14,10 @@ export const launchText = messages(
     slow: (secs: number) => `Starting is taking longer than usual: ${secs} s so far`,
     readFailed: "The gateway status could not be read",
   },
+  {
+    starting: "ゲートウェイを起動しています",
+    loading: "データを読み込んでいます",
+    slow: (secs: number) => `起動に時間がかかっています（${secs} 秒経過）`,
+    readFailed: "ゲートウェイの状態を取得できませんでした",
+  },
 );

@@ -4,7 +4,7 @@ const ZH_WEEKDAYS = ["周日", "周一", "周二", "周三", "周四", "周五",
 const EN_WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 const EN_MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-const zhMd = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
+const monthDay = (d: Date) => `${d.getMonth() + 1}月${d.getDate()}日`;
 const enMd = (d: Date) => `${EN_MONTHS[d.getMonth()]} ${d.getDate()}`;
 const enDays = (n: number) => `${n} ${n === 1 ? "day" : "days"}`;
 
@@ -14,9 +14,9 @@ export const yearText = messages(
     metricLabel: "指标",
     metric: { tokens: "Token", cost: "费用", requests: "请求" },
     /** 标题行右边：一整年都在记录里 */
-    spanYear: (d: Date) => `${d.getFullYear()}年${zhMd(d)} 至今`,
+    spanYear: (d: Date) => `${d.getFullYear()}年${monthDay(d)} 至今`,
     /** 标题行右边：记录不满一年 */
-    spanSince: (d: Date) => `${zhMd(d)}开始记录`,
+    spanSince: (d: Date) => `${monthDay(d)}开始记录`,
     totalYear: "最近一年",
     totalSince: "开始记录以来",
     usedDays: (n: number) => `${n} 天有用量`,
@@ -50,9 +50,9 @@ export const yearText = messages(
     gridLabel: "最近一年每天的用量",
     cell: (date: string, what: string) => `${date}：${what}`,
     /** 提示和读屏用的整个日期：2026年10月28日 周三 */
-    dateFull: (d: Date) => `${d.getFullYear()}年${zhMd(d)} ${ZH_WEEKDAYS[d.getDay()]}`,
+    dateFull: (d: Date) => `${d.getFullYear()}年${monthDay(d)} ${ZH_WEEKDAYS[d.getDay()]}`,
     /** 「最多的一天」下面：10月28日 周三 */
-    dateShort: (d: Date) => `${zhMd(d)} ${ZH_WEEKDAYS[d.getDay()]}`,
+    dateShort: (d: Date) => `${monthDay(d)} ${ZH_WEEKDAYS[d.getDay()]}`,
     /** 网格左边那一列：周一、周三、周五（getDay 的数） */
     weekday: (day: number) => ZH_WEEKDAYS[day]!,
     /** 网格上方的月份（0 起） */
@@ -97,5 +97,45 @@ export const yearText = messages(
     dateShort: (d: Date) => `${EN_WEEKDAYS[d.getDay()]}, ${enMd(d)}`,
     weekday: (day: number) => EN_WEEKDAYS[day]!,
     month: (m: number) => EN_MONTHS[m]!,
+  },
+  {
+    title: "過去 1 年間",
+    metricLabel: "指標",
+    metric: { tokens: "トークン", cost: "費用", requests: "リクエスト" },
+    spanYear: (d: Date) => `${d.getFullYear()}年${monthDay(d)}から現在まで`,
+    spanSince: (d: Date) => `${monthDay(d)}から記録`,
+    totalYear: "過去 1 年間",
+    totalSince: "記録開始から",
+    usedDays: (n: number) => `使用した日数 ${n} 日`,
+    average: "1 日平均",
+    averageNote: "使用量がない日を除く",
+    peak: "最多の日",
+    streak: "連続使用日数",
+    days: (n: number) => `${n} 日`,
+    longest: (n: number) => `最長 ${n} 日`,
+    times: (n: string) => `${n} 件`,
+    tokensMain: (v: string) => `${v} トークン`,
+    requestsMain: (n: string) => `リクエスト ${n} 件`,
+    estimatedShort: (amount: string) => `推定額 ${amount} を含む`,
+    unpricedShort: (n: number) => `料金不明 ${n} 件`,
+    noUsageShort: (n: number) => `使用量なし ${n} 件`,
+    input: "入力",
+    output: "出力",
+    cacheRead: "キャッシュ読み取り",
+    tokensRow: "トークン",
+    costRow: "費用",
+    requestsRow: "リクエスト",
+    noRequests: "リクエストなし",
+    unrecorded: "未記録",
+    aged: "リクエストの保持期間が過ぎたため、この日の詳細は表示できません",
+    unavailable: "現在利用できません",
+    less: "少ない",
+    more: "多い",
+    gridLabel: "過去 1 年間の日別使用量",
+    cell: (date: string, what: string) => `${date}：${what}`,
+    dateFull: (d: Date) => `${d.getFullYear()}年${monthDay(d)}（${"日月火水木金土"[d.getDay()]}）`,
+    dateShort: (d: Date) => `${monthDay(d)}（${"日月火水木金土"[d.getDay()]}）`,
+    weekday: (day: number) => "日月火水木金土"[day]!,
+    month: (m: number) => `${m + 1}月`,
   },
 );

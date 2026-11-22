@@ -89,4 +89,31 @@ export const remoteText = messages(
       "Reads this profile from the AWS credential files of the user running core on the server (~/.aws/credentials, ~/.aws/config). Only profiles that hold access keys are supported.",
     systemProxy: "The server's system proxy",
   },
+  {
+    clientsNote: (name: string, gateway: string) =>
+      `この端末のクライアント設定を確認・変更し、${name} のゲートウェイ（${gateway}）に接続します。サーバー上のクライアントには影響しません。`,
+    mcpNote: (name: string) =>
+      `この端末のクライアントの MCP 設定、スキル、フックを確認・変更します。${name} 上の設定には影響しません。`,
+    localLeft: (n: number, addr: string) =>
+      `${n} 件のクライアントがローカルゲートウェイ ${addr} を参照しています。ゲートウェイが停止しているため、リクエストは失敗します。`,
+    localLeftHere: (n: number, addr: string) =>
+      `この端末の ${n} 件のクライアントがローカルゲートウェイ ${addr} を参照しています。ゲートウェイが停止しているため、リクエストは失敗します。`,
+    retargetTo: (name: string) => `接続先を ${name} に変更`,
+    retargeted: (name: string, clients: string[]) => `接続先を ${name} に変更しました：${clients.join("、")}。`,
+    retargetFailedTitle: (name: string) => `次のクライアントの接続先を ${name} に変更できませんでした`,
+    retargetNone: "変更が必要なクライアントはありません。",
+    sep: "：",
+    appGroup: "この端末のアプリ",
+    serverGroup: (name: string) => `${name} の設定`,
+    controlReadOnly: "リモート制御のリッスン設定とキーはサーバーで変更してください。",
+    connection: "接続",
+    serverCore: "サーバーの core",
+    uninstallServer: (name: string) => `この端末のみに適用されます。${name} 上の設定やデータには影響しません。`,
+    deviceOnly: (name: string) =>
+      `ブラウザーでのログインは core を実行する端末に戻ります。現在は ${name} に接続しているため、デバイスコードでログインしてください。`,
+    headersHint: "リクエストごとに送信します。値に ${NAME} を指定すると、サーバーの core プロセスの環境変数を参照します。",
+    keyHint: "${NAME} はサーバーの core プロセスの環境変数を参照します。",
+    profileHint: "サーバー上で core を実行しているユーザーの AWS 認証情報ファイル（~/.aws/credentials、~/.aws/config）からプロファイルを読み込みます。アクセスキーを含むプロファイルに対応しています。",
+    systemProxy: "サーバーのシステムプロキシ",
+  },
 );

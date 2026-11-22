@@ -66,4 +66,18 @@ export const securityPageText = messages(
     modeSet: (guard: string, mode: string) => `${guard} set to ${mode}`,
     ruleCreated: (name: string) => `Rule “${name}” created`,
   },
+  {
+    log: "ログ",
+    modes: { enforce: "件有効", observe: "件監視中", off: "件無効" },
+    hits: (_count: number, n: ReactNode, range: string, custom: boolean) => (
+      <>{custom ? range : `過去 ${range}`} に {n} 件検出</>
+    ),
+    outcomes: { cut: "切断", blocked: "拒否", stripped: "削除", replaced: "置換", recorded: "記録のみ" },
+    loadFailed: "セキュリティ設定を読み込めませんでした",
+    ruleOn: (name: string) => `「${name}」を有効にしました`,
+    ruleOff: (name: string) => `「${name}」を無効にしました`,
+    actionSet: (name: string, action: string) => `「${name}」の処理を「${action}」に設定しました`,
+    modeSet: (guard: string, mode: string) => `${guard}を「${mode}」に設定しました`,
+    ruleCreated: (name: string) => `ルール「${name}」を作成しました`,
+  },
 );

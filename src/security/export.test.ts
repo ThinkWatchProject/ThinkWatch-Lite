@@ -19,7 +19,6 @@ beforeAll(async () => {
           id: "anthropic-api-key",
           custom: false,
           name: "Anthropic API key",
-          name_zh: "Anthropic API 密钥",
           kind: "ai-services",
           matcher: { kind: "prefix" as const, prefix: "sk-ant-", min_tail: 20 },
           enabled: true,

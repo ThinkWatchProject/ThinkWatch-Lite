@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
-import { setLang } from "./index";
-import { coreText, errorText, plain } from "./core.i18n";
+import { setLang, type Lang } from "./index";
+import { codesMatching, coreText, errorText, plain } from "./core.i18n";
 import CORE_ZH from "./core.zh.json";
 import CASE_FILE from "./core.zh.cases.json";
 import { compile } from "./template";
@@ -10,7 +10,7 @@ import type { Msg } from "@/types";
 const CASES = CASE_FILE as unknown as { msg: Msg; zh: string }[];
 
 /** 每条用例自己说用哪种语言 —— 全局的那个在测试之间是共享的 */
-function inLang<T>(lang: "zh" | "en", f: () => T): T {
+function inLang<T>(lang: Lang, f: () => T): T {
   setLang(lang);
   try {
     return f();
@@ -20,6 +20,20 @@ function inLang<T>(lang: "zh" | "en", f: () => T): T {
 }
 
 describe("core 发来的消息", () => {
+  it("translates and searches Japanese errors, using English for missing translations", () => {
+    const m = {
+      code: "gw.oauth.unreachable",
+      text: "the credential of upstream `example`: Cannot reach https://example.com: timeout",
+      args: { upstream: "example", endpoint: "https://example.com", detail: "timeout" },
+    };
+    expect(inLang("ja", () => coreText(m))).toBe(
+      "アップストリーム「example」の認証情報：トークンエンドポイント https://example.com に接続できません：timeout",
+    );
+    expect(inLang("ja", () => codesMatching("接続できません"))).toContain(m.code);
+    expect(inLang("ja", () => coreText({ code: "control.name_empty", text: "Name is required" }))).toBe("Name is required");
+    expect(inLang("ja", () => coreText({ code: "l1.tcp.refused", text: "Connection refused" }))).toBe("Connection refused");
+  });
+
   it("中文界面按码说自己那句话", () => {
     const m = {
       code: "l1.tcp.refused",

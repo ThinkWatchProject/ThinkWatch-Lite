@@ -61,29 +61,6 @@
       "credential_helper": "凭据脚本",
       "idp": "经代理的身份提供方登录"
     },
-    "rule_why": {
-      "ignore-previous": "典型的提示注入开头",
-      "disregard": "典型的提示注入开头，使用 disregard 一类的动词",
-      "you-are-now": "试图重新设定模型的身份",
-      "ignore-previous-zh": "中文提示注入，要求忽略先前的指令",
-      "new-instructions-zh": "中文提示注入，声明新的指令",
-      "you-are-now-zh": "试图重新设定模型的身份",
-      "chat-marker": "伪造对话标记，试图让模型将正文当作系统消息",
-      "fake-system": "伪装成系统或助手的发言",
-      "curl-pipe-sh": "下载后直接执行，执行的内容由远端决定且无法预先查看",
-      "rm-rf-root": "删除整个主目录或根目录",
-      "chmod-777": "将文件权限设为所有人可写",
-      "base64-decode-exec": "将要执行的内容隐藏在 base64 编码中",
-      "exfil-env": "将环境变量（通常包含密钥）发送到外部",
-      "exfil-credentials": "要求模型将凭据文件的内容发送出去",
-      "exfil-credentials-reversed": "要求模型将凭据文件的内容发送出去",
-      "write-startup-item": "写入开机或打开终端时自动执行的位置",
-      "crontab-install": "安装定时任务，或删除全部现有定时任务",
-      "ssh-key-read": "读取私钥或云服务凭据",
-      "secret-to-unknown-host": "将凭据发往既非本机、也不是该凭据服务商的主机",
-      "thinkwatch-data": "读写 ThinkWatch 的数据目录，其中以明文保存全部上游密钥和这几项防护的设置",
-      "upload-file-to-host": "将本地文件的内容上传到外部主机"
-    },
     "source_in": {
       "hooks": "hook 中",
       "mcp": "MCP server 中",
@@ -118,57 +95,6 @@
       "redact": "密钥与隐私",
       "inspect_tools": "危险命令",
       "content": "内容过滤"
-    },
-    "scan_rule": {
-      "ignore-previous": "要求忽略先前的指令",
-      "disregard": "要求无视系统提示",
-      "you-are-now": "重新设定模型身份",
-      "ignore-previous-zh": "要求忽略先前的指令（中文）",
-      "new-instructions-zh": "声明新的指令（中文）",
-      "you-are-now-zh": "重新设定模型身份（中文）",
-      "chat-marker": "伪造对话标记",
-      "fake-system": "伪装的系统发言",
-      "curl-pipe-sh": "下载即执行",
-      "base64-decode-exec": "解码后执行",
-      "exfil-env": "外发环境变量",
-      "exfil-credentials": "外发凭据文件",
-      "exfil-credentials-reversed": "外发凭据文件（动词在前）",
-      "ssh-key-read": "读取私钥或云凭据",
-      "write-startup-item": "写入启动项",
-      "crontab-install": "安装定时任务",
-      "rm-rf-root": "删除主目录或根目录",
-      "chmod-777": "开放全部写权限",
-      "secret-to-unknown-host": "凭据发往陌生主机",
-      "thinkwatch-data": "读写 ThinkWatch 自己的数据",
-      "upload-file-to-host": "上传本地文件到外部主机"
-    },
-    "content_rule": {
-      "unicode-tags": "Unicode 标签字符",
-      "bidi-controls": "双向控制符",
-      "zero-width": "零宽字符",
-      "private-use": "私用区字符",
-      "ignore-previous-instructions": "要求忽略先前的指令",
-      "ignore-all-previous": "要求忽略之前的全部内容",
-      "disregard-your-instructions": "要求无视指令",
-      "jailbreak": "越狱",
-      "dan": "DAN",
-      "developer-mode": "开发者模式",
-      "you-are-now": "重新设定身份",
-      "new-persona": "新的人设",
-      "act-as": "要求扮演角色",
-      "pretend-to-be": "要求假装身份",
-      "system-prompt": "索取系统提示词",
-      "reveal-your-instructions": "要求透露指令",
-      "what-are-your-rules": "询问规则",
-      "base64-wall": "长串 Base64",
-      "zh-ignore-previous": "要求忽略先前的指令（中文）",
-      "zh-forget-your": "要求忘记指令（中文）",
-      "zh-do-not-follow": "要求不要遵循（中文）",
-      "zh-you-are-now": "重新设定身份（中文）",
-      "zh-role-play": "要求扮演角色（中文）",
-      "zh-reveal-your": "要求透露指令（中文）",
-      "zh-system-prompt": "系统提示词（中文）",
-      "zh-jailbreak": "越狱（中文）"
     },
     "zai_step": {
       "authorize_url": "获取授权地址",
@@ -227,27 +153,32 @@
     {
       "arg": "upstream",
       "en": "the credential of upstream `{upstream}`",
-      "zh": "上游「{upstream}」的凭据"
+      "zh": "上游「{upstream}」的凭据",
+      "ja": "アップストリーム「{upstream}」の認証情報"
     },
     {
       "arg": "upstream",
       "en": "The credential for upstream `{upstream}` could not be obtained",
-      "zh": "无法获取上游「{upstream}」的凭据"
+      "zh": "无法获取上游「{upstream}」的凭据",
+      "ja": "アップストリーム「{upstream}」の認証情報を取得できませんでした"
     },
     {
       "arg": "proxy",
       "en": "The password for proxy `{proxy}` could not be read",
-      "zh": "无法读取代理「{proxy}」的密码"
+      "zh": "无法读取代理「{proxy}」的密码",
+      "ja": "プロキシ「{proxy}」のパスワードを読み取れませんでした"
     },
     {
       "arg": "provider",
       "en": "oauth.refresh of upstream `{provider}` could not be located",
-      "zh": "找不到上游「{provider}」的 oauth.refresh"
+      "zh": "找不到上游「{provider}」的 oauth.refresh",
+      "ja": "アップストリーム「{provider}」の oauth.refresh が見つかりませんでした"
     },
     {
       "arg": "provider",
       "en": "after writing the new credential for upstream `{provider}` the configuration could not be read, so nothing was written",
-      "zh": "写入上游「{provider}」的新凭据后无法读取配置，未写入任何内容"
+      "zh": "写入上游「{provider}」的新凭据后无法读取配置，未写入任何内容",
+      "ja": "アップストリーム「{provider}」の認証情報を更新できませんでした。設定を読み込めなかったため、変更は保存されていません"
     },
     {
       "arg": "step",
@@ -257,7 +188,8 @@
     {
       "arg": "backend",
       "en": "The ChatGPT backend could not be reached",
-      "zh": "无法连接 ChatGPT 后端"
+      "zh": "无法连接 ChatGPT 后端",
+      "ja": "ChatGPT のバックエンドに接続できませんでした"
     }
   ],
   "messages": {

@@ -169,7 +169,8 @@ async fn ask(app: &tauri::AppHandle) -> Result<Option<Found>, String> {
     let Some(version) = update::cask_version(&cask) else {
         return Err(tr!(
             "无法从 Homebrew cask 中读取版本号",
-            "The version number could not be read from the Homebrew cask"
+            "The version number could not be read from the Homebrew cask",
+            "Homebrew cask からバージョン番号を読み取れませんでした"
         )
         .into());
     };
@@ -217,7 +218,11 @@ pub(crate) fn show_update_window(app: &tauri::AppHandle) -> tauri::Result<()> {
         return crate::window::reveal(app, &w);
     }
     let b = WebviewWindowBuilder::new(app, UPDATE_WINDOW, WebviewUrl::default())
-        .title(tr!("软件更新", "Software Update"))
+        .title(tr!(
+            "软件更新",
+            "Software Update",
+            "ソフトウェアアップデート"
+        ))
         .initialization_script(i18n::init_script())
         // 高度先随便给一个：网页画完量出内容有多高，再由 `update_fit` 定下来。
         // 宽度按界面大小放大（见 `window::fit`）
@@ -333,10 +338,15 @@ fn update_signal(version: &str) -> notices::Signal {
         notices::Level::Info,
         tr!(
             format!("ThinkWatch Lite {version} 可用"),
-            format!("ThinkWatch Lite {version} Is Available")
+            format!("ThinkWatch Lite {version} Is Available"),
+            format!("ThinkWatch Lite {version} を利用できます")
         ),
     )
-    .body(tr!("点按此提醒进行更新。", "Click to update."))
+    .body(tr!(
+        "点按此提醒进行更新。",
+        "Click to update.",
+        "クリックして更新します。"
+    ))
     .tell()
     .now()
 }
@@ -389,7 +399,8 @@ pub async fn update_show(app: tauri::AppHandle) -> Out<()> {
     if pending_update(&app).is_none() {
         return Err(tr!(
             "尚无可安装的新版本",
-            "No new version is waiting to be installed"
+            "No new version is waiting to be installed",
+            "インストールできる新しいバージョンはありません"
         )
         .into());
     }
@@ -530,13 +541,19 @@ pub async fn update_install(
             .into(),
             _ => tr!(
                 "开发构建不执行自动更新",
-                "Development builds do not update automatically"
+                "Development builds do not update automatically",
+                "開発ビルドでは自動更新を利用できません"
             )
             .into(),
         });
     }
     if hub.installing.swap(true, Ordering::SeqCst) {
-        return Err(tr!("更新正在进行中", "An update is already in progress").into());
+        return Err(tr!(
+            "更新正在进行中",
+            "An update is already in progress",
+            "更新はすでに進行中です"
+        )
+        .into());
     }
     // 中途失败要把标记放回去，否则再点一次会被当成「已经在进行中」
     struct Release<'a>(&'a std::sync::atomic::AtomicBool);
@@ -551,7 +568,9 @@ pub async fn update_install(
         .check()
         .await
         .map_err(|e| e.to_string())?
-        .ok_or_else(|| tr!("已是最新版本", "Already up to date").to_string())?;
+        .ok_or_else(|| {
+            tr!("已是最新版本", "Already up to date", "最新バージョンです").to_string()
+        })?;
 
     let _ = app.emit("update-step", Step::Downloading);
     let h = app.clone();
@@ -563,7 +582,13 @@ pub async fn update_install(
             || {},
         )
         .await
-        .map_err(|e| tr!(format!("下载失败：{e}"), format!("Download failed: {e}")))?;
+        .map_err(|e| {
+            tr!(
+                format!("下载失败：{e}"),
+                format!("Download failed: {e}"),
+                format!("ダウンロードに失敗しました：{e}")
+            )
+        })?;
     // 绿色版不跑安装程序，自己换文件夹里的两个 exe —— 见 `install_portable`
     #[cfg(windows)]
     if install == update::Install::Portable {
@@ -577,7 +602,8 @@ pub async fn update_install(
         .map_err(|e| {
             tr!(
                 format!("无法打开更新包：{e}"),
-                format!("The update could not be opened: {e}")
+                format!("The update could not be opened: {e}"),
+                format!("更新パッケージを開けませんでした：{e}")
             )
         })?;
 
@@ -601,7 +627,8 @@ pub async fn update_install(
         install_blocking(up, bytes).await?.map_err(|e| {
             tr!(
                 format!("安装失败：{e}"),
-                format!("Installation failed: {e}")
+                format!("Installation failed: {e}"),
+                format!("インストールに失敗しました：{e}")
             )
         })?;
         hand_over_or_stop(&app, &state).await;
@@ -726,7 +753,8 @@ async fn install_windows(
     }
     Err(tr!(
         format!("安装失败：{e}"),
-        format!("Installation failed: {e}")
+        format!("Installation failed: {e}"),
+        format!("インストールに失敗しました：{e}")
     )
     .into())
 }
@@ -951,10 +979,15 @@ fn updated_notice(from: &str, now: &str, mode: notices::Mode) -> Option<(String,
         return None;
     }
     Some((
-        tr!(format!("已更新到 {now}"), format!("Updated to {now}")),
+        tr!(
+            format!("已更新到 {now}"),
+            format!("Updated to {now}"),
+            format!("{now} に更新しました")
+        ),
         tr!(
             format!("ThinkWatch Lite 已从 {from} 更新到 {now}。"),
-            format!("ThinkWatch Lite was updated from {from} to {now}.")
+            format!("ThinkWatch Lite was updated from {from} to {now}."),
+            format!("ThinkWatch Lite を {from} から {now} に更新しました。")
         ),
     ))
 }
@@ -1221,6 +1254,24 @@ mod tests {
             assert_eq!(list[0].level, notices::Level::Info);
             assert!(list[0].notified);
             assert_eq!(*shown.0.lock().unwrap(), ["ThinkWatch Lite 2026.10.8 可用"]);
+        });
+    }
+
+    #[test]
+    fn japanese_update_notice_uses_japanese_copy() {
+        with_lang(Lang::Ja, || {
+            let (n, shown) = bus(Mode::System);
+            tell_update(&n, "2026.10.8");
+            assert_eq!(
+                *shown.0.lock().unwrap(),
+                ["ThinkWatch Lite 2026.10.8 を利用できます"]
+            );
+            assert_eq!(
+                updated_notice("2026.10.7", "2026.10.8", Mode::System)
+                    .unwrap()
+                    .1,
+                "ThinkWatch Lite を 2026.10.7 から 2026.10.8 に更新しました。"
+            );
         });
     }
 

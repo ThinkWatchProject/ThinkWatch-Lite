@@ -19,4 +19,13 @@ export const noticesText = messages(
     read: "Mark as read",
     readOne: (title: string) => `Mark as read: ${title}`,
   },
+  {
+    bell: (unread: number) => (unread > 0 ? `通知、未読 ${unread} 件` : "通知"),
+    title: "通知",
+    empty: "通知はありません",
+    clearAll: "すべて消去",
+    readAll: "すべて既読にする",
+    read: "既読にする",
+    readOne: (title: string) => `既読にする：${title}`,
+  },
 );

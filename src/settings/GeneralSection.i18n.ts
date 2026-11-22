@@ -111,4 +111,47 @@ export const generalText = messages(
     noticeApp: "In app only",
     noticeOff: "Off",
   },
+  {
+    title: "一般",
+    language: "言語",
+    languageSystem: (name: string) => `システムに従う（${name}）`,
+    appearance: "外観",
+    system: "システムに従う",
+    light: "ライト",
+    dark: "ダーク",
+    systemNow: (name: string) => `現在のシステム設定は「${name}」です。`,
+    zoom: "表示サイズ",
+    zoomKeys: (bigger: string, smaller: string, reset: string) =>
+      `${bigger} で拡大、${smaller} で縮小、${reset} で 100% に戻します。`,
+    hotkey: "グローバルショートカット",
+    hotkeyWhat: "どのアプリからでもメインウィンドウを開けます。最前面でもう一度押すと閉じます。",
+    hotkeyUnsupported: "このデスクトップ環境はグローバルショートカットに対応していません。",
+    hotkeyTaken: "このショートカットは別のアプリで使用されています。別の組み合わせを選んでください。",
+    hotkeyNone: "未設定",
+    hotkeyPress: "キーの組み合わせを入力",
+    hotkeyOff: "オフにする",
+    hotkeyRestore: "初期設定に戻す",
+    hotkeyNeedModifier: `Ctrl、Alt、${isWindows ? "Win" : isLinux ? "Super" : "⌘"} のいずれかを含めてください。`,
+    hotkeyInApp: (combo: string) => `${combo} はアプリ内で使用されています。別の組み合わせを選んでください。`,
+    menubar: "メニューバー",
+    menubarWhat: "今日のトークン使用量と費用を表示します。",
+    menubarFull: "アイコンと数値",
+    menubarIcon: "アイコンのみ",
+    menubarNumbers: "数値のみ",
+    menubarHidden: "非表示",
+    menubarHiddenWhat: "Finder または Spotlight から ThinkWatch Lite を開くと、メインウィンドウを表示できます。",
+    menubarHiddenWhatHotkey: (combo: string) =>
+      `${combo} を押すか、Finder または Spotlight から ThinkWatch Lite を開くと、メインウィンドウを表示できます。`,
+    autostart: "ログイン時に起動",
+    autostartWhat: isWindows
+      ? "ログイン時に通知領域にアイコンを表示します。ウィンドウは開きません。"
+      : isLinux
+        ? "ログイン時にシステムトレイにアイコンを表示します。ウィンドウは開きません。"
+        : "ログイン時にメニューバーにアイコンを表示します。ウィンドウは開きません。",
+    autostartHiddenWhat: "ログイン時にバックグラウンドで起動します。",
+    notices: "通知",
+    noticeSystem: "システム通知",
+    noticeApp: "アプリ内のみ",
+    noticeOff: "オフ",
+  },
 );

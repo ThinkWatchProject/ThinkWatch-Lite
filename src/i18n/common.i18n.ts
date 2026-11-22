@@ -29,4 +29,16 @@ export const commonText = messages(
     confirm: "Confirm",
     none: "None",
   },
+  {
+    cancel: "キャンセル",
+    close: "閉じる",
+    save: "保存",
+    delete: "削除",
+    edit: "編集",
+    retry: "再試行",
+    copy: "コピー",
+    copied: "コピーしました",
+    confirm: "確認",
+    none: "なし",
+  },
 );

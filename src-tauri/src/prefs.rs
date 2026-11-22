@@ -427,7 +427,7 @@ mod tests {
         let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
-            br#"{"check_updates":"no","language":"ja","theme":1,"zoom":120,"hotkey":"Shift+H","notices":"off","menubar":"icon"}"#,
+            br#"{"check_updates":"no","language":"fr","theme":1,"zoom":120,"hotkey":"Shift+H","notices":"off","menubar":"icon"}"#,
         )
         .unwrap();
         let p = load(&dir);
@@ -485,11 +485,11 @@ mod tests {
         let (_tmp, dir) = tmp();
         update(&dir, |p| p.language = Some(Lang::En)).unwrap();
         let mut before = std::fs::File::open(prefs_path(&dir)).unwrap();
-        update(&dir, |p| p.language = Some(Lang::Zh)).unwrap();
+        update(&dir, |p| p.language = Some(Lang::Ja)).unwrap();
         let mut text = String::new();
         before.read_to_string(&mut text).unwrap();
         assert!(text.contains(r#""language": "en""#), "{text}");
-        assert_eq!(load(&dir).language, Some(Lang::Zh));
+        assert_eq!(load(&dir).language, Some(Lang::Ja));
         let files: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().file_name())

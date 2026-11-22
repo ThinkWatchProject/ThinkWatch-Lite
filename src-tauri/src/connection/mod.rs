@@ -745,7 +745,8 @@ pub fn delete_connection(app: tauri::AppHandle, id: String) -> Out<ConnView> {
     if id == LOCAL || st.link.current().id() == id {
         return Err(CmdError::plain(tr!(
             "当前连接不能删除，请先切换到其他连接。",
-            "The current connection cannot be deleted. Switch to another connection first."
+            "The current connection cannot be deleted. Switch to another connection first.",
+            "現在の接続は削除できません。先に別の接続に切り替えてください。"
         )));
     }
     store::update(&data_dir(), |c| {
@@ -799,14 +800,16 @@ pub fn retry_connection(state: tauri::State<'_, AppState>) {
 fn saving(e: anyhow::Error) -> CmdError {
     CmdError::plain(tr!(
         format!("无法保存连接列表：{e:#}"),
-        format!("The connection list could not be saved: {e:#}")
+        format!("The connection list could not be saved: {e:#}"),
+        format!("接続一覧を保存できませんでした：{e:#}")
     ))
 }
 
 fn key_error(e: &anyhow::Error) -> CmdError {
     CmdError::plain(tr!(
         format!("无法读写保存的密钥：{e:#}"),
-        format!("The saved key could not be read or written: {e:#}")
+        format!("The saved key could not be read or written: {e:#}"),
+        format!("保存されたキーを読み書きできませんでした：{e:#}")
     ))
 }
 
@@ -822,7 +825,7 @@ pub fn show_picker(app: &tauri::AppHandle, why: launch::Why) -> tauri::Result<()
         launch::Why::Unfinished => "unfinished",
     };
     let b = tauri::WebviewWindowBuilder::new(app, PICKER_WINDOW, tauri::WebviewUrl::default())
-        .title(tr!("选择连接", "Choose a Connection"))
+        .title(tr!("选择连接", "Choose a Connection", "接続を選択"))
         .initialization_script(format!(
             "{} window.__TW_PICK__ = {:?};",
             crate::i18n::init_script(),

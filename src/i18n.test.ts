@@ -2,12 +2,13 @@ import { readFileSync, readdirSync } from "node:fs";
 import { join, relative } from "node:path";
 import ts from "typescript";
 import { describe, expect, it } from "vitest";
-import { getLang, messages, setLang, textOf } from "./i18n";
+import { getLang, localeTag, messages, preferredLanguage, setLang, textOf } from "./i18n";
 
 describe("界面语言", () => {
   const m = messages(
     { title: "用量概览", failed: (n: number) => `${n} 次失败` },
     { title: "Usage", failed: (n: number) => `${n} failed` },
+    { title: "使用量" },
   );
 
   it("按当前语言取文案，换了语言立刻换", () => {
@@ -17,7 +18,18 @@ describe("界面语言", () => {
     setLang("en");
     expect(getLang()).toBe("en");
     expect(textOf(m).failed(3)).toBe("3 failed");
+    setLang("ja");
+    expect(localeTag(getLang())).toBe("ja");
+    expect(textOf(m).title).toBe("使用量");
+    expect(textOf(m).failed(3)).toBe("3 failed");
     setLang("zh");
+  });
+
+  it("matches the first supported system language and falls back to English", () => {
+    expect(preferredLanguage(["fr-FR", "ja-JP", "en-US"])).toBe("ja");
+    expect(preferredLanguage(["en-GB", "ja-JP"])).toBe("en");
+    expect(preferredLanguage(["zh-Hant-TW", "ja-JP"])).toBe("zh");
+    expect(preferredLanguage(["fr-FR", "de-DE"])).toBe("en");
   });
 });
 
@@ -28,7 +40,7 @@ describe("界面语言", () => {
  * 你，直到有人正好看见那一屏。这里用 TypeScript 自己的语法树找字符串和
  * JSX 文本，注释不算（注释是写给开发者的，照样用中文）。
  */
-const CJK = /[\u3400-\u9fff\u3000-\u303f\uff00-\uffef]/;
+const CJK = /[\u3400-\u9fff\u3000-\u30ff\uff00-\uffef]/;
 
 /**
  * 还没迁到词表里的文件。**现在是空的 —— 全都迁完了。**清单留着当守卫：

@@ -1,7 +1,6 @@
-//! core 的消息按码说中文 —— 系统通知、菜单栏用。
+//! 系统通知和菜单栏使用的 core 消息翻译。
 //!
-//! **表只有一张，在 `src/i18n/core.zh.json`**，界面和这里读的是同一份（这里
-//! `include_str!`）。以前这边没有表，通知只好把 core 的英文原句嵌进中文句子里。
+//! 界面和 Rust 共用 `src/i18n/core.zh.json` 和 `src/i18n/core.ja.json`。
 //! 句子的写法（参数、查词表、可有可无的一段）和界面 `src/i18n/template.ts` 是
 //! 同一套，两边跑同一份用例（`src/i18n/core.zh.cases.json`）。
 //!
@@ -14,11 +13,14 @@ use std::sync::OnceLock;
 use serde::Deserialize;
 use tw_api::Msg;
 
+use crate::i18n::Lang;
+
 type Tables = HashMap<String, HashMap<String, String>>;
 
 #[derive(Deserialize)]
 struct Table {
     tables: Tables,
+    #[serde(default)]
     contexts: Vec<Context>,
     messages: HashMap<String, String>,
 }
@@ -29,19 +31,76 @@ struct Context {
     arg: String,
     en: String,
     zh: String,
+    ja: Option<String>,
 }
 
 const SOURCE: &str = include_str!("../../src/i18n/core.zh.json");
 
+#[derive(Deserialize)]
+struct GuardCopy {
+    rules: HashMap<String, RuleCopy>,
+    // Only needed to check coverage against the pinned Core catalog.
+    #[cfg(test)]
+    kinds: HashMap<String, String>,
+}
+
+#[derive(Deserialize)]
+struct RuleCopy {
+    name: String,
+    why: Option<String>,
+    #[cfg(test)]
+    about: Option<String>,
+}
+
+fn guards() -> &'static HashMap<String, GuardCopy> {
+    static GUARDS: OnceLock<HashMap<String, GuardCopy>> = OnceLock::new();
+    GUARDS.get_or_init(|| {
+        serde_json::from_str(include_str!("../../src/i18n/guard.zh.json"))
+            .expect("guard.zh.json is valid")
+    })
+}
+
+pub fn rule_name_zh(guard: &str, id: &str) -> Option<&'static str> {
+    Some(&guards().get(guard)?.rules.get(id)?.name)
+}
+
 fn table() -> &'static Table {
     static T: OnceLock<Table> = OnceLock::new();
-    // 表随代码一起编进来，读不出来是开发时的错，测试会先挂
-    T.get_or_init(|| serde_json::from_str(SOURCE).expect("core.zh.json 读不出来"))
+    T.get_or_init(|| {
+        let mut table: Table = serde_json::from_str(SOURCE).expect("core.zh.json is valid");
+        for (key, guard) in [("scan_rule", "inspect_tools"), ("content_rule", "content")] {
+            table.tables.insert(
+                key.into(),
+                guards()[guard]
+                    .rules
+                    .iter()
+                    .map(|(id, copy)| (id.clone(), copy.name.clone()))
+                    .collect(),
+            );
+        }
+        table.tables.insert(
+            "rule_why".into(),
+            guards()["inspect_tools"]
+                .rules
+                .iter()
+                .filter_map(|(id, copy)| Some((id.clone(), copy.why.clone()?)))
+                .collect(),
+        );
+        table
+    })
+}
+
+fn japanese() -> &'static Table {
+    static JA: OnceLock<Table> = OnceLock::new();
+    JA.get_or_init(|| {
+        serde_json::from_str(include_str!("../../src/i18n/core.ja.json"))
+            .expect("core.ja.json is valid")
+    })
 }
 
 /// 一条 core 消息在当前语言下怎么说
 pub fn text(m: &Msg) -> String {
-    tr!(zh(m).unwrap_or_else(|| m.text.clone()), m.text.clone())
+    localized(m, crate::i18n::current()).unwrap_or_else(|| m.text.clone())
 }
 
 /// 词表里的一项（`guard`、`content_rule`…），中文。表或项不在是 `None`
@@ -62,25 +121,34 @@ pub fn clause(m: &Msg) -> String {
 ///
 /// **插件名按中文说**：`{plugin}` 是默认插件 core 发的英文名时，换成它的中文名（和插件页上
 /// 一样，见 `plugins::defaults::name_in`）。消息里只有名字，按名字认
-pub fn zh(m: &Msg) -> Option<String> {
-    let t = table();
+#[cfg(test)]
+fn zh(m: &Msg) -> Option<String> {
+    localized(m, Lang::Zh)
+}
+
+fn localized(m: &Msg, lang: Lang) -> Option<String> {
+    let t = match lang {
+        Lang::Zh => table(),
+        Lang::Ja => japanese(),
+        Lang::En => return None,
+    };
     if m.code.starts_with("//") {
         return None;
     }
     let say = t.messages.get(&m.code)?;
-    // 填进中文句子的参数。认场合比的是英文原句，那边照旧用原样的参数
-    let mut zh_args = m.args.clone();
-    if let Some(p) = zh_args.get_mut("plugin") {
-        *p = crate::plugins::defaults::name_in(crate::i18n::Lang::Zh, None, p);
+    // 识别场合时仍使用英文原句及其参数。
+    let mut local_args = m.args.clone();
+    if let Some(p) = local_args.get_mut("plugin") {
+        *p = crate::plugins::defaults::name_in(lang, None, p);
     }
     let mut leads = String::new();
     let mut rest = m.text.as_str();
     'peel: loop {
-        for c in &t.contexts {
+        for c in &table().contexts {
             if !m.args.contains_key(&c.arg) {
                 continue;
             }
-            let Some(en) = render(&c.en, &m.args, &t.tables) else {
+            let Some(en) = render(&c.en, &m.args, &table().tables) else {
                 continue;
             };
             let Some(after) = rest
@@ -89,14 +157,19 @@ pub fn zh(m: &Msg) -> Option<String> {
             else {
                 continue;
             };
-            leads.push_str(&render(&c.zh, &zh_args, &t.tables)?);
+            let copy = if lang == Lang::Zh {
+                &c.zh
+            } else {
+                c.ja.as_ref()?
+            };
+            leads.push_str(&render(copy, &local_args, &t.tables)?);
             leads.push('：');
             rest = after;
             continue 'peel;
         }
         break;
     }
-    Some(leads + &render(say, &zh_args, &t.tables)?)
+    Some(leads + &render(say, &local_args, &t.tables)?)
 }
 
 // ------------------------------------------------------------ 写法
@@ -311,29 +384,55 @@ fn render(src: &str, args: &BTreeMap<String, String>, tables: &Tables) -> Option
 mod tests {
     use super::*;
 
-    /// 消息里规则名、理由的中文（`{rule:scan_rule}`、`{rule:rule_why}`、`{rule:content_rule}`）
-    /// 查的是表里的这三张；**规则的中文本身由 core 写**（tw-guard 的规则目录，安全页显示的
-    /// 就是它）。这里钉着两边一字不差：core 改了措辞，消息里不能还是旧的那句
     #[test]
-    fn rule_tables_match_the_core_catalog() {
-        let t = &table().tables;
-        let f = tw_guard::tools::rules::builtin();
-        let tools: Vec<_> = f.injection.iter().chain(&f.dangerous).collect();
-        let names: HashMap<String, String> = tools
-            .iter()
-            .map(|r| (r.id.clone(), r.name_zh.clone()))
-            .collect();
-        let whys: HashMap<String, String> = tools
-            .iter()
-            .map(|r| (r.id.clone(), r.why_zh.clone()))
-            .collect();
-        let content: HashMap<String, String> = tw_guard::content::builtins()
-            .iter()
-            .map(|b| (b.id.clone(), b.name_zh.clone()))
-            .collect();
-        assert_eq!(t["scan_rule"], names);
-        assert_eq!(t["rule_why"], whys);
-        assert_eq!(t["content_rule"], content);
+    fn every_pinned_core_rule_and_group_has_client_copy() {
+        let view = tw_guard::view::detail(&Default::default());
+        for (guard, detail) in [
+            ("redact", view.redact),
+            ("inspect_tools", view.inspect_tools),
+            ("content", view.content),
+        ] {
+            let copy = &guards()[guard];
+            for rule in &detail.rules {
+                let r = copy
+                    .rules
+                    .get(&rule.id)
+                    .unwrap_or_else(|| panic!("{guard}: {}", rule.id));
+                assert!(!r.name.is_empty(), "{guard}: {}", rule.id);
+                assert!(
+                    rule.why.is_empty() || r.why.as_ref().is_some_and(|s| !s.is_empty()),
+                    "{guard}: {} why",
+                    rule.id
+                );
+                if !rule.about.is_empty()
+                    && !matches!(
+                        rule.matcher,
+                        tw_guard::view::Matcher::Prefix { .. }
+                            | tw_guard::view::Matcher::Prefixes { .. }
+                    )
+                {
+                    assert!(
+                        r.about.as_ref().is_some_and(|s| !s.is_empty()),
+                        "{guard}: {} about",
+                        rule.id
+                    );
+                }
+            }
+            for kind in &detail.kinds {
+                assert!(
+                    copy.kinds.get(&kind.slug).is_some_and(|k| !k.is_empty()),
+                    "{guard}: {}",
+                    kind.slug
+                );
+            }
+        }
+        for rule in &tw_guard::tools::rules::builtin().injection {
+            assert!(
+                rule_name_zh("inspect_tools", &rule.id).is_some(),
+                "{}",
+                rule.id
+            );
+        }
     }
 
     /// 表里每一句、每一层场合都写得对：写坏了的那句会悄悄退回英文
@@ -398,5 +497,28 @@ mod tests {
                 c.msg.code
             );
         }
+    }
+
+    #[test]
+    fn japanese_renders_a_common_error_with_context_and_falls_back_to_english() {
+        let mut message = Msg {
+            code: "gw.oauth.unreachable".into(),
+            text: "the credential of upstream `example`: Cannot reach https://example.com: timeout"
+                .into(),
+            args: BTreeMap::from([
+                ("upstream".into(), "example".into()),
+                ("endpoint".into(), "https://example.com".into()),
+                ("detail".into(), "timeout".into()),
+            ]),
+        };
+        crate::i18n::with_lang(Lang::Ja, || {
+            assert_eq!(
+                text(&message),
+                "アップストリーム「example」の認証情報：トークンエンドポイント https://example.com に接続できません：timeout"
+            );
+            message.code = "l1.tcp.refused".into();
+            message.text = "Connection refused".into();
+            assert_eq!(text(&message), "Connection refused");
+        });
     }
 }
