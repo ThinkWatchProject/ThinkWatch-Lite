@@ -26,4 +26,25 @@ export const deleteDialogText = messages(
     condition: (route: string, rule: string) => `Route “${route}” · condition of rule “${rule}”`,
     group: (group: string) => `Group “${group}”`,
   },
+  {
+    "zh-Hant": {
+      title: (what: string, name: string) => `刪除${what}「${name}」`,
+      blockedTitle: (what: string, name: string) => `無法刪除${what}「${name}」`,
+      blocked: (what: string) => `以下配置引用了此${what}，解除引用後才能刪除。`,
+      show: "檢視",
+      rule: (route: string, rule: string) => `路由「${route}」· 規則「${rule}」`,
+      condition: (route: string, rule: string) => `路由「${route}」· 規則「${rule}」的條件`,
+      group: (group: string) => `策略組「${group}」`,
+    },
+    es: {
+      title: (what: string, name: string) => `Suprímase ${what} “${name}”`,
+      blockedTitle: (what: string, name: string) => `No se puede borrar ${what} «${name}»`,
+      blocked: (what: string) => `Esto ${what} se refiere a la configuración de abajo y se puede eliminar una vez que se eliminan esas referencias.`,
+      show: "Mostrar",
+      upstream: (name: string) => `Corriente ascendente “${name}”`,
+      rule: (route: string, rule: string) => `Ruta “${route}” · regla “${rule}”`,
+      condition: (route: string, rule: string) => `Ruta “${route}” · condición de la regla “${rule}”`,
+      group: (group: string) => `Grupo “${group}”`,
+    },
+  },
 );

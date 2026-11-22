@@ -1,4 +1,4 @@
-import type { Messages } from "@/i18n";
+import { LANGUAGES, type Messages } from "@/i18n";
 import { isMac } from "@/platform";
 import { generalText } from "@/settings/GeneralSection.i18n";
 import { settingsText } from "@/settings/SettingsPage.i18n";
@@ -49,7 +49,8 @@ interface SectionDef {
   local?: boolean;
 }
 
-const pick = <T,>(m: Messages<T>, get: (t: T) => string): Messages<string> => ({ zh: get(m.zh), en: get(m.en) });
+const pick = <T,>(m: Messages<T>, get: (t: T) => string): Messages<string> =>
+  Object.fromEntries(LANGUAGES.map((lang) => [lang, get(m[lang])])) as Messages<string>;
 
 export const SETTINGS_SECTIONS: readonly SectionDef[] = [
   { id: "connections", title: pick(connText, (t) => t.title) },

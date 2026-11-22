@@ -753,6 +753,14 @@ jobs:
           fi
           echo "VERSION=$GOT" >> "$GITHUB_ENV"
 
+      - name: A published release has an English summary
+        if: github.ref_type == 'tag'
+        run: |
+          if [ ! -f "release-notes/$VERSION.md" ]; then
+            echo "缺少英文发布说明：release-notes/$VERSION.md" >&2
+            exit 1
+          fi
+
       # 清单向 GitHub 要：和它在发布页上「自动生成」的是同一份。演练时这个 tag
       # 可能还不存在，那就算到这次的 commit 为止（tag 存在时 target_commitish 不起作用）
       - name: Write it
@@ -790,9 +798,8 @@ jobs:
 
       - run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
 
-      # tag 上那段话写进 latest.json，是给已经装上的应用的发布说明（2026.9.13
-      # 之前的版本在更新窗口里显示它）—— 自动生成的提交清单在那个位置对用户
-      # 没有意义。发布页上的正文是另一份，见 `release-body`。
+      # tag 注解给应用的更新窗口提供中文说明。manifest.py 也会从
+      # release-notes/<版本>.md 读出英文摘要，供英文界面使用。
       #
       # **不从工作区的 git 里读。**`actions/checkout` 取 tag 时建的是一个
       # 直接指向 commit 的轻量引用，注解对象根本不在这个克隆里；
@@ -806,7 +813,7 @@ jobs:
           set -euo pipefail
           : > notes.txt
           REF="repos/$GITHUB_REPOSITORY/git/ref/tags/$GITHUB_REF_NAME"
-          # 轻量 tag 指向的是 commit，没有正文可取 —— 那就不写发布说明。
+          # 轻量 tag 取不到注解，manifest.py 会报缺少中文发布说明。
           if [ "$(gh api "$REF" --jq .object.type)" = tag ]; then
             SHA=$(gh api "$REF" --jq .object.sha)
             gh api "repos/$GITHUB_REPOSITORY/git/tags/$SHA" --jq .message \
@@ -825,7 +832,7 @@ jobs:
       - name: One manifest for every platform
         run: |
           set -euo pipefail
-          python3 scripts/manifest.py "$VERSION" notes.txt \
+          python3 -B scripts/manifest.py "$VERSION" notes.txt \
             "darwin-aarch64=dist/ThinkWatch-Lite-$VERSION-darwin-arm64.dmg" \
             "windows-x86_64=dist/ThinkWatch-Lite-$VERSION-windows-x64-setup.exe" \
             "windows-aarch64=dist/ThinkWatch-Lite-$VERSION-windows-arm64-setup.exe" \

@@ -4,7 +4,7 @@
  * 更新窗口和设置页都用它们。**判断在 Rust 里**（这一份怎么装上来的、
  * 能不能自己装、该不该弹窗），这里只负责把 Rust 给的状态说成一句话。
  */
-import { textOf } from "@/i18n";
+import { textOf, type Lang } from "@/i18n";
 import { updateText } from "./Update.i18n";
 
 /**
@@ -29,12 +29,22 @@ export interface UpdateView {
 }
 
 /** 更新窗口要画的东西。 */
-export interface Offer {
-  version: string;
+export interface Offer extends Found {
   current: string;
   install: Install;
+  notes: ReleaseNotes;
   /** Homebrew 那一档要执行的命令。由 Rust 给出，界面上不再写一遍 */
   command?: string | null;
+}
+
+export interface ReleaseNotes {
+  zh: string | null;
+  en: string | null;
+}
+
+/** 中文界面读中文，其余读英文。旧清单可能缺一份。 */
+export function releaseNotesFor(notes: ReleaseNotes, lang: Lang): string | undefined {
+  return (lang === "zh" || lang === "zh-Hant" ? notes.zh : notes.en)?.trim() || undefined;
 }
 
 /** 按下安装之后走到了哪一步。 */

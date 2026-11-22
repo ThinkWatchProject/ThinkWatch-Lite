@@ -9,19 +9,11 @@ import { CoreText, EventDetail, kindName, RuleMatchText, ruleName, ruleWhy, save
 import { marksFromEvents } from "./marks";
 import { groupRules } from "./rules";
 
-/**
- * 规则的名字、说明、分组名由 core 给（规则表里的 `name_zh` / `why_zh` / `about` /
- * `about_zh`，分组是 `kinds`）。界面只管按语言取、反引号画成代码，以及缺了的时候退回得
- * 体面：中文缺了用英文，规则目录没取到用日志里存的英文名，再没有就是 id。
- */
-
 const rule = (x: Partial<SecurityRuleView>): SecurityRuleView => ({
   id: "anthropic-api-key",
   custom: false,
   name: "Anthropic API key",
-  name_zh: "Anthropic API 密钥",
   about: "Starts with `sk-ant-`, followed by at least 20 characters",
-  about_zh: "`sk-ant-` 开头，其后至少 20 个字符",
   kind: "ai-services",
   matcher: { kind: "prefix", prefix: "sk-ant-", min_tail: 20 },
   enabled: true,
@@ -29,10 +21,10 @@ const rule = (x: Partial<SecurityRuleView>): SecurityRuleView => ({
   ...x,
 });
 
-const KINDS: SecurityKindView[] = [
-  { slug: "saved", name: "Saved credentials", name_zh: "保存的密钥" },
-  { slug: "ai-services", name: "AI services", name_zh: "AI 服务" },
-  { slug: "custom", name: "Custom", name_zh: "自定义" },
+const KINDS: Pick<SecurityKindView, "slug" | "name">[] = [
+  { slug: "saved", name: "Saved credentials" },
+  { slug: "ai-services", name: "AI services" },
+  { slug: "custom", name: "Custom" },
 ];
 
 const guard = (rules: SecurityRuleView[], kinds: SecurityKindView[] = []): GuardDetail => ({ mode: "enforce", rules, kinds });
@@ -53,25 +45,25 @@ const plain = (node: React.ReactNode) => html(node).replace(/<[^>]+>/g, "");
 beforeEach(() => resetResources());
 
 describe("规则名", () => {
-  it("内置规则按界面语言取 core 给的名字", () => {
-    expect(viewName(rule({}))).toBe("Anthropic API 密钥");
+  it("内置规则按界面语言取客户端译文", () => {
+    expect(viewName("redact", rule({}))).toBe("Anthropic API 密钥");
     setLang("en");
-    expect(viewName(rule({}))).toBe("Anthropic API key");
+    expect(viewName("redact", rule({}))).toBe("Anthropic API key");
   });
 
   it("没有中文名的退回英文名；自定义规则就是它的名字", () => {
-    expect(viewName(rule({ name_zh: undefined }))).toBe("Anthropic API key");
-    expect(viewName(rule({ id: "客户编号", name: "客户编号", custom: true, name_zh: undefined }))).toBe("客户编号");
+    expect(viewName("redact", rule({ id: "new-key" }))).toBe("Anthropic API key");
+    expect(viewName("redact", rule({ id: "客户编号", name: "客户编号", custom: true }))).toBe("客户编号");
   });
 
   it("只带 id 的地方按 id 到规则目录里查", async () => {
-    // 目录还没取到：日志里存的英文名，再没有就是 id
-    expect(ruleName("redact", "anthropic-api-key", false, "Anthropic API key")).toBe("Anthropic API key");
-    expect(ruleName("redact", "anthropic-api-key")).toBe("anthropic-api-key");
+    // 目录还没取到也能显示客户端译文
+    expect(ruleName("redact", "anthropic-api-key", false, "Anthropic API key")).toBe("Anthropic API 密钥");
+    expect(ruleName("redact", "anthropic-api-key")).toBe("Anthropic API 密钥");
     await seed({
       redact: guard([rule({})]),
       inspect_tools: guard([
-        rule({ id: "curl-pipe-sh", name: "Download and run", name_zh: "下载即执行", kind: "command" }),
+        rule({ id: "curl-pipe-sh", name: "Download and run", kind: "command" }),
       ]),
     });
     expect(ruleName("redact", "anthropic-api-key")).toBe("Anthropic API 密钥");
@@ -91,24 +83,24 @@ describe("规则名", () => {
       rule: "anthropic-api-key",
       rule_snapshot: { builtin: true, id: "anthropic-api-key", name: "Anthropic API key", core_version: "0.85.0" },
     });
-    expect(snapshotName(e)).toBe("Anthropic API key");
+    expect(snapshotName(e)).toBe("Anthropic API 密钥");
     await seed({ redact: guard([rule({})]) });
     expect(snapshotName(e)).toBe("Anthropic API 密钥");
   });
 });
 
 describe("规则说明", () => {
-  it("why：中文界面取 why_zh，缺了退回英文", () => {
-    const r = rule({ id: "curl-pipe-sh", why: "Runs whatever the remote serves", why_zh: "下载后直接执行" });
-    expect(ruleWhy("inspect_tools", r)).toBe("下载后直接执行");
-    expect(ruleWhy("inspect_tools", { ...r, why_zh: undefined })).toBe("Runs whatever the remote serves");
+  it("why：取客户端译文，缺译回退英文", () => {
+    const r = rule({ id: "curl-pipe-sh", why: "Runs whatever the remote serves" });
+    expect(ruleWhy("inspect_tools", r)).toBe("下载后直接执行，执行的内容由远端决定且无法预先查看");
+    expect(ruleWhy("inspect_tools", { ...r, id: "new-rule" })).toBe("Runs whatever the remote serves");
     expect(ruleWhy("inspect_tools", { ...r, why: "" })).toBe("");
     setLang("en");
     expect(ruleWhy("inspect_tools", r)).toBe("Runs whatever the remote serves");
   });
 
   it("about：按语言取，反引号里的画成代码", () => {
-    expect(html(<RuleMatchText r={rule({})} />)).toBe(
+    expect(html(<RuleMatchText guard="redact" r={rule({})} />)).toBe(
       html(
         <>
           <code className="rounded bg-surface px-1 font-mono text-[0.92em] whitespace-pre text-foreground">sk-ant-</code>
@@ -117,7 +109,7 @@ describe("规则说明", () => {
       ),
     );
     setLang("en");
-    expect(plain(<RuleMatchText r={rule({})} />)).toBe("Starts with sk-ant-, followed by at least 20 characters");
+    expect(plain(<RuleMatchText guard="redact" r={rule({})} />)).toBe("Starts with sk-ant-, followed by at least 20 characters");
   });
 
   it("反引号落单时照普通文字画", () => {
@@ -126,10 +118,9 @@ describe("规则说明", () => {
   });
 
   it("没有 about：列出写法；没有写法的说是内置检查", () => {
-    expect(plain(<RuleMatchText r={rule({ about: undefined, about_zh: undefined })} />)).toBe("sk-ant-");
+    expect(plain(<RuleMatchText guard="redact" r={rule({ about: undefined })} />)).toBe("sk-ant-");
     const vault = rule({
       about: undefined,
-      about_zh: undefined,
       matcher: {
         kind: "prefixes",
         prefixes: [
@@ -138,21 +129,21 @@ describe("规则说明", () => {
         ],
       },
     });
-    expect(plain(<RuleMatchText r={vault} />)).toBe("hvs.、hvb.");
-    expect(plain(<RuleMatchText r={rule({ about: undefined, about_zh: undefined, matcher: { kind: "jwt" } })} />)).toBe(
+    expect(plain(<RuleMatchText guard="redact" r={vault} />)).toBe("hvs.、hvb.");
+    expect(plain(<RuleMatchText guard="redact" r={rule({ about: undefined, matcher: { kind: "jwt" } })} />)).toBe(
       "由内置检查判断",
     );
   });
 
   it("中文缺了用英文的 about", () => {
-    expect(plain(<RuleMatchText r={rule({ about_zh: undefined })} />)).toBe(
+    expect(plain(<RuleMatchText guard="redact" r={rule({ id: "new-key", matcher: { kind: "builtin", check: "new-key" } })} />)).toBe(
       "Starts with sk-ant-, followed by at least 20 characters",
     );
   });
 
   it("危险命令里代码实现的检查、自定义规则照判据写", () => {
-    const check = rule({ id: "secret-to-unknown-host", about: undefined, about_zh: undefined, matcher: { kind: "builtin", check: "credential-to-network" } });
-    expect(plain(<RuleMatchText r={check} />)).toBe("凭据发往本机和该凭据的服务商以外的主机");
+    const check = rule({ id: "secret-to-unknown-host", about: undefined, matcher: { kind: "builtin", check: "credential-to-network" } });
+    expect(plain(<RuleMatchText guard="inspect_tools" r={check} />)).toBe("凭据发往本机和该凭据的服务商以外的主机");
     const custom = rule({
       id: "客户编号",
       name: "客户编号",
@@ -160,21 +151,21 @@ describe("规则说明", () => {
       about: "ignored",
       matcher: { kind: "regex", pattern: "CUST-\\d+", case_sensitive: true },
     });
-    expect(plain(<RuleMatchText r={custom} />)).toBe("正则 CUST-\\d+");
+    expect(plain(<RuleMatchText guard="redact" r={custom} />)).toBe("正则 CUST-\\d+");
   });
 });
 
 describe("分组", () => {
-  it("分组名取 core 给的 kinds", () => {
-    expect(kindName(KINDS, "ai-services")).toBe("AI 服务");
+  it("分组名按 slug 查客户端词表", () => {
+    expect(kindName("redact", KINDS, "ai-services")).toBe("AI 服务");
     setLang("en");
-    expect(kindName(KINDS, "ai-services")).toBe("AI services");
+    expect(kindName("redact", KINDS, "ai-services")).toBe("AI services");
   });
 
-  it("旧的 core 不给 kinds：自定义照样叫自定义，其余写 slug", () => {
-    expect(kindName(undefined, "custom")).toBe("自定义");
-    expect(kindName(undefined, "ai-services")).toBe("ai-services");
-    expect(kindName(KINDS, "vehicle")).toBe("vehicle");
+  it("目录没取到时还能翻译已知分组，未知分组显示 slug", () => {
+    expect(kindName("redact", undefined, "custom")).toBe("自定义");
+    expect(kindName("redact", undefined, "ai-services")).toBe("AI 服务");
+    expect(kindName("redact", KINDS, "new-group")).toBe("new-group");
   });
 
   it("按 core 给的顺序分组，保存的密钥在最前，自定义在最后", () => {

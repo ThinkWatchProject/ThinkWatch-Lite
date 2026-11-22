@@ -10,7 +10,7 @@ import { resetHints, useAnyDismissed } from "@/guide/hints";
 import { resetIgnored, useAnyIgnored } from "@/ignore";
 import { invalidate, useResource } from "@/lib/resource";
 import { useTauriEvent } from "@/lib/tauriEvent";
-import { LANG_NAMES, setLang, useText, type Lang } from "@/i18n";
+import { LANG_NAMES, LANGUAGES, isLang, setLang, useText, type Lang } from "@/i18n";
 import { isMac } from "@/platform";
 import { errorText } from "@/i18n/core.i18n";
 import { COMBOS, comboText, hotkeyCombo, isInAppCombo, Keys } from "@/palette/keys";
@@ -62,8 +62,7 @@ export function GeneralSection() {
 }
 
 /**
- * 语言。**跟随系统是一个选项，不是一个开关**：只有两种语言，三个选项放进一个
- * 下拉就说完了；括号里写出系统现在是哪种，选之前就知道会得到什么。
+ * 选择界面语言，或跟随括号里显示的系统语言。
  */
 function LanguageRow() {
   const t = useText(generalText);
@@ -80,24 +79,22 @@ function LanguageRow() {
     <SettingsRow
       anchor="language"
       label={t.language}
-      htmlFor="settings-language"
+      htmlFor="settings-language-select"
       control={
-        <Loaded r={r} width="w-48">
+        <Loaded r={r} width="w-60">
           {(v) => (
             <SelectField
-              id="settings-language"
+              id="settings-language-select"
               size="sm"
-              className="w-48"
+              className="w-60 max-w-full"
               value={v.setting ?? "system"}
               onValueChange={(nextValue) => {
-                const x = nextValue;
-                const setting: Lang | null = x === "zh" || x === "en" ? x : null;
+                const setting = isLang(nextValue) ? nextValue : null;
                 void set({ ...v, setting, current: setting ?? v.system });
               }}
             >
               <SelectOption value="system">{t.languageSystem(LANG_NAMES[v.system])}</SelectOption>
-              <SelectOption value="zh">{LANG_NAMES.zh}</SelectOption>
-              <SelectOption value="en">{LANG_NAMES.en}</SelectOption>
+              {LANGUAGES.map((lang) => <SelectOption key={lang} value={lang}>{LANG_NAMES[lang]}</SelectOption>)}
             </SelectField>
           )}
         </Loaded>

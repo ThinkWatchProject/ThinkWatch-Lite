@@ -8,4 +8,12 @@ export const requestsText = messages(
   {
     answeredLocally: "Answered locally",
   },
+  {
+    "zh-Hant": {
+      answeredLocally: "本地應答",
+    },
+    es: {
+      answeredLocally: "Respuestas locales",
+    },
+  },
 );

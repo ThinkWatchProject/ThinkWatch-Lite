@@ -196,7 +196,8 @@ pub async fn set_hotkey(app: tauri::AppHandle, combo: Option<hotkey::Combo>) -> 
     if !hotkey::supported() {
         return Err(tr!(
             "当前桌面环境不支持全局快捷键",
-            "Global shortcuts are not supported on this desktop"
+            "Global shortcuts are not supported on this desktop";
+            "當前桌面環境不支援全域性快捷鍵",
         )
         .into());
     }
@@ -204,12 +205,14 @@ pub async fn set_hotkey(app: tauri::AppHandle, combo: Option<hotkey::Combo>) -> 
         c.check().map_err(|e| match e {
             hotkey::Invalid::Key => tr!(
                 "这个键不能用作快捷键",
-                "This key cannot be used in a shortcut"
+                "This key cannot be used in a shortcut";
+                "這個鍵不能用作快捷鍵",
             )
             .to_string(),
             hotkey::Invalid::NoModifier => tr!(
                 format!("须包含 Ctrl、Alt 或 {META} 中的至少一个"),
-                format!("The shortcut must include Ctrl, Alt or {META}")
+                format!("The shortcut must include Ctrl, Alt or {META}");
+                format!("須包含 Ctrl、Alt 或 {META} 中的至少一個"),
             ),
         })?;
     }
@@ -222,7 +225,8 @@ pub async fn set_hotkey(app: tauri::AppHandle, combo: Option<hotkey::Combo>) -> 
             tracing::debug!("呼出快捷键注册不上：{e}");
             tr!(
                 "该组合键已被其他程序占用，请换一个",
-                "This shortcut is already used by another app. Choose another one."
+                "This shortcut is already used by another app. Choose another one.";
+                "該組合鍵已被其他程式佔用，請換一個",
             )
         })?;
     let saved = prefs::change(move |p| p.hotkey = hotkey::Setting(combo)).await;
@@ -296,7 +300,8 @@ pub fn set_autostart(app: tauri::AppHandle, on: bool) -> Out<bool> {
     if !autostart::allowed_in_this_build() {
         return Err(tr!(
             "开发构建不支持开机启动",
-            "Launch at login is not available in development builds"
+            "Launch at login is not available in development builds";
+            "開發構建不支援開機啟動",
         )
         .into());
     }
@@ -323,7 +328,8 @@ pub fn set_autostart(app: tauri::AppHandle, on: bool) -> Out<bool> {
             std::fs::create_dir_all(dir).map_err(|e| {
                 tr!(
                     format!("无法创建目录 {}：{e}", dir.display()),
-                    format!("The directory {} could not be created: {e}", dir.display())
+                    format!("The directory {} could not be created: {e}", dir.display());
+                    format!("無法建立目錄 {}：{e}", dir.display()),
                 )
             })?;
         }
@@ -401,43 +407,54 @@ pub(crate) fn maybe_notify_first_autostart(app: &tauri::AppHandle) {
         let (title, body) = (
             tr!(
                 "ThinkWatch 已在通知区域运行",
-                "ThinkWatch Is Running in the Notification Area"
+                "ThinkWatch Is Running in the Notification Area";
+                "ThinkWatch 已在通知區域執行",
             ),
             tr!(
                 "开机时已自动启动。窗口关闭后，应用仍在通知区域中运行。",
-                "It started at login. When the window is closed, the app keeps running in the notification area."
+                "It started at login. When the window is closed, the app keeps running in the notification area.";
+                "開機時已自動啟動。視窗關閉後，應用仍在通知區域中執行。",
             ),
         );
         #[cfg(target_os = "linux")]
         let (title, body) = (
             tr!(
                 "ThinkWatch 已在系统托盘运行",
-                "ThinkWatch Is Running in the System Tray"
+                "ThinkWatch Is Running in the System Tray";
+                "ThinkWatch 已在系統托盤執行",
             ),
             tr!(
                 "开机时已自动启动。窗口关闭后，应用仍在系统托盘中运行。",
-                "It started at login. When the window is closed, the app keeps running in the system tray."
+                "It started at login. When the window is closed, the app keeps running in the system tray.";
+                "開機時已自動啟動。視窗關閉後，應用仍在系統托盤中執行。",
             ),
         );
         // 菜单栏设成不显示时，那里没有它：说怎么回到窗口
         #[cfg(target_os = "macos")]
         let (title, body) = if menubar::style() == menubar::Style::Hidden {
             (
-                tr!("ThinkWatch 已在后台运行", "ThinkWatch Is Running"),
+                tr!(
+                    "ThinkWatch 已在后台运行",
+                    "ThinkWatch Is Running";
+                    "ThinkWatch 已在後臺執行",
+                ),
                 tr!(
                     "开机时已自动启动。再次打开 ThinkWatch Lite 即可显示主窗口。",
-                    "It started at login. Open ThinkWatch Lite again to show the main window."
+                    "It started at login. Open ThinkWatch Lite again to show the main window.";
+                    "開機時已自動啟動。再次開啟 ThinkWatch Lite 即可顯示主視窗。",
                 ),
             )
         } else {
             (
                 tr!(
                     "ThinkWatch 已在菜单栏运行",
-                    "ThinkWatch Is Running in the Menu Bar"
+                    "ThinkWatch Is Running in the Menu Bar";
+                    "ThinkWatch 已在選單欄執行",
                 ),
                 tr!(
                     "开机时已自动启动。窗口关闭后，应用仍在菜单栏中运行。",
-                    "It started at login. When the window is closed, the app keeps running in the menu bar."
+                    "It started at login. When the window is closed, the app keeps running in the menu bar.";
+                    "開機時已自動啟動。視窗關閉後，應用仍在選單欄中執行。",
                 ),
             )
         };

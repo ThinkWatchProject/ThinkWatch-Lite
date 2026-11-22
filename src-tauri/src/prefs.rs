@@ -217,7 +217,8 @@ pub async fn change(f: impl FnOnce(&mut Prefs) + Send + 'static) -> crate::error
     saved.map_err(|e| {
         crate::error::CmdError::from(tr!(
             format!("无法保存设置：{e:#}"),
-            format!("The setting could not be saved: {e:#}")
+            format!("The setting could not be saved: {e:#}");
+            format!("無法儲存設定：{e:#}"),
         ))
     })
 }
@@ -427,7 +428,7 @@ mod tests {
         let (_tmp, dir) = tmp();
         std::fs::write(
             prefs_path(&dir),
-            br#"{"check_updates":"no","language":"ja","theme":1,"zoom":120,"hotkey":"Shift+H","notices":"off","menubar":"icon"}"#,
+            br#"{"check_updates":"no","language":"fr","theme":1,"zoom":120,"hotkey":"Shift+H","notices":"off","menubar":"icon"}"#,
         )
         .unwrap();
         let p = load(&dir);
@@ -485,11 +486,11 @@ mod tests {
         let (_tmp, dir) = tmp();
         update(&dir, |p| p.language = Some(Lang::En)).unwrap();
         let mut before = std::fs::File::open(prefs_path(&dir)).unwrap();
-        update(&dir, |p| p.language = Some(Lang::Zh)).unwrap();
+        update(&dir, |p| p.language = Some(Lang::Ja)).unwrap();
         let mut text = String::new();
         before.read_to_string(&mut text).unwrap();
         assert!(text.contains(r#""language": "en""#), "{text}");
-        assert_eq!(load(&dir).language, Some(Lang::Zh));
+        assert_eq!(load(&dir).language, Some(Lang::Ja));
         let files: Vec<_> = std::fs::read_dir(&dir)
             .unwrap()
             .map(|e| e.unwrap().file_name())

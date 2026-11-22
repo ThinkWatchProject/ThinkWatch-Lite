@@ -1,6 +1,6 @@
 import { Fragment } from "react";
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
-import { getLang, textOf, useText } from "@/i18n";
+import { getLang, localeTag, textOf, useText } from "@/i18n";
 import type {
   ContentMatch,
   Guard,
@@ -13,7 +13,8 @@ import type {
   SecurityOutcome,
   SecurityRuleView,
 } from "@/types";
-import { catalogRule, localized } from "./catalog";
+import { guardKind, guardRuleText } from "@/i18n/guard.i18n";
+import { catalogRule } from "./catalog";
 import { securityLabelsText } from "./labels.i18n";
 
 /**
@@ -55,28 +56,26 @@ export const OUTCOMES: readonly SecurityOutcome[] = ["cut", "blocked", "stripped
 /**
  * 一条规则叫什么：日志、流量页徽标这些只带 id 的地方用。
  *
- * **名字由 core 给**（规则表里的 `name` / `name_zh`），这里按 id 到规则目录里查（见
- * `catalog.ts`；用到的组件要挂上 `useRuleCatalog`）。**自定义规则的 id 就是用户起的名字**，
- * 原样显示。目录还没取到、或者规则已经没有了，退回日志里存的英文名，再没有就是 id。
+ * 内置规则按防护类型和 id 查 Lite 译文，退回目录或日志提供的英文名。自定义名称原样显示。
  */
 export function ruleName(guard: string, id: string, custom?: boolean, fallback?: string): string {
   if (custom) return id;
   const r = catalogRule(guard, id);
-  return r ? viewName(r) : (fallback ?? id);
+  return guardRuleText(guard, id, "name", r?.name || fallback || id);
 }
 
-/** 规则列表里的一条叫什么：内置的按界面语言取 `name` / `name_zh`，自定义的就是它的名字 */
-export function viewName(r: SecurityRuleView): string {
-  return r.custom ? r.name : localized(r.name, r.name_zh);
+/** 内置规则查译文，自定义名称原样显示。 */
+export function viewName(guard: Guard, r: SecurityRuleView): string {
+  return r.custom ? r.name : guardRuleText(guard, r.id, "name", r.name || r.id);
 }
 
 /**
  * 内置规则为什么值得看一眼（危险命令、内容过滤有；规则名说得清的没有）。按界面语言取
- * `why` / `why_zh`。
+ * 本地译文或 Core 的英文 `why`。
  */
 export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
   if (r.custom || !r.why) return "";
-  const why = localized(r.why, r.why_zh);
+  const why = guardRuleText(guard, r.id, "why", r.why);
   if (guard !== "content" || why !== r.why) return why;
   // 内容规则英文那句可能以名字开头（「Bidirectional controls: …」），名字已经在上一行了
   const lead = `${r.name}:`.toLowerCase();
@@ -89,9 +88,11 @@ export function ruleWhy(guard: Guard, r: SecurityRuleView): string {
  * 规则表的分组叫什么：core 给的 `kinds` 里按 `slug` 查。查不到（旧的 core 不给）时
  * 自定义那一组照样叫「自定义」，其余写 slug。
  */
-export function kindName(kinds: readonly SecurityKindView[] | undefined, slug: string): string {
+export function kindName(guard: Guard, kinds: readonly Pick<SecurityKindView, "slug" | "name">[] | undefined, slug: string): string {
+  const translated = guardKind(guard, slug);
+  if (translated) return translated;
   const k = kinds?.find((x) => x.slug === slug);
-  if (k) return localized(k.name, k.name_zh);
+  if (k) return k.name;
   return slug === "custom" ? textOf(securityLabelsText).custom : slug;
 }
 
@@ -228,12 +229,12 @@ export function CoreText({ text }: { text: string }) {
 /**
  * 一条规则认什么，写成一句话。
  *
- * **密钥与隐私的内置规则由 core 写**（`about` / `about_zh`）。其余的按判据写：自定义
+ * 密钥与隐私的内置规则按判据或词表取说明。其余的按判据写：自定义
  * 规则和内容规则是正则、包含、码位，危险命令里代码实现的检查按检查名说它查什么。
  */
-export function RuleMatchText({ r }: { r: SecurityRuleView }) {
+export function RuleMatchText({ guard, r }: { guard: Guard; r: SecurityRuleView }) {
   useText(securityLabelsText);
-  const about = r.custom ? "" : localized(r.about, r.about_zh);
+  const about = r.custom || guard !== "redact" ? "" : guardRuleText(guard, r.id, "about", r.about, r.matcher);
   return about ? <CoreText text={about} /> : <MatcherText m={r.matcher} />;
 }
 
@@ -317,9 +318,9 @@ export function dayHead(ms: number, now = Date.now()): { title: string; date: st
   const today = new Date(now);
   const yesterday = new Date(now);
   yesterday.setDate(today.getDate() - 1);
-  const date = new Intl.DateTimeFormat(getLang() === "zh" ? "zh-CN" : "en-US", {
+  const date = new Intl.DateTimeFormat(localeTag(getLang()), {
     year: d.getFullYear() === today.getFullYear() ? undefined : "numeric",
-    month: getLang() === "zh" ? "long" : "short",
+    month: getLang() === "en" ? "short" : "long",
     day: "numeric",
     weekday: "short",
   }).format(d);

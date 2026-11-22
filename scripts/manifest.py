@@ -8,7 +8,9 @@
 Linux 上只发 AppImage，它原地换掉自己（见 `src-tauri/src/update.rs`）；
 `scripts/install.sh` 也从这一份里找本架构的 AppImage。
 
-用法：manifest.py <版本> <发布说明文件> <平台>=<文件> [<平台>=<文件> ...]
+用法：manifest.py <版本> <中文发布说明文件> <平台>=<文件> [<平台>=<文件> ...]
+
+中文说明沿用 Tauri 的 notes 字段；英文说明取 release-notes/<版本>.md，写在 notes_en。
 
 清单里的 URL 必须和最终挂在 release 上的文件名一字不差，所以文件名不在
 这里拼：文件的路径由调用方传进来，URL 用的就是它的名字。两处各拼一遍的
@@ -25,6 +27,8 @@ import datetime
 import json
 import pathlib
 import sys
+
+from release_notes import NOTES_DIR, NotesError, summary
 
 REPO = "ThinkWatchProject/ThinkWatch-Lite"
 # 平台键由更新器自己拼：目标系统 + 架构（macOS 上叫 darwin）。**只收这几个**
@@ -88,10 +92,25 @@ def entry(path: pathlib.Path, version: str, want: bytes) -> dict:
     }
 
 
+def update_notes(version: str, chinese_file: pathlib.Path, notes_dir: pathlib.Path = NOTES_DIR) -> dict[str, str]:
+    """老版本仍从 notes 读中文，新版本按语言读对应的一份。"""
+    chinese = chinese_file.read_text(encoding="utf-8").strip()
+    if not chinese:
+        raise NotesError(f"v{version} 的 tag 注解缺少中文发布说明：在标题和空行之后填写正文")
+    english = summary(version, notes_dir)
+    if english is None:
+        raise NotesError(f"缺少英文发布说明：release-notes/{version}.md")
+    return {"notes": chinese, "notes_en": english}
+
+
 def main() -> None:
     if len(sys.argv) < 4:
-        sys.exit("用法：manifest.py <版本> <发布说明文件> <平台>=<文件> [...]")
+        sys.exit("用法：manifest.py <版本> <中文发布说明文件> <平台>=<文件> [...]")
     version, notes_file, pairs = sys.argv[1], sys.argv[2], sys.argv[3:]
+    try:
+        notes = update_notes(version, pathlib.Path(notes_file))
+    except NotesError as e:
+        sys.exit(str(e))
 
     root = pathlib.Path(__file__).resolve().parent.parent
     conf = json.loads((root / "src-tauri/tauri.conf.json").read_text(encoding="utf-8"))
@@ -121,10 +140,8 @@ def main() -> None:
         .isoformat()
         .replace("+00:00", "Z"),
         "platforms": platforms,
+        **notes,
     }
-    notes = pathlib.Path(notes_file).read_text(encoding="utf-8").strip()
-    if notes:
-        manifest["notes"] = notes
 
     out = pathlib.Path(pairs[0].partition("=")[2]).parent / "latest.json"
     out.write_text(json.dumps(manifest, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

@@ -49,7 +49,8 @@ fn not_running(e: &dyn std::fmt::Display) -> anyhow::Error {
     tracing::debug!("控制面连不上：{e}");
     anyhow::anyhow!(tr!(
         "core 未在运行，或尚未启动完成",
-        "core is not running, or has not finished starting"
+        "core is not running, or has not finished starting",
+        "core が停止しているか、起動が完了していません"
     ))
 }
 
@@ -69,7 +70,8 @@ fn local_key(config: &Path) -> Result<tw_link::ControlKey> {
             tracing::warn!("本机配置里的控制面钥匙读不出来：{other}");
             anyhow::anyhow!(tr!(
                 "配置文件中的控制面密钥（listen.control.key）无效",
-                "The control key in the config file (listen.control.key) is not valid"
+                "The control key in the config file (listen.control.key) is not valid",
+                "設定ファイルの制御キー（listen.control.key）が無効です"
             ))
         }
     })
@@ -134,7 +136,8 @@ fn link_failed(e: tw_link::LinkError) -> anyhow::Error {
     match e {
         LinkError::WrongKey => anyhow::anyhow!(tr!(
             "控制面密钥不匹配：core 拒绝了配置文件中的密钥",
-            "The control key does not match: core rejected the key in the config file"
+            "The control key does not match: core rejected the key in the config file",
+            "制御キーが一致しません。core が設定ファイルのキーを拒否しました"
         )),
         LinkError::VersionMismatch {
             ours,
@@ -174,7 +177,8 @@ fn refused(status: hyper::StatusCode, body: &[u8]) -> anyhow::Error {
         Ok(m) => Refused(m).into(),
         Err(_) => anyhow::anyhow!(tr!(
             format!("控制面返回 {status}"),
-            format!("The control plane returned {status}")
+            format!("The control plane returned {status}"),
+            format!("制御インターフェイスが {status} を返しました")
         )),
     }
 }

@@ -15,10 +15,18 @@ import { useSyncExternalStore } from "react";
  *   );
  *
  * 组件里 `const t = useText(fooText)`，然后 `t.title`、`t.failed(3)`。
- * **英文那一份的形状由中文那一份决定**：少一条、多一条、参数对不上，都是
- * 编译错误 —— 漏翻不会等到有人看见那一屏才发现。
+ * 文案的形状由第一份决定。日文可以逐步补齐，缺少的条目使用英文。
  */
-export type Lang = "zh" | "en";
+export const LANG_NAMES = {
+  zh: "简体中文",
+  "zh-Hant": "繁體中文",
+  en: "English",
+  ja: "日本語",
+  ko: "한국어",
+  es: "Español",
+} as const;
+export type Lang = keyof typeof LANG_NAMES;
+export const LANGUAGES: readonly Lang[] = Object.keys(LANG_NAMES) as Lang[];
 
 declare global {
   interface Window {
@@ -27,18 +35,26 @@ declare global {
   }
 }
 
-/** 语言自己的名字。**不翻译**：找「English」的人未必认得「英文」两个字 */
-export const LANG_NAMES: Record<Lang, string> = {
-  zh: "简体中文",
-  en: "English",
-};
+export function isLang(value: unknown): value is Lang {
+  return typeof value === "string" && Object.hasOwn(LANG_NAMES, value);
+}
+
+export function preferredLanguage(tags: readonly string[]): Lang {
+  for (const tag of tags) {
+    const [language, scriptOrRegion] = tag.trim().toLowerCase().split(/[-_.@]/, 2);
+    if (language === "zh" && ["hant", "tw", "hk", "mo"].includes(scriptOrRegion ?? "")) {
+      return "zh-Hant";
+    }
+    if (isLang(language)) return language;
+  }
+  return "en";
+}
 
 function initial(): Lang {
   const injected = typeof window === "undefined" ? undefined : window.__TW_LANG__;
-  if (injected === "zh" || injected === "en") return injected;
+  if (isLang(injected)) return injected;
   // 不在应用里（浏览器直接打开、隔离预览）时，按浏览器的语言
-  const nav = typeof navigator === "undefined" ? "" : navigator.language;
-  return /^zh\b/i.test(nav) ? "zh" : "en";
+  return typeof navigator === "undefined" ? "en" : preferredLanguage([...navigator.languages, navigator.language]);
 }
 
 let current: Lang = initial();
@@ -49,18 +65,18 @@ export function getLang(): Lang {
 }
 
 /** `<html lang>`：读屏和浏览器的断行、字体选择都看它 */
-function tagOf(lang: Lang): string {
-  return lang === "zh" ? "zh-CN" : "en";
+export function localeTag(lang: Lang): string {
+  return lang === "zh" ? "zh-CN" : lang;
 }
 
 export function setLang(next: Lang) {
   if (next === current) return;
   current = next;
-  if (typeof document !== "undefined") document.documentElement.lang = tagOf(next);
+  if (typeof document !== "undefined") document.documentElement.lang = localeTag(next);
   for (const f of listeners) f();
 }
 
-if (typeof document !== "undefined") document.documentElement.lang = tagOf(current);
+if (typeof document !== "undefined") document.documentElement.lang = localeTag(current);
 
 function subscribe(f: () => void) {
   listeners.add(f);
@@ -74,14 +90,21 @@ export function useLang(): Lang {
   return useSyncExternalStore(subscribe, getLang, getLang);
 }
 
-/** 一组文案的中英两份 */
-export type Messages<T> = { readonly zh: T; readonly en: T };
+export type Messages<T> = Readonly<Record<Lang, T>>;
+type Localizations<T> = Partial<Record<Exclude<Lang, "zh" | "en">, Partial<T>>>;
 
 /**
- * 定义一组文案。第二个参数必须和第一个同形：键一样、函数的参数一样。
+ * 定义一组文案。未翻译的顶层条目使用英文，繁体中文使用简体中文。
  */
-export function messages<T extends object>(zh: T, en: NoInfer<T>): Messages<T> {
-  return { zh, en };
+export function messages<T extends object>(zh: T, en: NoInfer<T>, locales: Localizations<NoInfer<T>> = {}): Messages<T> {
+  return {
+    zh,
+    en,
+    "zh-Hant": locales["zh-Hant"] ? { ...zh, ...locales["zh-Hant"] } : zh,
+    ja: locales.ja ? { ...en, ...locales.ja } : en,
+    ko: locales.ko ? { ...en, ...locales.ko } : en,
+    es: locales.es ? { ...en, ...locales.es } : en,
+  };
 }
 
 /** 组件里取文案 */

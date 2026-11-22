@@ -532,8 +532,13 @@ async fn release_at(control: Option<&ControlClient>, owner: &str, path: &Path) -
     // retain baseline/expected separately so a later explicit adoption can clean up.
     save_at(path, &j)?;
     if let (Some(expected), Some(_)) = (&j.expected, &j.baseline) {
-        let control = control
-            .ok_or_else(|| failed(tr!("本机网关不可用", "The local gateway is unavailable")))?;
+        let control = control.ok_or_else(|| {
+            failed(tr!(
+                "本机网关不可用",
+                "The local gateway is unavailable";
+                "本機閘道器不可用",
+            ))
+        })?;
         let ov = control
             .call::<ep::Overview>(&[], &())
             .await
@@ -651,9 +656,16 @@ pub fn watch(handle: &tauri::AppHandle, notices: std::sync::Arc<crate::notices::
                     if !ok {
                         active.insert(key.clone());
                         notices.ingest(Signal::raised(key, Level::Warning,
-                            tr!("WSL 客户端无法连接网关", "WSL Gateway Unavailable"))
-                            .body(tr!(format!("WSL · {distro} 的网关地址或监听已不可达。原配置已保留，请到客户端页检查并确认重新接管。"),
-                                format!("The managed gateway for WSL · {distro} is unavailable. Configuration is preserved. Review the listener and reconnect from Clients to apply any address changes.")))
+                            tr!(
+                                "WSL 客户端无法连接网关",
+                                "WSL Gateway Unavailable";
+                                "WSL 用戶端無法連線閘道器",
+                            ))
+                            .body(tr!(
+                                format!("WSL · {distro} 的网关地址或监听已不可达。原配置已保留，请到客户端页检查并确认重新接管。"),
+                                format!("The managed gateway for WSL · {distro} is unavailable. Configuration is preserved. Review the listener and reconnect from Clients to apply any address changes.");
+                                format!("WSL · {distro} 的閘道器地址或監聽已不可達。原配置已保留，請到用戶端頁檢查並確認重新接管。"),
+                            ))
                             .view("clients"), crate::notices::now_ms());
                     }
                 }

@@ -132,7 +132,8 @@ fn refusal_text(why: &Refusal) -> (&'static str, String) {
     let extract = || -> String {
         tr!(
             "请将 ThinkWatch Lite 解压到可写入的位置后再运行。",
-            "Extract ThinkWatch Lite to a writable location and run it again."
+            "Extract ThinkWatch Lite to a writable location and run it again.";
+            "請將 ThinkWatch Lite 解壓到可寫入的位置後再執行。",
         )
         .into()
     };
@@ -140,18 +141,24 @@ fn refusal_text(why: &Refusal) -> (&'static str, String) {
         Refusal::NoFolder => (
             tr!(
                 "无法确定程序所在的文件夹",
-                "The program folder could not be determined"
+                "The program folder could not be determined";
+                "無法確定程式所在的資料夾",
             ),
             extract(),
         ),
         Refusal::NotWritable => (
-            tr!("当前文件夹没有写入权限", "This folder is not writable"),
+            tr!(
+                "当前文件夹没有写入权限",
+                "This folder is not writable";
+                "當前資料夾沒有寫入許可權",
+            ),
             extract(),
         ),
         Refusal::OtherAccount(data) => (
             tr!(
                 "数据文件夹属于另一个 Windows 账户",
-                "The data folder belongs to another Windows account"
+                "The data folder belongs to another Windows account";
+                "資料資料夾屬於另一個 Windows 賬戶",
             ),
             tr!(
                 format!(
@@ -161,7 +168,11 @@ fn refusal_text(why: &Refusal) -> (&'static str, String) {
                 format!(
                     "The current account cannot access {}. Take ownership of the folder on its Properties › Security page and run ThinkWatch Lite again, or extract ThinkWatch Lite to a new location.",
                     data.display()
-                )
+                );
+                format!(
+                    "當前賬戶無法訪問 {}。可在該資料夾屬性的「安全」頁取得所有權後再執行，或將 ThinkWatch Lite 解壓到新的位置。",
+                    data.display()
+                ),
             ),
         ),
     }
@@ -176,7 +187,11 @@ fn refuse(why: &Refusal) -> ! {
         "ThinkWatch Lite",
         instruction,
         &content,
-        &[tr!("确定", "OK")],
+        &[tr!(
+            "确定",
+            "OK";
+            "確定",
+        )],
     );
     std::process::exit(1);
 }
@@ -356,7 +371,8 @@ pub fn unpack(zip: &[u8]) -> Result<Package, String> {
     let unreadable = |e| {
         tr!(
             format!("无法打开更新包：{e}"),
-            format!("The update package could not be opened: {e}")
+            format!("The update package could not be opened: {e}");
+            format!("無法開啟更新包：{e}"),
         )
     };
     let mut archive = zip::ZipArchive::new(std::io::Cursor::new(zip)).map_err(unreadable)?;
@@ -373,14 +389,16 @@ pub fn unpack(zip: &[u8]) -> Result<Package, String> {
             format!("更新包中应恰好有 {APP_EXE} 和 {CORE_EXE} 两个文件，实际为：{list}"),
             format!(
                 "The update package should hold exactly {APP_EXE} and {CORE_EXE}; it holds: {list}"
-            )
+            );
+            format!("更新包中應恰好有 {APP_EXE} 和 {CORE_EXE} 兩個檔案，實際為：{list}"),
         ));
     }
     let mut read = |name: &str| -> Result<Vec<u8>, String> {
         let unreadable = |e: &dyn std::fmt::Display| {
             tr!(
                 format!("无法读取更新包中的 {name}：{e}"),
-                format!("{name} could not be read from the update package: {e}")
+                format!("{name} could not be read from the update package: {e}");
+                format!("無法讀取更新包中的 {name}：{e}"),
             )
         };
         let mut entry = archive.by_name(name).map_err(|e| unreadable(&e))?;
@@ -393,7 +411,8 @@ pub fn unpack(zip: &[u8]) -> Result<Package, String> {
         if !bytes.starts_with(b"MZ") {
             return Err(tr!(
                 format!("更新包中的 {name} 不是可执行文件"),
-                format!("{name} in the update package is not an executable")
+                format!("{name} in the update package is not an executable");
+                format!("更新包中的 {name} 不是可執行檔案"),
             ));
         }
         Ok(bytes)
@@ -441,7 +460,8 @@ pub fn swap_in(files: &[(PathBuf, &[u8])]) -> Result<(), String> {
         if let Err(e) = swap_one(target, bytes, &mut moved) {
             let e = tr!(
                 format!("无法替换 {}：{e}", target.display()),
-                format!("{} could not be replaced: {e}", target.display())
+                format!("{} could not be replaced: {e}", target.display());
+                format!("無法替換 {}：{e}", target.display()),
             );
             return Err(match roll_back(&moved) {
                 Ok(()) => e,
@@ -449,7 +469,8 @@ pub fn swap_in(files: &[(PathBuf, &[u8])]) -> Result<(), String> {
                     tracing::error!("更新没换成，改回原来的文件也失败了：{r}");
                     tr!(
                         format!("{e}；未能还原原来的文件：{r}"),
-                        format!("{e}; the previous files could not be restored: {r}")
+                        format!("{e}; the previous files could not be restored: {r}");
+                        format!("{e}；未能還原原來的檔案：{r}"),
                     )
                 }
             });

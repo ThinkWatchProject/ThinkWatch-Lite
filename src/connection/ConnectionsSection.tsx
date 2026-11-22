@@ -19,7 +19,7 @@ import { RowMenu, RowMenuButton, type MenuItems } from "@/ui/row-menu";
 import { Segmented } from "@/ui/segmented";
 import { StatusLabel, type StatusTone } from "@/ui/status-dot";
 import { cn } from "@/lib/utils";
-import { useLang, useText } from "@/i18n";
+import { localeTag, useLang, useText, type Lang } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { ListSkeleton } from "@/ui/states";
 import { Skeleton } from "@/ui/skeleton";
@@ -31,9 +31,9 @@ import { profileName } from "./describe";
 import { remoteStatus, type Tone } from "./Switcher";
 
 /** 「9 月 20 日」/「Sep 20」 */
-function day(ms: number, lang: "zh" | "en"): string {
-  return new Date(ms).toLocaleDateString(lang === "zh" ? "zh-CN" : "en-US", {
-    month: lang === "zh" ? "long" : "short",
+function day(ms: number, lang: Lang): string {
+  return new Date(ms).toLocaleDateString(localeTag(lang), {
+    month: lang === "en" ? "short" : "long",
     day: "numeric",
   });
 }

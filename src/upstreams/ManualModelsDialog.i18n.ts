@@ -14,4 +14,19 @@ export const manualModelsDialogText = messages(
     removeShort: "Remove",
     outOfScope: "Not enabled",
   },
+  {
+    "zh-Hant": {
+      title: "新增模型",
+      outOfScope: "不在啟用範圍內",
+    },
+    ko: {
+      removeShort: "제거",
+    },
+    es: {
+      title: "Añadir modelos",
+      remove: (id: string) => `Eliminar ${id}`,
+      removeShort: "Quitar",
+      outOfScope: "No activado",
+    },
+  },
 );

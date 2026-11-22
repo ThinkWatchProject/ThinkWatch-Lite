@@ -146,13 +146,31 @@ pub enum CoreState {
 /// 权限」这种能照着去做的话。
 fn why_not(e: &std::io::Error) -> String {
     match e.kind() {
-        std::io::ErrorKind::NotFound => tr!("文件不存在", "the file does not exist").into(),
-        std::io::ErrorKind::PermissionDenied => {
-            tr!("没有执行权限", "it is not allowed to run").into()
-        }
+        std::io::ErrorKind::NotFound => tr!(
+            "文件不存在",
+            "the file does not exist",
+            "ファイルが存在しません";
+            "檔案不存在",
+            "the file does not exist",
+            "el archivo no existe",
+        )
+        .into(),
+        std::io::ErrorKind::PermissionDenied => tr!(
+            "没有执行权限",
+            "it is not allowed to run",
+            "実行権限がありません";
+            "沒有執行許可權",
+            "it is not allowed to run",
+            "no está permitido correr",
+        )
+        .into(),
         _ if e.raw_os_error() == Some(libc::ENOEXEC) => tr!(
             "不是这台电脑能运行的程序",
-            "it is not a program this computer can run"
+            "it is not a program this computer can run",
+            "この端末で実行できないプログラムです";
+            "不是這臺電腦能執行的程式",
+            "it is not a program this computer can run",
+            "no es un programa que este equipo puede ejecutar",
         )
         .into(),
         _ => {
@@ -464,13 +482,15 @@ impl Supervisor {
             | CoreState::SafeMode { pid: None } => {
                 anyhow::bail!(tr!(
                     "core 正在启动，请稍后再试",
-                    "Core is starting; try again in a moment"
+                    "Core is starting; try again in a moment",
+                    "core を起動しています。しばらくしてから再試行してください"
                 ))
             }
             CoreState::Stopped | CoreState::Exited { .. } | CoreState::Failed { .. } => {
                 anyhow::bail!(tr!(
                     "core 未运行，无法重启",
-                    "Core is not running and cannot be restarted"
+                    "Core is not running and cannot be restarted",
+                    "core は停止しているため再起動できません"
                 ))
             }
         };
@@ -487,7 +507,8 @@ impl Supervisor {
             self.intentional.store(false, Ordering::SeqCst);
             anyhow::bail!(tr!(
                 "core 没有响应，未能重启",
-                "Core did not respond and was not restarted"
+                "Core did not respond and was not restarted",
+                "core が応答しなかったため再起動できませんでした"
             ));
         }
         Ok(())
@@ -507,13 +528,15 @@ impl Supervisor {
             CoreState::Starting | CoreState::Restarting { .. } | CoreState::SafeMode { .. } => {
                 anyhow::bail!(tr!(
                     "core 正在启动，请稍后再试",
-                    "Core is starting; try again in a moment"
+                    "Core is starting; try again in a moment",
+                    "core を起動しています。しばらくしてから再試行してください"
                 ))
             }
             CoreState::Stopped | CoreState::Exited { .. } | CoreState::Failed { .. } => {
                 anyhow::bail!(tr!(
                     "core 未运行，无法重启",
-                    "Core is not running and cannot be restarted"
+                    "Core is not running and cannot be restarted",
+                    "core は停止しているため再起動できません"
                 ))
             }
         };
@@ -776,7 +799,10 @@ impl Supervisor {
                 self.set(CoreState::Failed {
                     reason: tr!(
                         format!("无法运行 {path}：{why}"),
-                        format!("{path} could not be run: {why}")
+                        format!("{path} could not be run: {why}");
+                        format!("無法執行 {path}：{why}"),
+                        format!("{path} could not be run: {why}"),
+                        format!("{path} no pudo ejecutarse: {why}"),
                     ),
                 });
                 return Err(e.into());

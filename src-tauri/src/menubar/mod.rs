@@ -672,7 +672,14 @@ async fn background(app: &tauri::AppHandle, action: Action) {
         tracing::warn!("菜单里的操作没做成：{e}");
         say(
             app,
-            tr!("操作未完成", "The Action Did Not Complete"),
+            tr!(
+                "操作未完成",
+                "The Action Did Not Complete",
+                "操作を完了できませんでした";
+                "操作未完成",
+                "작업을 완료하지 못했습니다",
+                "No se completó la acción",
+            ),
             &why(e),
         );
     }
@@ -704,7 +711,15 @@ async fn copy_default_key(app: &tauri::AppHandle, st: &AppState) -> Result<(), C
         .find(|k| k.default)
         .or_else(|| keys.first())
         .map(|k| k.name.clone())
-        .ok_or_else(|| CmdError::plain(tr!("尚无网关密钥。", "There is no gateway key yet.")))?;
+        .ok_or_else(|| {
+            CmdError::plain(tr!(
+                "尚无网关密钥。",
+                "There is no gateway key yet.";
+                "尚無閘道器金鑰。",
+                "There is no gateway key yet.",
+                "Todavía no hay una llave de entrada.",
+            ))
+        })?;
     let v = st.control.call::<ep::KeyValue>(&[&name], &()).await?;
     app.clipboard()
         .write_text(v.key)
@@ -717,7 +732,14 @@ async fn check_updates(app: &tauri::AppHandle) {
         Ok(Some(found)) => crate::updater::present_update(app, found),
         Ok(None) => say(
             app,
-            tr!("已是最新版本", "ThinkWatch Lite Is Up to Date"),
+            tr!(
+                "已是最新版本",
+                "ThinkWatch Lite Is Up to Date",
+                "ThinkWatch Lite は最新です";
+                "已是最新版本",
+                "ThinkWatch Lite는 최신 버전입니다",
+                "ThinkWatch Lite está al día",
+            ),
             &tr!(
                 format!(
                     "ThinkWatch Lite {} 是最新版本。",
@@ -726,10 +748,37 @@ async fn check_updates(app: &tauri::AppHandle) {
                 format!(
                     "ThinkWatch Lite {} is the latest version.",
                     app.package_info().version
-                )
+                ),
+                format!(
+                    "ThinkWatch Lite {} は最新バージョンです。",
+                    app.package_info().version
+                );
+                format!(
+                    "ThinkWatch Lite {} 是最新版本。",
+                    app.package_info().version
+                ),
+                format!(
+                    "ThinkWatch Lite {} is the latest version.",
+                    app.package_info().version
+                ),
+                format!(
+                    "ThinkWatch Lite {} es la última versión.",
+                    app.package_info().version
+                ),
             ),
         ),
-        Err(e) => say(app, tr!("无法检查更新", "Updates Could Not Be Checked"), &e),
+        Err(e) => say(
+            app,
+            tr!(
+                "无法检查更新",
+                "Updates Could Not Be Checked",
+                "更新を確認できませんでした";
+                "無法檢查更新",
+                "업데이트를 확인할 수 없습니다",
+                "No se pudo buscar actualizaciones",
+            ),
+            &e,
+        ),
     }
 }
 

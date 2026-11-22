@@ -5,7 +5,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/ui/popover";
 import { Segmented } from "@/ui/segmented";
 import { StatusDot } from "@/ui/status-dot";
 import { bucketStart } from "@/format";
-import { textOf, useText } from "@/i18n";
+import { getLang, localeTag, textOf, useText } from "@/i18n";
 import { rangeText } from "./range.i18n";
 
 const HOUR = 3_600_000;
@@ -132,7 +132,7 @@ export function customRange(d: Date): Range {
     ms: Math.max(60_000, Date.now() - d.getTime()),
     from: d.getTime(),
     get label() {
-      return textOf(rangeText).since(d.toLocaleDateString());
+      return textOf(rangeText).since(d.toLocaleDateString(localeTag(getLang())));
     },
     get compare() {
       return textOf(rangeText).sameLength;
@@ -156,7 +156,7 @@ export function dayRange(d: Date): Range {
     from,
     to,
     get label() {
-      return new Date(from).toLocaleDateString();
+      return new Date(from).toLocaleDateString(localeTag(getLang()));
     },
     get compare() {
       return textOf(rangeText).preset["1d"];

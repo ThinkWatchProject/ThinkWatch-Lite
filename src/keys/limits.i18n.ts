@@ -64,4 +64,57 @@ export const limitsText = messages(
           ? `${amount} tokens per ${per}${cacheReads ? " (cache reads included)" : ""}`
           : `${amount} per ${per}`,
   },
+  {
+    "zh-Hant": {
+      per: ({ minute: "分鐘", hour: "小時", day: "天", week: "周", month: "月" }),
+      unit: (per: LimitPer, _n: number): string => ({ minute: "分鐘", hour: "小時", day: "天", week: "周", month: "月" })[per],
+      span: (per: LimitPer, n: number): string => (n > 1 ? ` ${n} ${({ minute: "分鐘", hour: "小時", day: "天", week: "周", month: "月" })[per]}` : ({ minute: "分鐘", hour: "小時", day: "天", week: "周", month: "月" })[per]),
+      measure: { requests: "次請求", tokens: "token", cost: "費用 (USD)" } satisfies Record<LimitMeasure, string>,
+      period: {
+        minute: "最近一分鐘",
+        hour: "最近一小時",
+        day: "今天",
+        week: "本週",
+        month: "本月",
+      } satisfies Record<LimitPer, string>,
+      reached: "已達上限",
+      phrase: (per: string, amount: string, measure: LimitMeasure, cacheReads: boolean) => measure === "requests"
+        ? `每${per} ${amount} 次請求`
+        : measure === "tokens"
+          ? `每${per} ${amount} token${cacheReads ? "（含快取讀取）" : ""}`
+          : `每${per} ${amount} 費用`,
+    },
+    ko: {
+      period: {
+        minute: "Last minute",
+        hour: "Last hour",
+        day: "오늘",
+        week: "This week",
+        month: "This month",
+      },
+    },
+    es: {
+      per: ({ minute: "minuto", hour: "hora", day: "día", week: "semana", month: "mes" }),
+      unit: (per: LimitPer, n: number): string => (n > 1 ? `${({ minute: "minuto", hour: "hora", day: "día", week: "semana", month: "mes" })[per]}s` : ({ minute: "minuto", hour: "hora", day: "día", week: "semana", month: "mes" })[per]),
+      span: (per: LimitPer, n: number): string => (n > 1 ? `${n} ${({ minute: "minuto", hour: "hora", day: "día", week: "semana", month: "mes" })[per]}s` : ({ minute: "minuto", hour: "hora", day: "día", week: "semana", month: "mes" })[per]),
+      lastN: (span: string) => `Último ${span}`,
+      measure: { requests: "solicitudes", tokens: "tokens", cost: "USD" },
+      period: {
+        minute: "Último minuto",
+        hour: "Última hora",
+        day: "Hoy",
+        week: "Esta semana",
+        month: "Este mes",
+      },
+      resets: (at: string) => `reinicia ${at}`,
+      at: (hm: string) => `en ${hm}`,
+      on: (date: string, hm: string) => `${date} al ${hm}`,
+      reached: "Límite alcanzado",
+      phrase: (per: string, amount: string, measure: LimitMeasure, cacheReads: boolean) => measure === "requests"
+        ? `${amount} solicitudes por ${per}`
+        : measure === "tokens"
+          ? `${amount} fichas por ${per}${cacheReads ? " (Caché lee incluido)" : ""}`
+          : `${amount} per ${per}`,
+    },
+  },
 );

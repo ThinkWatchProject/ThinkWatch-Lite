@@ -28,26 +28,35 @@ pub struct Ask {
 /// 一项权限允许做的事
 pub fn permission_text(p: Permission) -> &'static str {
     match p {
-        Permission::System => tr!("读取和修改系统提示词", "Read and change the system prompt"),
+        Permission::System => tr!(
+            "读取和修改系统提示词",
+            "Read and change the system prompt";
+            "讀取和修改系統提示詞",
+        ),
         Permission::Messages => tr!(
             "读取和修改对话消息中的文字和工具结果（可以向对话中加入指令）",
-            "Read and change the text and tool results in conversation messages (can add instructions to the conversation)"
+            "Read and change the text and tool results in conversation messages (can add instructions to the conversation)";
+            "讀取和修改對話訊息中的文字和工具結果（可以向對話中加入指令）",
         ),
         Permission::Tools => tr!(
             "读取和修改工具定义（会改变模型可用的工具）",
-            "Read and change tool definitions (changes which tools the model can use)"
+            "Read and change tool definitions (changes which tools the model can use)";
+            "讀取和修改工具定義（會改變模型可用的工具）",
         ),
         Permission::Params => tr!(
             "读取和修改模型名、max_tokens、温度等参数（可能改变发给上游的模型和产生的费用）",
-            "Read and change the model, max_tokens, temperature and other parameters (may change the model sent upstream and what it costs)"
+            "Read and change the model, max_tokens, temperature and other parameters (may change the model sent upstream and what it costs)";
+            "讀取和修改模型名、max_tokens、溫度等引數（可能改變發給上游的模型和產生的費用）",
         ),
         Permission::ReplyText => tr!(
             "读取和修改回答中的文字",
-            "Read and change the text of replies"
+            "Read and change the text of replies";
+            "讀取和修改回答中的文字",
         ),
         Permission::ReplyToolCalls => tr!(
             "修改、删除和新增回答中的工具调用。高风险：可以改写客户端将要执行的命令和文件路径",
-            "Change, remove and add tool calls in replies. High risk: can rewrite the commands and file paths a client is about to run"
+            "Change, remove and add tool calls in replies. High risk: can rewrite the commands and file paths a client is about to run";
+            "修改、刪除和新增回答中的工具呼叫。高風險：可以改寫用戶端將要執行的命令和檔案路徑",
         ),
     }
 }
@@ -55,9 +64,17 @@ pub fn permission_text(p: Permission) -> &'static str {
 /// 一种请求在界面上的叫法
 pub fn kind_text(k: RequestKind) -> &'static str {
     match k {
-        RequestKind::Conversation => tr!("对话", "conversations"),
+        RequestKind::Conversation => tr!(
+            "对话",
+            "conversations";
+            "對話",
+        ),
         RequestKind::Embeddings => tr!("向量化", "embeddings"),
-        RequestKind::Completions => tr!("补全", "completions"),
+        RequestKind::Completions => tr!(
+            "补全",
+            "completions";
+            "補全",
+        ),
     }
 }
 
@@ -75,9 +92,17 @@ pub fn requests_line(kinds: &[RequestKind]) -> Option<String> {
     }
     let list = extra.join(tr!("、", ", "));
     Some(if kinds.contains(&RequestKind::Conversation) {
-        tr!(format!("也处理：{list}"), format!("Also handles: {list}"))
+        tr!(
+            format!("也处理：{list}"),
+            format!("Also handles: {list}");
+            format!("也處理：{list}"),
+        )
     } else {
-        tr!(format!("仅处理：{list}"), format!("Handles only: {list}"))
+        tr!(
+            format!("仅处理：{list}"),
+            format!("Handles only: {list}");
+            format!("僅處理：{list}"),
+        )
     })
 }
 
@@ -200,7 +225,11 @@ impl ScopePart {
 
     fn text(self) -> &'static str {
         match self {
-            ScopePart::Clients => tr!("客户端", "clients"),
+            ScopePart::Clients => tr!(
+                "客户端",
+                "clients";
+                "用戶端",
+            ),
             ScopePart::Models => tr!("模型", "models"),
             ScopePart::Upstreams => tr!("上游", "upstreams"),
         }
@@ -232,7 +261,12 @@ fn scope_line(scope: &PluginScope) -> String {
         .map(|p| format!("{} {}", p.text(), list_text(p.of(scope))))
         .collect();
     if parts.is_empty() {
-        tr!("全部请求", "all requests").to_string()
+        tr!(
+            "全部请求",
+            "all requests";
+            "全部請求",
+        )
+        .to_string()
     } else {
         parts.join(tr!("；", "; "))
     }
@@ -241,7 +275,8 @@ fn scope_line(scope: &PluginScope) -> String {
 fn check_line() -> &'static str {
     tr!(
         "请核对 SHA-256 与应用中显示的一致。",
-        "Check that the SHA-256 matches the one shown in the app."
+        "Check that the SHA-256 matches the one shown in the app.";
+        "請核對 SHA-256 與應用中顯示的一致。",
     )
 }
 
@@ -267,19 +302,37 @@ pub fn install(
             scope_line(scope),
             sha_prefix(sha256),
             check_line()
-        )
+        );
+        format!(
+            "此外掛可以：\n{can}\n\n適用範圍：{}\nSHA-256：{}\n\n{}",
+            scope_line(scope),
+            sha_prefix(sha256),
+            check_line()
+        ),
     );
     Ask {
-        title: tr!("安装插件", "Install Plugin").to_string(),
+        title: tr!(
+            "安装插件",
+            "Install Plugin";
+            "安裝外掛",
+        )
+        .to_string(),
         message: tr!(
             format!("安装插件「{name}」"),
-            format!("Install Plugin “{name}”")
+            format!("Install Plugin “{name}”");
+            format!("安裝外掛「{name}」"),
         ),
         detail,
-        accept: tr!("安装", "Install").to_string(),
+        accept: tr!(
+            "安装",
+            "Install";
+            "安裝",
+        )
+        .to_string(),
         ok_hint: tr!(
             "选择「确定」安装此插件。",
-            "Choose OK to install the plugin."
+            "Choose OK to install the plugin.";
+            "選擇「確定」安裝此外掛。",
         )
         .to_string(),
         danger: perms.contains(&Permission::ReplyToolCalls),
@@ -294,7 +347,8 @@ fn renamed(current: &str, next: &str) -> String {
     }
     tr!(
         format!("新代码中的名称：「{next}」\n\n"),
-        format!("Name in the new code: “{next}”\n\n")
+        format!("Name in the new code: “{next}”\n\n");
+        format!("新程式碼中的名稱：「{next}」\n\n"),
     )
 }
 
@@ -325,17 +379,39 @@ pub fn approve(
             sha_prefix(from),
             sha_prefix(to),
             check_line()
-        )
+        );
+        format!(
+            "{renamed}更改後的檔案可以：\n{can}\n\nSHA-256：{} → {}\n\n{}",
+            sha_prefix(from),
+            sha_prefix(to),
+            check_line()
+        ),
     );
     Ask {
-        title: tr!("确认文件更改", "Approve File Changes").to_string(),
+        title: tr!(
+            "确认文件更改",
+            "Approve File Changes";
+            "確認檔案更改",
+        )
+        .to_string(),
         message: tr!(
             format!("确认插件「{name}」的文件更改"),
-            format!("Approve the Changed File of Plugin “{name}”")
+            format!("Approve the Changed File of Plugin “{name}”");
+            format!("確認外掛「{name}」的檔案更改"),
         ),
         detail,
-        accept: tr!("确认", "Approve").to_string(),
-        ok_hint: tr!("选择「确定」确认更改。", "Choose OK to approve the change.").to_string(),
+        accept: tr!(
+            "确认",
+            "Approve";
+            "確認",
+        )
+        .to_string(),
+        ok_hint: tr!(
+            "选择「确定」确认更改。",
+            "Choose OK to approve the change.";
+            "選擇「確定」確認更改。",
+        )
+        .to_string(),
         danger: perms.contains(&Permission::ReplyToolCalls),
     }
 }
@@ -369,8 +445,18 @@ pub enum Change {
 /// 一个设置的值写给人看：开关是「开 / 关」，数照原样，字只取一小段
 pub fn setting_value(v: &tw_api::SettingValue) -> String {
     match v {
-        tw_api::SettingValue::Bool(true) => tr!("开", "on").to_string(),
-        tw_api::SettingValue::Bool(false) => tr!("关", "off").to_string(),
+        tw_api::SettingValue::Bool(true) => tr!(
+            "开",
+            "on";
+            "開",
+        )
+        .to_string(),
+        tw_api::SettingValue::Bool(false) => tr!(
+            "关",
+            "off";
+            "關",
+        )
+        .to_string(),
         tw_api::SettingValue::Number(n) if n.fract() == 0.0 && n.abs() < 1e15 => {
             format!("{}", *n as i64)
         }
@@ -381,15 +467,33 @@ pub fn setting_value(v: &tw_api::SettingValue) -> String {
 
 fn on_error_text(o: OnError) -> &'static str {
     match o {
-        OnError::Reject => tr!("拒绝这次请求", "Reject the request"),
-        OnError::Skip => tr!("跳过此插件", "Skip this plugin"),
+        OnError::Reject => tr!(
+            "拒绝这次请求",
+            "Reject the request";
+            "拒絕這次請求",
+        ),
+        OnError::Skip => tr!(
+            "跳过此插件",
+            "Skip this plugin";
+            "跳過此外掛",
+        ),
     }
 }
 
 fn change_line(c: &Change) -> String {
     match c {
-        Change::TurnOn => tr!("启用此插件", "Turn on the plugin").to_string(),
-        Change::TurnOff => tr!("停用此插件", "Turn off the plugin").to_string(),
+        Change::TurnOn => tr!(
+            "启用此插件",
+            "Turn on the plugin";
+            "啟用此外掛",
+        )
+        .to_string(),
+        Change::TurnOff => tr!(
+            "停用此插件",
+            "Turn off the plugin";
+            "停用此外掛",
+        )
+        .to_string(),
         Change::Code { from, to } => tr!(
             format!(
                 "修改代码（SHA-256：{} → {}）",
@@ -400,7 +504,12 @@ fn change_line(c: &Change) -> String {
                 "Change the code (SHA-256: {} → {})",
                 sha_prefix(from),
                 sha_prefix(to)
-            )
+            );
+            format!(
+                "修改程式碼（SHA-256：{} → {}）",
+                sha_prefix(from),
+                sha_prefix(to)
+            ),
         ),
         Change::OnError { from, to } => tr!(
             format!("出错时：{} → {}", on_error_text(*from), on_error_text(*to)),
@@ -408,7 +517,8 @@ fn change_line(c: &Change) -> String {
                 "On error: {} → {}",
                 on_error_text(*from),
                 on_error_text(*to)
-            )
+            );
+            format!("出錯時：{} → {}", on_error_text(*from), on_error_text(*to)),
         ),
         Change::Scope { part, from, to } => tr!(
             format!(
@@ -422,13 +532,20 @@ fn change_line(c: &Change) -> String {
                 part.text(),
                 list_text(from),
                 list_text(to)
-            )
+            );
+            format!(
+                "適用範圍（{}）：{} → {}",
+                part.text(),
+                list_text(from),
+                list_text(to)
+            ),
         ),
         Change::Setting { label, from, to } => {
             let label = clean_name(label);
             tr!(
                 format!("设置「{label}」：{from} → {to}"),
-                format!("Setting “{label}”: {from} → {to}")
+                format!("Setting “{label}”: {from} → {to}");
+                format!("設定「{label}」：{from} → {to}"),
             )
         }
     }
@@ -473,35 +590,59 @@ pub fn save(
     };
     let detail = tr!(
         format!("{renamed}本次改动：\n{changes_text}\n\n此插件可以：\n{can}{check}"),
-        format!("{renamed}Changes:\n{changes_text}\n\nThis plugin can:\n{can}{check}")
+        format!("{renamed}Changes:\n{changes_text}\n\nThis plugin can:\n{can}{check}");
+        format!("{renamed}本次改動：\n{changes_text}\n\n此外掛可以：\n{can}{check}"),
     );
     Ask {
-        title: tr!("确认插件改动", "Confirm Plugin Changes").to_string(),
+        title: tr!(
+            "确认插件改动",
+            "Confirm Plugin Changes";
+            "確認外掛改動",
+        )
+        .to_string(),
         message: if only_on {
             tr!(
                 format!("启用插件「{name}」"),
-                format!("Turn On Plugin “{name}”")
+                format!("Turn On Plugin “{name}”");
+                format!("啟用外掛「{name}」"),
             )
         } else {
             tr!(
                 format!("保存插件「{name}」"),
-                format!("Save Plugin “{name}”")
+                format!("Save Plugin “{name}”");
+                format!("儲存外掛「{name}」"),
             )
         },
         detail,
         accept: if only_on {
-            tr!("启用", "Turn On").to_string()
+            tr!(
+                "启用",
+                "Turn On";
+                "啟用",
+            )
+            .to_string()
         } else {
-            tr!("保存", "Save").to_string()
+            tr!(
+                "保存",
+                "Save";
+                "儲存",
+            )
+            .to_string()
         },
         ok_hint: if only_on {
             tr!(
                 "选择「确定」启用此插件。",
-                "Choose OK to turn on the plugin."
+                "Choose OK to turn on the plugin.";
+                "選擇「確定」啟用此外掛。",
             )
             .to_string()
         } else {
-            tr!("选择「确定」保存改动。", "Choose OK to save the changes.").to_string()
+            tr!(
+                "选择「确定」保存改动。",
+                "Choose OK to save the changes.";
+                "選擇「確定」儲存改動。",
+            )
+            .to_string()
         },
         danger: perms.contains(&Permission::ReplyToolCalls)
             || previous.is_none_or(|p| p.contains(&Permission::ReplyToolCalls)),

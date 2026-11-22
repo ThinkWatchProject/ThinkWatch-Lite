@@ -314,12 +314,14 @@ pub fn appimage_failure(e: &tauri_plugin_updater::Error) -> String {
             format!("无法写入 AppImage 所在的位置，更新未安装。新版本可从 {RELEASES_URL} 下载。"),
             format!(
                 "The location of the AppImage is not writable, so the update was not installed. The new version can be downloaded from {RELEASES_URL}."
-            )
+            );
+            format!("無法寫入 AppImage 所在的位置，更新未安裝。新版本可從 {RELEASES_URL} 下載。"),
         )
     } else {
         tr!(
             format!("安装失败：{e}"),
-            format!("Installation failed: {e}")
+            format!("Installation failed: {e}");
+            format!("安裝失敗：{e}"),
         )
     }
 }
@@ -336,7 +338,8 @@ pub fn portable_failure(e: &str) -> String {
         format!("更新未安装：{e}。新版本可从 {RELEASES_URL} 下载。"),
         format!(
             "The update was not installed: {e}. The new version can be downloaded from {RELEASES_URL}."
-        )
+        );
+        format!("更新未安裝：{e}。新版本可從 {RELEASES_URL} 下載。"),
     )
 }
 

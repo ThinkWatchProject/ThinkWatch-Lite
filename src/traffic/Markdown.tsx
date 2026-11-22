@@ -13,10 +13,10 @@ import { useMarker } from "@/security/Highlight";
  * - 链接只显示文字、悬停看地址，不能点：点了会把应用的窗口导航走；图片只显示替代文字
  * - 顶层每一块按原文 `memo`：回答在长时只有最后一块重画
  */
-export function Markdown({ text, tail }: { text: string; tail?: ReactNode }) {
+export function Markdown({ text, tail, className }: { text: string; tail?: ReactNode; className?: string }) {
   const blocks = useMemo(() => lexer(text, { gfm: true, breaks: true }).filter((b) => b.type !== "space"), [text]);
   return (
-    <div className="flex flex-col gap-2 wrap-break-word">
+    <div className={cn("flex flex-col gap-2 wrap-break-word", className)}>
       {blocks.map((b, i) => {
         const last = i === blocks.length - 1;
         return <Block key={i} token={b} raw={b.raw} tail={last ? tail : undefined} />;

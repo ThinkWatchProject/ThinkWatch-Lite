@@ -27,4 +27,28 @@ export const pluginPartsText = messages(
     permissionRemoved: "No longer requested",
     errorAt: (line: number, column: number | null) => (column != null ? `line ${line}, column ${column}` : `line ${line}`),
   },
+  {
+    "zh-Hant": {
+      unchangedLines: (n: number) => `${n.toLocaleString()} 行未改動`,
+      tally: (added: number, removed: number) => `新增 ${added.toLocaleString()} 行，刪除 ${removed.toLocaleString()} 行`,
+      noDifference: "內容相同",
+      invisible: (code: string) => `看不見的字元 ${code}`,
+      loadingCode: "正在開啟程式碼",
+      codeLabel: "外掛程式碼",
+      permissions: "申請的許可權",
+      permissionRemoved: "不再申請",
+    },
+    es: {
+      lines: (n: number) => `${n.toLocaleString()} ${n === 1 ? "línea" : "líneas"}`,
+      unchangedLines: (n: number) => `${n.toLocaleString()} sin cambios ${n === 1 ? "línea" : "líneas"}`,
+      tally: (added: number, removed: number) => `${added.toLocaleString()} añadido, ${removed.toLocaleString()} eliminado`,
+      noDifference: "Los contenidos son los mismos",
+      invisible: (code: string) => `Carácter invisible ${code}`,
+      loadingCode: "Apertura del código",
+      codeLabel: "Código del complemento",
+      permissions: "Permisos solicitados",
+      permissionRemoved: "Ya no se ha solicitado",
+      errorAt: (line: number, column: number | null) => (column != null ? `línea ${line}, columna ${column}` : `línea ${line}`),
+    },
+  },
 );

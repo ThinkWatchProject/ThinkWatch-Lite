@@ -33,13 +33,22 @@ fn refuse() -> ! {
         "ThinkWatch Lite",
         tr!(
             "缺少 Microsoft Edge WebView2 运行时",
-            "The Microsoft Edge WebView2 Runtime is missing"
+            "The Microsoft Edge WebView2 Runtime is missing";
+            "缺少 Microsoft Edge WebView2 執行時",
         ),
         tr!(
             "ThinkWatch Lite 无法启动。",
-            "ThinkWatch Lite cannot start."
+            "ThinkWatch Lite cannot start.";
+            "ThinkWatch Lite 無法啟動。",
         ),
-        &[tr!("前往下载", "Download"), tr!("退出", "Quit")],
+        &[
+            tr!(
+                "前往下载",
+                "Download";
+                "前往下載",
+            ),
+            tr!("退出", "Quit"),
+        ],
     );
     if picked == Some(0)
         && let Err(e) = tauri_plugin_opener::open_url(DOWNLOAD, None::<&str>)

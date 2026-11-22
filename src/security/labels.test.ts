@@ -126,14 +126,13 @@ describe("码位规则的命中", () => {
   });
 });
 
-/** 内置内容规则的说明：中文取 core 给的 why_zh；英文那句以名字开头的，名字去掉（名字在上一行） */
+/** 内置内容规则的说明：中文取客户端译文；英文那句以名字开头的，名字去掉（名字在上一行） */
 describe("内容规则的说明", () => {
   const rule = (why: string): SecurityRuleView => ({
     id: "bidi-controls",
     custom: false,
     name: "Bidirectional controls",
     why,
-    why_zh: "可使屏幕上的显示顺序与实际字符顺序不一致。",
     kind: "invisible",
     matcher: { kind: "codepoints", ranges: ["U+202A–U+202E", "U+2066–U+2069"] },
     enabled: true,
@@ -142,7 +141,7 @@ describe("内容规则的说明", () => {
     default_action: "strip",
   });
 
-  it("中文取 why_zh", () => {
+  it("中文取客户端译文", () => {
     expect(ruleWhy("content", rule("Bidirectional controls: they reorder text."))).toBe(
       "可使屏幕上的显示顺序与实际字符顺序不一致。",
     );

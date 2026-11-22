@@ -22,7 +22,8 @@ pub async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Out<String> 
     std::fs::create_dir_all(&dir).map_err(|e| {
         tr!(
             format!("无法创建目录 {}：{e}", dir.display()),
-            format!("The directory {} could not be created: {e}", dir.display())
+            format!("The directory {} could not be created: {e}", dir.display());
+            format!("無法建立目錄 {}：{e}", dir.display()),
         )
     })?;
     let at = std::time::SystemTime::now()
@@ -32,12 +33,14 @@ pub async fn save_diagnostics(state: tauri::State<'_, AppState>) -> Out<String> 
     // 文件名界面上看得见（「已生成：…」），所以也跟着语言走
     let path = dir.join(tr!(
         format!("诊断包-{at}.md"),
-        format!("diagnostics-{at}.md")
+        format!("diagnostics-{at}.md");
+        format!("診斷包-{at}.md"),
     ));
     write_private(&path, text.as_bytes()).map_err(|e| {
         tr!(
             format!("无法写入文件 {}：{e}", path.display()),
-            format!("The file {} could not be written: {e}", path.display())
+            format!("The file {} could not be written: {e}", path.display());
+            format!("無法寫入檔案 {}：{e}", path.display()),
         )
     })?;
     Ok(path.display().to_string())

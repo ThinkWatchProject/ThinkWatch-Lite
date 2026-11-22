@@ -1,0 +1,669 @@
+{
+  "redact": {
+    "rules": {
+      "age-secret-key": {
+        "name": "age 私鑰"
+      },
+      "alibaba-access-key-id": {
+        "name": "阿里雲 AccessKey ID"
+      },
+      "anthropic-api-key": {
+        "name": "Anthropic API 金鑰"
+      },
+      "artifactory-key": {
+        "name": "JFrog Artifactory 金鑰"
+      },
+      "atlassian-token": {
+        "name": "Atlassian API 令牌"
+      },
+      "auth-header-credential": {
+        "name": "請求頭中的憑據",
+        "about": "`Authorization`、`X-Api-Key`、`Api-Key`、`X-Goog-Api-Key` 請求頭的值，包括 curl 的 `-H`、HTTP 原文與程式碼中的寫法；只換值"
+      },
+      "aws-access-key-id": {
+        "name": "AWS 訪問金鑰 ID"
+      },
+      "aws-other-key-id": {
+        "name": "AWS 其他訪問金鑰 ID"
+      },
+      "aws-temporary-key-id": {
+        "name": "AWS 臨時訪問金鑰 ID"
+      },
+      "azure-ad-client-secret": {
+        "name": "Azure AD 用戶端密碼",
+        "about": "3 個字元、1 位數字與 `Q~`，其後 31 至 34 個字元"
+      },
+      "bank-card": {
+        "name": "銀行卡號",
+        "about": "銀聯、Visa、Mastercard、American Express、JCB、Discover、Diners Club 的卡號：號段、位數對得上並透過 Luhn 校驗；公開的測試卡號除外"
+      },
+      "bedrock-api-key": {
+        "name": "Amazon Bedrock API 金鑰"
+      },
+      "bot-webhook": {
+        "name": "機器人 Webhook",
+        "about": "飛書 / Lark、釘釘、企業微信、Slack、Discord、Microsoft Teams 機器人 Webhook 地址中的令牌；只換令牌段"
+      },
+      "br-cpf": {
+        "name": "巴西 CPF",
+        "about": "`ddd.ddd.ddd-dd` 寫法的巴西 CPF，兩位校驗碼對得上"
+      },
+      "brevo-key": {
+        "name": "Brevo API 金鑰"
+      },
+      "cerebras-key": {
+        "name": "Cerebras API 金鑰"
+      },
+      "clojars-token": {
+        "name": "Clojars 令牌"
+      },
+      "cloudflare-origin-ca-key": {
+        "name": "Cloudflare Origin CA 金鑰"
+      },
+      "cn-address": {
+        "name": "中國大陸詳細地址",
+        "about": "行政區劃名稱、街道路巷村之一與門牌號（號、棟、單元、室）組成的中國大陸詳細地址；只到區縣的不算"
+      },
+      "cn-landline": {
+        "name": "中國大陸固定電話",
+        "about": "`0` 開頭的 2 至 3 位區號加 7 至 8 位號碼，區號有效，須帶括號或連字元（`010-12345678`、`(0755)1234567`）"
+      },
+      "cn-license-plate": {
+        "name": "中國大陸車牌號",
+        "about": "省份簡稱、字母與 5 位字母或數字（新能源車為 6 位），不含 I、O"
+      },
+      "cn-mobile-phone": {
+        "name": "中國大陸手機號",
+        "about": "中國大陸手機號：`1` 開頭的 11 位數字，第二位為 3 到 9，前後不緊挨其他數字；可帶 `+86`、`0086`、`86-` 字首，可按 3-4-4 以空格或連字元分隔"
+      },
+      "cn-passport": {
+        "name": "中國護照號",
+        "about": "`E` 或 `E` 加一個字母開頭、其後 7 至 8 位數字，且前 20 個字元內出現「護照」或「passport」"
+      },
+      "cn-resident-id": {
+        "name": "居民身份證號",
+        "about": "18 位居民身份證號（含港澳臺居民居住證、外國人永久居留身份證）：地區碼、1900 年以來的出生日期和校驗碼都對得上"
+      },
+      "cn-resident-id-15": {
+        "name": "15 位舊身份證號",
+        "about": "15 位舊身份證號：地區碼、6 位出生日期都對得上，其後 3 位順序碼"
+      },
+      "command-line-password": {
+        "name": "命令列中的口令",
+        "about": "命令列中的口令：`curl -u 使用者:口令`、`--user`、`mysql -p口令`、`PGPASSWORD=… psql`；只換口令"
+      },
+      "config-assignment": {
+        "name": "配置檔案中的金鑰賦值",
+        "about": "`.env`、YAML、TOML、INI、JSON 中變數名以 `SECRET`、`SECRET_KEY`、`PASSWORD`、`PASSWD`、`PWD`、`TOKEN`、`API_KEY`、`APIKEY`、`ACCESS_KEY`、`PRIVATE_KEY`、`CLIENT_SECRET` 結尾（不區分大小寫）、值為至少 8 個字元的字面量的賦值；只換值，表示式、變數引用和佔位寫法不算"
+      },
+      "conn-string-password": {
+        "name": "連線串列埠令",
+        "about": "`協議://使用者:口令@主機` 中的口令；只換口令"
+      },
+      "crypto-address": {
+        "name": "區塊鏈賬戶／擴充套件公鑰",
+        "about": "EVM 十六進位制地址，經校驗的 Bitcoin／TRON／XRP／Stellar 地址、Bitcoin 隔離見證地址和 BIP32／SLIP-0132 擴充套件公鑰；也覆蓋 Solana 等無校驗和的 32 位元組 Base58 賬戶格式"
+      },
+      "crypto-extended-key": {
+        "name": "擴充套件私鑰",
+        "about": "BIP32 / SLIP-0132 擴充套件私鑰：`xprv`、`tprv`、`yprv`、`Yprv`、`zprv`、`Zprv`、`uprv`、`Uprv`、`vprv`、`Vprv`；Base58Check、私鑰標記及 secp256k1 標量均有效"
+      },
+      "crypto-hex-key": {
+        "name": "裸錢包私鑰／32 位元組雜湊",
+        "about": "64 位十六進位制串，可帶 `0x` 字首；覆蓋 EVM、TRON 裸私鑰以及格式無法區分的交易雜湊和摘要"
+      },
+      "crypto-keystore": {
+        "name": "錢包金鑰庫／密文",
+        "about": "字面量 `keystore` 或 `ciphertext` 欄位，包括 Ethereum V3 加密金鑰材料；作為文字貼上的 JSON 物件也保護，只換值"
+      },
+      "crypto-mnemonic": {
+        "name": "助記詞",
+        "about": "連續 12、15、18、21 或 24 個 BIP39 英文或簡體中文詞表中的詞，並透過校驗和；可帶編號，整段"
+      },
+      "crypto-rpc-key": {
+        "name": "區塊鏈 RPC 地址憑證",
+        "about": "Infura `/v3/`、Alchemy `/v2/`、QuickNode 令牌路徑及 Helius `api-key` URL 中的 API 憑據；只換憑據部分"
+      },
+      "crypto-secret-field": {
+        "name": "欄位中的錢包機密",
+        "about": "按欄位識別私鑰、種子、助記詞、恢復短語、口令、恢復碼和 MPC／備份份額，包括 `pk`、`privateKey`、`PRIVY_WALLET_PRIVATE_KEY` 和中文標籤；只換值，不猜測金鑰長度"
+      },
+      "crypto-solana-key": {
+        "name": "Solana 金鑰對",
+        "about": "Base58 編碼或作為文字貼上的 JSON 位元組陣列，含 64 位元組 Ed25519 種子與公鑰；由種子派生的公鑰須一致，排除同長度簽名"
+      },
+      "crypto-stellar-key": {
+        "name": "Stellar 私密種子",
+        "about": "Stellar `S` StrKey 種子，版本、32 位元組載荷和 CRC16-XModem 校驗均有效"
+      },
+      "crypto-sui-key": {
+        "name": "Sui 私鑰",
+        "about": "`suiprivkey1` Bech32 編碼，校驗和有效，含支援的簽名方案和 32 位元組金鑰"
+      },
+      "crypto-wif-key": {
+        "name": "WIF 私鑰",
+        "about": "51 或 52 個字元的 WIF 私鑰：Base58Check 校驗透過，版本位元組對得上"
+      },
+      "crypto-xrp-seed": {
+        "name": "XRP 賬戶種子",
+        "about": "XRP 字母表的 Base58Check 賬戶種子，包括 secp256k1 和 Ed25519 版本"
+      },
+      "databricks-token": {
+        "name": "Databricks 令牌"
+      },
+      "digitalocean-other-token": {
+        "name": "DigitalOcean 其他令牌"
+      },
+      "digitalocean-token": {
+        "name": "DigitalOcean 令牌"
+      },
+      "docker-hub-token": {
+        "name": "Docker Hub 令牌"
+      },
+      "doppler-token": {
+        "name": "Doppler 令牌"
+      },
+      "email": {
+        "name": "郵箱地址",
+        "about": "郵箱地址：`名稱@域名`"
+      },
+      "exchange-credential": {
+        "name": "交易 API／簽名鑑權憑證",
+        "about": "SDK／配置欄位或交易請求頭中的 API key、secret、passphrase、簽名 Memo、OTP 和鑑權簽名；覆蓋 Binance、OKX、Bybit、Coinbase、Kraken、KuCoin、Bitget、Gate、MEXC、Gemini、Bitfinex、HTX、BitMart、Phemex、Bitstamp、Polymarket 和 predict.fun；只換值"
+      },
+      "fireworks-key": {
+        "name": "Fireworks AI API 金鑰"
+      },
+      "flyio-token": {
+        "name": "Fly.io 令牌"
+      },
+      "geo-coordinates": {
+        "name": "精確座標",
+        "about": "成對出現、在取值範圍內、小數不少於 5 位的緯度與經度"
+      },
+      "github-fine-grained-token": {
+        "name": "GitHub 細粒度令牌"
+      },
+      "github-oauth-token": {
+        "name": "GitHub OAuth 令牌"
+      },
+      "github-personal-token": {
+        "name": "GitHub 個人令牌"
+      },
+      "github-refresh-token": {
+        "name": "GitHub 重新整理令牌"
+      },
+      "github-server-token": {
+        "name": "GitHub 伺服器令牌"
+      },
+      "github-user-token": {
+        "name": "GitHub 使用者令牌"
+      },
+      "gitlab-other-token": {
+        "name": "GitLab 其他令牌"
+      },
+      "gitlab-token": {
+        "name": "GitLab 令牌"
+      },
+      "google-api-key": {
+        "name": "Google API 金鑰"
+      },
+      "google-oauth-token": {
+        "name": "Google OAuth 令牌"
+      },
+      "grafana-token": {
+        "name": "Grafana 令牌"
+      },
+      "groq-key": {
+        "name": "Groq API 金鑰"
+      },
+      "heroku-key": {
+        "name": "Heroku API 金鑰"
+      },
+      "hk-macau-taiwan-id": {
+        "name": "港澳臺身份證號",
+        "about": "香港、澳門、臺灣身份證號：香港、臺灣的校驗碼對得上；澳門的須前文寫明證件名稱"
+      },
+      "huggingface-token": {
+        "name": "Hugging Face 令牌"
+      },
+      "iban": {
+        "name": "國際銀行帳號（IBAN）",
+        "about": "國家程式碼、兩位校驗碼與該國規定位數的帳號，MOD 97-10 校驗透過；連寫或四位一組"
+      },
+      "imei": {
+        "name": "IMEI",
+        "about": "15 位數字，Luhn 校驗透過，且前 20 個字元內出現「IMEI」"
+      },
+      "in-aadhaar": {
+        "name": "印度 Aadhaar 號碼",
+        "about": "12 位數字（可四位一組），首位為 2 至 9，Verhoeff 校驗透過"
+      },
+      "internal-domain": {
+        "name": "內部域名",
+        "about": "以 `.local`、`.internal`、`.lan`、`.corp`、`.home.arpa`、`.intranet` 結尾的域名"
+      },
+      "internal-ip": {
+        "name": "內網地址",
+        "about": "`10.`、`172.16–31.`、`192.168.`、`100.64–127.` 開頭的地址與 `fc00::/7` 內的 IPv6 地址，不含 127.0.0.1"
+      },
+      "intl-phone": {
+        "name": "國際電話號碼",
+        "about": "`+` 開頭，國家碼有效、位數與該國規定一致；可帶空格與連字元"
+      },
+      "jp-my-number": {
+        "name": "日本個人番號",
+        "about": "12 位數字，校驗位對得上，且前 20 個字元內出現「マイナンバー」「個人番號」或「My Number」"
+      },
+      "jwt": {
+        "name": "JWT",
+        "about": "三段 base64url，首段解碼後含 `\"alg\"`"
+      },
+      "kr-rrn": {
+        "name": "韓國居民登入號",
+        "about": "6 位出生日期、`-` 與 7 位數字，日期有效、第 8 位為 1 至 8"
+      },
+      "labeled-account": {
+        "name": "帶欄位名的銀行帳號",
+        "about": "欄位名為 `銀行帳號`、`開戶帳號`、`銀行卡號`、`account_number`、`bank_account`、`bank_account_number` 的值，包括 `欄位名: 值`、`\"欄位名\": \"值\"` 與表格表頭的寫法；只換值"
+      },
+      "labeled-address": {
+        "name": "帶欄位名的住址",
+        "about": "欄位名為 `住址`、`家庭住址`、`收貨地址`、`聯絡地址`、`home_address`、`shipping_address`、`residential_address`、`address` 的值，包括 `欄位名: 值`、`\"欄位名\": \"值\"` 與表格表頭的寫法；只換值"
+      },
+      "labeled-birth-date": {
+        "name": "帶欄位名的出生日期",
+        "about": "欄位名為 `出生日期`、`生日`、`birthday`、`birth_date`、`date_of_birth`、`dob` 的值，包括 `欄位名: 值`、`\"欄位名\": \"值\"` 與表格表頭的寫法；只換值"
+      },
+      "labeled-health": {
+        "name": "帶欄位名的健康資訊",
+        "about": "欄位名為 `病歷號`、`住院號`、`診斷`、`病史`、`medical_record_number`、`diagnosis` 的值，包括 `欄位名: 值`、`\"欄位名\": \"值\"` 與表格表頭的寫法；只換值"
+      },
+      "labeled-name": {
+        "name": "帶欄位名的姓名",
+        "about": "欄位名為 `姓名`、`真實姓名`、`聯絡人`、`收件人`、`收貨人`、`real_name`、`full_name`、`legal_name`、`first_name`、`last_name`、`given_name`、`family_name`、`name` 的值，包括 `欄位名: 值`、`\"欄位名\": \"值\"` 與表格表頭的寫法；只換值"
+      },
+      "langfuse-secret-key": {
+        "name": "Langfuse 私密金鑰"
+      },
+      "langsmith-key": {
+        "name": "LangSmith API 金鑰"
+      },
+      "linear-key": {
+        "name": "Linear API 金鑰"
+      },
+      "mac-address": {
+        "name": "MAC 地址",
+        "about": "6 組兩位十六進位制字元，以 `:` 或 `-` 分隔；全零、廣播與組播地址除外"
+      },
+      "mainland-travel-permit": {
+        "name": "港澳臺往來內地通行證號",
+        "about": "港澳居民來往內地通行證（`H` 或 `M` 加 8 位數字）與臺灣居民來往大陸通行證（8 位數字），且前 20 個字元內出現「通行證」「回鄉證」或「臺胞證」"
+      },
+      "minimax-key": {
+        "name": "MiniMax API 金鑰"
+      },
+      "notion-token": {
+        "name": "Notion 令牌"
+      },
+      "npm-token": {
+        "name": "npm 令牌"
+      },
+      "onepassword-token": {
+        "name": "1Password 服務帳號令牌"
+      },
+      "openai-api-key": {
+        "name": "OpenAI API 金鑰",
+        "about": "`sk-` 開頭，全長至少 40 個字元，同時含字母和數字"
+      },
+      "openai-project-key": {
+        "name": "OpenAI 專案金鑰"
+      },
+      "openai-service-key": {
+        "name": "OpenAI 服務帳號與管理金鑰"
+      },
+      "openrouter-key": {
+        "name": "OpenRouter API 金鑰"
+      },
+      "passport-mrz": {
+        "name": "護照機讀區",
+        "about": "兩行各 44 個字元、以 `P` 開頭，四處校驗位與綜合校驗位都對得上；整段"
+      },
+      "perplexity-key": {
+        "name": "Perplexity API 金鑰"
+      },
+      "pinecone-key": {
+        "name": "Pinecone API 金鑰"
+      },
+      "postman-key": {
+        "name": "Postman API 金鑰"
+      },
+      "private-key": {
+        "name": "私鑰",
+        "about": "`-----BEGIN … PRIVATE KEY-----` 至對應的 END，整段"
+      },
+      "public-ip": {
+        "name": "公網 IP 地址",
+        "about": "公網 IPv4、IPv6 地址；私有、迴環、鏈路本地、運營商級 NAT、文件示例與組播地址除外"
+      },
+      "pulumi-token": {
+        "name": "Pulumi 令牌"
+      },
+      "pypi-token": {
+        "name": "PyPI 令牌"
+      },
+      "qianfan-api-key": {
+        "name": "百度千帆 API 金鑰",
+        "about": "`bce-v3/ALTAK-` 開頭，其後為 21 個字母或數字、`/` 與 40 個十六進位制字元，整段"
+      },
+      "replicate-token": {
+        "name": "Replicate 令牌"
+      },
+      "rubygems-token": {
+        "name": "RubyGems 令牌"
+      },
+      "sendgrid-key": {
+        "name": "SendGrid 金鑰"
+      },
+      "sentry-token": {
+        "name": "Sentry 令牌"
+      },
+      "sg-nric": {
+        "name": "新加坡 NRIC / FIN",
+        "about": "S、T、F、G 之一開頭，7 位數字加校驗字母，校驗字母對得上"
+      },
+      "shopify-token": {
+        "name": "Shopify 令牌"
+      },
+      "sk-compat-key": {
+        "name": "OpenAI 相容格式 API 金鑰",
+        "about": "`sk-` 開頭，其後恰為 32 個字母和數字（兩者都有），或恰為 48 個小寫字母"
+      },
+      "slack-app-token": {
+        "name": "Slack 應用令牌"
+      },
+      "slack-bot-token": {
+        "name": "Slack 機器人令牌"
+      },
+      "slack-other-token": {
+        "name": "Slack 其他令牌"
+      },
+      "slack-user-token": {
+        "name": "Slack 使用者令牌"
+      },
+      "stripe-live-key": {
+        "name": "Stripe 生產金鑰"
+      },
+      "stripe-restricted-key": {
+        "name": "Stripe 受限金鑰"
+      },
+      "stripe-webhook-secret": {
+        "name": "Stripe Webhook 簽名金鑰"
+      },
+      "supabase-key": {
+        "name": "Supabase 金鑰"
+      },
+      "tavily-key": {
+        "name": "Tavily API 金鑰"
+      },
+      "telegram-bot-token": {
+        "name": "Telegram 機器人令牌",
+        "about": "8 至 10 位數字與 `:AA`，其後 33 個字元"
+      },
+      "tencent-secret-id": {
+        "name": "騰訊雲 SecretId"
+      },
+      "terraform-token": {
+        "name": "Terraform Cloud 令牌",
+        "about": "14 個字母或數字與 `.atlasv1.`，其後 60 至 70 個字元"
+      },
+      "thinkwatch-saved-secret": {
+        "name": "ThinkWatch 中儲存的金鑰",
+        "about": "按值識別 ThinkWatch 中儲存的金鑰，與格式無關：上游金鑰與請求頭中的值、閘道器金鑰、代理密碼、遠端控制金鑰、同步與備份憑據。不足 12 個字元的值不識別"
+      },
+      "twilio-api-key": {
+        "name": "Twilio API 金鑰"
+      },
+      "uk-nino": {
+        "name": "英國國民保險號",
+        "about": "2 個字母、6 位數字與 A 至 D 之一組成的英國國民保險號，不會分配的字母組合除外"
+      },
+      "url-token": {
+        "name": "URL 中的令牌",
+        "about": "URL 查詢引數 `access_token`、`api_key`、`apikey`、`client_secret`、`sig`、`X-Amz-Signature`、`X-Goog-Signature` 的值；只換引數值"
+      },
+      "us-ssn": {
+        "name": "美國社會安全號",
+        "about": "`ddd-dd-dddd` 寫法的美國社會安全號，不會分配的區號、組號與序號除外"
+      },
+      "uuid": {
+        "name": "UUID／緊湊識別符號",
+        "about": "帶連字元的 UUID 和 32 位十六進位制串，不區分大小寫、不限制版本，包括訂單號和追蹤 ID；同形狀的緊湊雜湊也替換"
+      },
+      "vault-token": {
+        "name": "HashiCorp Vault 令牌"
+      },
+      "vin": {
+        "name": "車輛識別代號（VIN）",
+        "about": "17 個字元、不含 I、O、Q，第 9 位校驗碼對得上"
+      },
+      "volcengine-access-key-id": {
+        "name": "火山引擎 AccessKey ID"
+      },
+      "xai-key": {
+        "name": "xAI API 金鑰"
+      },
+      "zhipu-api-key": {
+        "name": "智譜 API 金鑰",
+        "about": "32 個十六進位制字元、`.` 與 16 個字母或數字相連"
+      }
+    },
+    "kinds": {
+      "ai-services": "AI 服務",
+      "business": "支付、通訊與協作",
+      "cloud": "雲服務與基礎設施",
+      "conn-strings": "連線串",
+      "contact": "聯絡方式",
+      "crypto": "加密貨幣",
+      "custom": "自定義",
+      "dev-platforms": "程式碼託管與軟體釋出",
+      "device": "裝置與網路標識",
+      "financial": "金融賬戶",
+      "foreign-ids": "境外證件號碼",
+      "id-documents": "證件號碼",
+      "in-context": "固定位置的憑據",
+      "internal": "內網地址",
+      "jwt": "JWT",
+      "labeled-personal": "帶欄位名的個人資訊",
+      "location": "住址與位置",
+      "private-keys": "私鑰",
+      "saved": "儲存的金鑰",
+      "vehicle": "車輛"
+    }
+  },
+  "content": {
+    "rules": {
+      "act-as": {
+        "name": "要求扮演角色"
+      },
+      "base64-wall": {
+        "name": "長串 Base64"
+      },
+      "bidi-controls": {
+        "name": "雙向控制符",
+        "why": "可使螢幕上的顯示順序與實際字元順序不一致。"
+      },
+      "dan": {
+        "name": "DAN"
+      },
+      "developer-mode": {
+        "name": "開發者模式"
+      },
+      "disregard-your-instructions": {
+        "name": "要求無視指令"
+      },
+      "ignore-all-previous": {
+        "name": "要求忽略之前的全部內容"
+      },
+      "ignore-previous-instructions": {
+        "name": "要求忽略先前的指令"
+      },
+      "jailbreak": {
+        "name": "越獄"
+      },
+      "new-persona": {
+        "name": "新的人設"
+      },
+      "pretend-to-be": {
+        "name": "要求假裝身份"
+      },
+      "private-use": {
+        "name": "私用區字元",
+        "why": "沒有標準含義。部分圖示字型會用到。"
+      },
+      "reveal-your-instructions": {
+        "name": "要求透露指令"
+      },
+      "system-prompt": {
+        "name": "索取系統提示詞"
+      },
+      "unicode-tags": {
+        "name": "Unicode 標籤字元",
+        "why": "在編輯器中完全不可見，但會原樣進入模型上下文，可用於隱藏整段指令。"
+      },
+      "what-are-your-rules": {
+        "name": "詢問規則"
+      },
+      "you-are-now": {
+        "name": "重新設定身份"
+      },
+      "zero-width": {
+        "name": "零寬字元",
+        "why": "在編輯器中不可見，但會被模型讀到。表情符號、波斯文等正常文字也會用到。"
+      },
+      "zh-do-not-follow": {
+        "name": "要求不要遵循（中文）"
+      },
+      "zh-forget-your": {
+        "name": "要求忘記指令（中文）"
+      },
+      "zh-ignore-previous": {
+        "name": "要求忽略先前的指令（中文）"
+      },
+      "zh-jailbreak": {
+        "name": "越獄（中文）"
+      },
+      "zh-reveal-your": {
+        "name": "要求透露指令（中文）"
+      },
+      "zh-role-play": {
+        "name": "要求扮演角色（中文）"
+      },
+      "zh-system-prompt": {
+        "name": "系統提示詞（中文）"
+      },
+      "zh-you-are-now": {
+        "name": "重新設定身份（中文）"
+      }
+    },
+    "kinds": {
+      "chinese": "中文說法",
+      "custom": "自定義",
+      "injection": "指令覆蓋",
+      "invisible": "隱藏字元",
+      "persona": "身份與提示詞"
+    }
+  },
+  "inspect_tools": {
+    "rules": {
+      "base64-decode-exec": {
+        "name": "解碼後執行",
+        "why": "將要執行的內容隱藏在 base64 編碼中"
+      },
+      "chat-marker": {
+        "name": "偽造對話標記",
+        "why": "偽造對話標記，試圖讓模型將正文當作系統訊息"
+      },
+      "chmod-777": {
+        "name": "開放全部寫許可權",
+        "why": "將檔案許可權設為所有人可寫"
+      },
+      "crontab-install": {
+        "name": "安裝定時任務",
+        "why": "安裝定時任務，或刪除全部現有定時任務"
+      },
+      "curl-pipe-sh": {
+        "name": "下載即執行",
+        "why": "下載後直接執行，執行的內容由遠端決定且無法預先檢視"
+      },
+      "disregard": {
+        "name": "要求無視系統提示",
+        "why": "典型的提示注入開頭，使用 disregard 一類的動詞"
+      },
+      "exfil-credentials": {
+        "name": "外發憑據檔案",
+        "why": "要求模型將憑據檔案的內容傳送出去"
+      },
+      "exfil-credentials-reversed": {
+        "name": "外發憑據檔案（動詞在前）",
+        "why": "要求模型將憑據檔案的內容傳送出去"
+      },
+      "exfil-env": {
+        "name": "外發環境變數",
+        "why": "將環境變數（通常包含金鑰）傳送到外部"
+      },
+      "fake-system": {
+        "name": "偽裝的系統發言",
+        "why": "偽裝成系統或助手的發言"
+      },
+      "ignore-previous": {
+        "name": "要求忽略先前的指令",
+        "why": "典型的提示注入開頭"
+      },
+      "ignore-previous-zh": {
+        "name": "要求忽略先前的指令（中文）",
+        "why": "中文提示注入，要求忽略先前的指令"
+      },
+      "new-instructions-zh": {
+        "name": "宣告新的指令（中文）",
+        "why": "中文提示注入，宣告新的指令"
+      },
+      "rm-rf-root": {
+        "name": "刪除主目錄或根目錄",
+        "why": "刪除整個主目錄或根目錄"
+      },
+      "secret-to-unknown-host": {
+        "name": "憑據發往陌生主機",
+        "why": "將憑據發往既非本機、也不是該憑據服務商的主機"
+      },
+      "ssh-key-read": {
+        "name": "讀取私鑰或雲憑據",
+        "why": "讀取私鑰或雲服務憑據"
+      },
+      "thinkwatch-data": {
+        "name": "讀寫 ThinkWatch 自己的資料",
+        "why": "讀寫 ThinkWatch 的資料目錄，其中以明文儲存全部上游金鑰和這幾項防護的設定"
+      },
+      "upload-file-to-host": {
+        "name": "上傳本地檔案到外部主機",
+        "why": "將本地檔案的內容上傳到外部主機"
+      },
+      "write-startup-item": {
+        "name": "寫入啟動項",
+        "why": "寫入開機或開啟終端時自動執行的位置"
+      },
+      "you-are-now": {
+        "name": "重新設定模型身份",
+        "why": "試圖重新設定模型的身份"
+      },
+      "you-are-now-zh": {
+        "name": "重新設定模型身份（中文）",
+        "why": "試圖重新設定模型的身份"
+      }
+    },
+    "kinds": {
+      "command": "內建",
+      "custom": "自定義"
+    }
+  }
+}

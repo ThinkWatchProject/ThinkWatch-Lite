@@ -910,11 +910,19 @@ pub fn confirm_quit(mtm: MainThreadMarker, in_flight: usize) -> bool {
     alert.setAlertStyle(NSAlertStyle::Warning);
     alert.setMessageText(&NSString::from_str(tr!(
         "退出 ThinkWatch Lite",
-        "Quit ThinkWatch Lite"
+        "Quit ThinkWatch Lite",
+        "ThinkWatch Lite を終了";
+        "退出 ThinkWatch Lite",
+        "ThinkWatch Lite 종료",
+        "Salir de ThinkWatch Lite",
     )));
     let mut info = tr!(
         "退出后网关将停止监听，所有已接管的客户端将立即无法连接。",
-        "After quitting, the gateway stops listening, and every connected client immediately loses its connection."
+        "After quitting, the gateway stops listening, and every connected client immediately loses its connection.",
+        "終了するとゲートウェイが停止し、接続中のすべてのクライアントが切断されます。";
+        "退出後閘道器將停止監聽，所有已接管的用戶端將立即無法連線。",
+        "After quitting, the gateway stops listening, and every connected client immediately loses its connection.",
+        "Después de dejar de fumar, la puerta de enlace deja de escuchar, y cada cliente conectado inmediatamente pierde su conexión.",
     )
     .to_string();
     if in_flight > 0 {
@@ -925,15 +933,41 @@ pub fn confirm_quit(mtm: MainThreadMarker, in_flight: usize) -> bool {
                 "1 request in progress will be interrupted.".to_string()
             } else {
                 format!("{in_flight} requests in progress will be interrupted.")
-            }
+            },
+            format!("処理中のリクエスト {in_flight} 件が中断されます。");
+            format!("{in_flight} 個請求正在進行，將被中斷。"),
+            if in_flight == 1 {
+                "1 request in progress will be interrupted.".to_string()
+            } else {
+                format!("{in_flight} requests in progress will be interrupted.")
+            },
+            if in_flight == 1 {
+                "1 request in progress will be interrupted.".to_string()
+            } else {
+                format!("{in_flight} las solicitudes en curso serán interrumpidas.")
+            },
         ));
     }
     alert.setInformativeText(&NSString::from_str(&info));
     // **取消是默认按钮**：回车不该变成一次退出。要明说 —— 标题恰好是英文「Cancel」时，
     // AppKit 给它配的是 Esc，对话框里就没有默认按钮了
-    let cancel = alert.addButtonWithTitle(&NSString::from_str(tr!("取消", "Cancel")));
+    let cancel = alert.addButtonWithTitle(&NSString::from_str(tr!(
+        "取消",
+        "Cancel",
+        "キャンセル";
+        "取消",
+        "취소",
+        "Cancelar",
+    )));
     cancel.setKeyEquivalent(&NSString::from_str("\r"));
-    let quit = alert.addButtonWithTitle(&NSString::from_str(tr!("退出", "Quit")));
+    let quit = alert.addButtonWithTitle(&NSString::from_str(tr!(
+        "退出",
+        "Quit",
+        "終了";
+        "退出",
+        "종료",
+        "Salir",
+    )));
     quit.setHasDestructiveAction(true);
     // Esc 也是取消。一个按钮只有一个快捷键，所以在对话框开着的这段时间里单独接住它
     let esc = RcBlock::new(move |event: NonNull<NSEvent>| -> *mut NSEvent {
@@ -965,7 +999,13 @@ pub fn inform(mtm: MainThreadMarker, title: &str, body: &str) {
     let alert = NSAlert::new(mtm);
     alert.setMessageText(&NSString::from_str(title));
     alert.setInformativeText(&NSString::from_str(body));
-    alert.addButtonWithTitle(&NSString::from_str(tr!("好", "OK")));
+    alert.addButtonWithTitle(&NSString::from_str(tr!(
+        "好",
+        "OK";
+        "好",
+        "OK",
+        "OK",
+    )));
     alert.runModal();
 }
 

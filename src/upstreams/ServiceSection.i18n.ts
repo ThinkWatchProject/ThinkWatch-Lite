@@ -19,4 +19,24 @@ export const serviceSectionText = messages(
     },
     none: "No matching service",
   },
+  {
+    "zh-Hant": {
+      search: "搜尋服務",
+      groups: {
+        vendor: "模型廠商",
+        platform: "平臺與中轉",
+        local: "本機與自定義",
+      },
+      none: "沒有匹配的服務",
+    },
+    es: {
+      search: "Servicios de búsqueda",
+      groups: {
+        vendor: "Proveedores de modelos",
+        platform: "Plataformas y enlaces",
+        local: "Local y costumbre",
+      },
+      none: "Sin servicio de correspondencia",
+    },
+  },
 );
