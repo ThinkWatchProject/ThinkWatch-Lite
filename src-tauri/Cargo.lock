@@ -73,7 +73,7 @@ dependencies = [
  "objc2-foundation",
  "parking_lot",
  "percent-encoding",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
  "wl-clipboard-rs",
  "x11rb",
 ]
@@ -667,9 +667,9 @@ dependencies = [
 
 [[package]]
 name = "cookie"
-version = "0.18.2"
+version = "0.18.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1a373e3602691c3cdea496d2f0ee5935151e6168fe87739483c463db1b2f2f87"
+checksum = "d55f2d6c30eeec7d5c6f98bd4395d4abb1895629eab97ee6522d340623615f8a"
 dependencies = [
  "time",
  "version_check",
@@ -1011,7 +1011,7 @@ dependencies = [
  "libc",
  "option-ext",
  "redox_users 0.5.3",
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -1197,7 +1197,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "39cab71617ae0d63f51a36d69f866391735b51691dbda63cf6f96d042b63efeb"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -1343,9 +1343,9 @@ checksum = "aa9a19cbb55df58761df49b23516a86d432839add4af60fc256da840f66ed35b"
 
 [[package]]
 name = "form_urlencoded"
-version = "1.2.2"
+version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb4cb245038516f5f85277875cdaa4f7d2c9a0fa0468de06ed190163b1581fcf"
+checksum = "afa489199eaffb1211795df1c6236ce1ad0d41a6fa45250add73e3b02420f06e"
 dependencies = [
  "percent-encoding",
 ]
@@ -2745,7 +2745,7 @@ version = "0.50.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7957b9740744892f114936ab4a57b3f487491bbeafaf8083688b16841a4240e5"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -3716,7 +3716,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3772,7 +3772,7 @@ dependencies = [
  "security-framework",
  "security-framework-sys",
  "webpki-root-certs",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4927,7 +4927,7 @@ dependencies = [
  "getrandom 0.4.3",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -4950,7 +4950,7 @@ dependencies = [
 
 [[package]]
 name = "thinkwatch-lite"
-version = "2026.11.22"
+version = "2026.11.24"
 dependencies = [
  "anyhow",
  "base64 0.22.1",
@@ -5459,8 +5459,8 @@ dependencies = [
 
 [[package]]
 name = "tw-api"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "serde",
  "serde_json",
@@ -5471,8 +5471,8 @@ dependencies = [
 
 [[package]]
 name = "tw-dialect"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "memchr",
  "serde",
@@ -5481,8 +5481,8 @@ dependencies = [
 
 [[package]]
 name = "tw-guard"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "aho-corasick",
  "base64 0.22.1",
@@ -5503,8 +5503,8 @@ dependencies = [
 
 [[package]]
 name = "tw-link"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "serde",
  "serde_json",
@@ -5530,8 +5530,8 @@ dependencies = [
 
 [[package]]
 name = "tw-types"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "serde",
  "ts-rs",
@@ -5539,8 +5539,8 @@ dependencies = [
 
 [[package]]
 name = "tw-watch"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "libc",
  "notify",
@@ -5550,8 +5550,8 @@ dependencies = [
 
 [[package]]
 name = "tw-yaml"
-version = "0.99.0"
-source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.99.0#2bcbcbb62450978a10925812f7c327eee380b8fa"
+version = "0.100.0"
+source = "git+https://github.com/ThinkWatchProject/ThinkWatch-Core.git?tag=v0.100.0#a0c209d33961103fddf9417a912d2422755eb411"
 dependencies = [
  "saphyr-parser",
  "thiserror 2.0.21",
@@ -5623,9 +5623,9 @@ checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
 name = "url"
-version = "2.5.8"
+version = "2.5.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ff67a8a4397373c3ef660812acab3268222035010ab8680ec4215f38ba3d0eed"
+checksum = "f00cd2407bb42c0ef17be88d4cf020f5cceffd121665bac9b8b9493a369b3b1a"
 dependencies = [
  "form_urlencoded",
  "idna",
@@ -6021,7 +6021,7 @@ version = "0.1.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c2a7b1c03c876122aa43f3020e6c3c3ee5c05081c9a00739faf7503aeba10d22"
 dependencies = [
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
