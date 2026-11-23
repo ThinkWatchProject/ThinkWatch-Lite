@@ -114,6 +114,7 @@
       "weights": {}
     }
   ],
+  "hard_route_switch": true,
   "listen": {
     "additional": [],
     "allow_from": [
