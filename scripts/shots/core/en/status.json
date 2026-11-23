@@ -1,5 +1,5 @@
 {
-  "api_version": 61,
+  "api_version": 62,
   "clients": 4,
   "config_path": "",
   "draining": 0,
@@ -18,5 +18,5 @@
     "reachable": []
   },
   "uptime_secs": 0,
-  "version": "0.99.0"
+  "version": "0.100.0"
 }
