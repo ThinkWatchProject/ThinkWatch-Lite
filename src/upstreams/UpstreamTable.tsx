@@ -475,7 +475,7 @@ function ModelsCell({
   const t = useText(upstreamTableText);
   const l = useText(labelsText);
   const [open, setOpen] = useState(false);
-  /** 「起别名…」点的那个模型。对话框挂在弹窗外面：弹窗一收起，里面的东西就卸掉了 */
+  /** 「设置别名…」点的那个模型。对话框挂在弹窗外面：弹窗一收起，里面的东西就卸掉了 */
   const [aliasFor, setAliasFor] = useState<string | null>(null);
   /** 「规格…」点的那一行，同上 */
   const [specFor, setSpecFor] = useState<ModelRow | null>(null);
@@ -571,7 +571,7 @@ function ModelsCell({
       <AliasDialog
         open={aliasFor !== null}
         onOpenChange={(o) => !o && setAliasFor(null)}
-        initial={{ models: aliasFor !== null ? [aliasFor] : [] }}
+        sourceModel={aliasFor ?? undefined}
       />
     </TableCell>
   );
