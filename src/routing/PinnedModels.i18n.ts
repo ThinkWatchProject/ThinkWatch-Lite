@@ -9,7 +9,7 @@ export const pinnedModelsText = messages(
     chooseProvider: "选择上游",
     missing: (name: string) => `${name}（不存在）`,
     disabled: (name: string) => `${name}（已停用）`,
-    model: "模型名",
+    model: "上游模型 ID",
     remove: (n: number) => `删除第 ${n} 个指定模型`,
   },
   {
@@ -20,7 +20,7 @@ export const pinnedModelsText = messages(
     chooseProvider: "Select an upstream",
     missing: (name: string) => `${name} (not found)`,
     disabled: (name: string) => `${name} (disabled)`,
-    model: "Model name",
+    model: "Upstream model ID",
     remove: (n: number) => `Remove specified model ${n}`,
   },
   {
@@ -30,7 +30,11 @@ export const pinnedModelsText = messages(
       note: "按順序傳送，前一個失敗換下一個。模型名原樣發出，不經過別名表。",
       provider: (n: number) => `第 ${n} 個指定模型的上游`,
       chooseProvider: "選擇上游",
+      model: "上游模型 ID",
       remove: (n: number) => `刪除第 ${n} 個指定模型`,
+    },
+    ko: {
+      model: "업스트림 모델 ID",
     },
     es: {
       addModel: "Añadir modelo",
@@ -40,7 +44,7 @@ export const pinnedModelsText = messages(
       chooseProvider: "Seleccione un cursor",
       missing: (name: string) => `${name} (no encontrado)`,
       disabled: (name: string) => `${name} (inhabilitado)`,
-      model: "Nombre del modelo",
+      model: "ID del modelo del proveedor",
       remove: (n: number) => `Eliminar el modelo especificado ${n}`,
     },
   },

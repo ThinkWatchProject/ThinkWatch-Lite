@@ -307,6 +307,7 @@ function Body({
               {problems.map((m) => (
                 <Line key={m.code + m.text} tone="error">
                   {coreText(m)}
+                  {creating && fresh && m.code === "config.alias_duplicate" && ` ${t.editExistingAliasHint}`}
                 </Line>
               ))}
               {auto && models.includes(auto) && (

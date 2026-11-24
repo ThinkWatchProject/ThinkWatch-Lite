@@ -10,12 +10,13 @@ export const aliasDialogText = messages(
 
     name: "名称",
     nameHint: "客户端用这个名称请求。",
+    editExistingAliasHint: "要添加更多上游模型，请在「上游 → 别名」里编辑已有别名。",
     namePlaceholder: "例如 claude-sonnet-5",
     /** 名称恰好是某个上游的模型名，自动列成了第一个上游模型 */
     prefilled: (providers: string, name: string) => `${providers} 也有名为 ${name} 的模型，已列为第一个上游模型。`,
     /** 名称恰好是没列进来的那些上游的真模型：别名优先，它们不再收到这个名称 */
     shadows: (providers: string, name: string, models: string, creating: boolean) =>
-      `${providers} 有名为 ${name} 的模型。${creating ? "建这个别名后" : "保存后"}，所有客户端用 ${name} 请求都会改发给 ${models}，不再发给 ${providers}。只想让某个客户端这样用，请在路由里给它的密钥写一条规则，转发至选「指定模型」。`,
+      `${providers} 有名为 ${name} 的模型。${creating ? "建这个别名后" : "保存后"}，所有客户端用 ${name} 请求都会改发给 ${models}，不再发给 ${providers}。只想让某个客户端这样用，请在路由里给它的密钥写一条规则，转发至选「指定上游模型」。`,
     writeRule: "改为写路由规则…",
     claudeCodeReserved: (name: string) =>
       `Claude Code 把 ${name} 当作自己的档位名，请求前换成完整的模型名，它的请求用不到这个别名。`,
@@ -78,11 +79,12 @@ export const aliasDialogText = messages(
 
     name: "Name",
     nameHint: "Clients request this name.",
+    editExistingAliasHint: "To add more upstream models, edit the existing alias under Upstreams → Aliases.",
     namePlaceholder: "e.g. claude-sonnet-5",
     prefilled: (providers: string, name: string) =>
       `${providers} also has a model named ${name}; it is listed as the first upstream model.`,
     shadows: (providers: string, name: string, models: string, creating: boolean) =>
-      `${providers} has a model named ${name}. ${creating ? "Once this alias exists" : "Once saved"}, every client requesting ${name} goes to ${models} instead, and ${providers} no longer receives it. To do this for one client only, write a rule for its key in Routing and forward to “Specific models”.`,
+      `${providers} has a model named ${name}. ${creating ? "Once this alias exists" : "Once saved"}, every client requesting ${name} goes to ${models} instead, and ${providers} no longer receives it. To do this for one client only, write a rule for its key in Routing and forward to “Specific upstream models”.`,
     writeRule: "Write a routing rule instead…",
     claudeCodeReserved: (name: string) =>
       `Claude Code treats ${name} as its own tier name and swaps in the full model name before requesting, so its requests never use this alias.`,
@@ -147,8 +149,9 @@ export const aliasDialogText = messages(
       notFound: (name: string) => `別名 ${name} 已不在配置裡。`,
       name: "名稱",
       nameHint: "用戶端用這個名稱請求。",
+      editExistingAliasHint: "若要新增更多上游模型，請在「上游 → 別名」中編輯現有別名。",
       prefilled: (providers: string, name: string) => `${providers} 也有名為 ${name} 的模型，已列為第一個上游模型。`,
-      shadows: (providers: string, name: string, models: string, creating: boolean) => `${providers} 有名為 ${name} 的模型。${creating ? "建這個別名後" : "儲存後"}，所有用戶端用 ${name} 請求都會改發給 ${models}，不再發給 ${providers}。只想讓某個用戶端這樣用，請在路由裡給它的金鑰寫一條規則，轉發至選「指定模型」。`,
+      shadows: (providers: string, name: string, models: string, creating: boolean) => `${providers} 有名為 ${name} 的模型。${creating ? "建這個別名後" : "儲存後"}，所有用戶端用 ${name} 請求都會改發給 ${models}，不再發給 ${providers}。只想讓某個用戶端這樣用，請在路由裡給它的金鑰寫一條規則，轉發至選「指定上游模型」。`,
       writeRule: "改為寫路由規則…",
       claudeCodeReserved: (name: string) => `Claude Code 把 ${name} 當作自己的檔位名，請求前換成完整的模型名，它的請求用不到這個別名。`,
       familyMismatch: (family: string, model: string, clients: string) => `名稱像 ${family} 模型，上游模型卻是 ${model}：${clients} 會按 ${family} 模型的格式發出這個名稱的請求，由閘道器轉換後發給上游。`,
@@ -189,6 +192,7 @@ export const aliasDialogText = messages(
     },
     ko: {
       name: "이름",
+      editExistingAliasHint: "업스트림 모델을 더 추가하려면 업스트림 → Aliases에서 기존 별칭을 편집하세요.",
       removeShort: "제거",
       needName: "이름을 입력하세요.",
     },
@@ -200,9 +204,10 @@ export const aliasDialogText = messages(
       notFound: (name: string) => `Alias ${name} ya no está en la configuración.`,
       name: "Nombre",
       nameHint: "Los clientes solicitan este nombre.",
+      editExistingAliasHint: "Para añadir más modelos de proveedores, edita el alias actual en Proveedores → Alias.",
       namePlaceholder: "Por ejemplo, claude-sonnet-5",
       prefilled: (providers: string, name: string) => `${providers} también tiene un modelo denominado ${name}; está listado como el primer modelo de del proveedor.`,
-      shadows: (providers: string, name: string, models: string, creating: boolean) => `${providers} tiene un modelo llamado ${name}. ${creating ? "Una vez que este alias existe" : "Una vez guardado"}, cada cliente que solicita ${name} va a ${models} en su lugar, y ${providers} ya no lo recibe. Para hacer esto sólo para un cliente, escriba una regla para su clave en Enrutamiento y reenvíe a "modelos específicos".`,
+      shadows: (providers: string, name: string, models: string, creating: boolean) => `${providers} tiene un modelo llamado ${name}. ${creating ? "Una vez que este alias existe" : "Una vez guardado"}, cada cliente que solicita ${name} va a ${models} en su lugar, y ${providers} ya no lo recibe. Para hacer esto sólo para un cliente, escriba una regla para su clave en Enrutamiento y reenvíe a «Modelos específicos del proveedor».`,
       writeRule: "Escribe una regla de enrutamiento en su lugar…",
       claudeCodeReserved: (name: string) => `Claude Code trata ${name} como su propio nombre de nivel y swaps en el nombre completo del modelo antes de solicitar, por lo que sus solicitudes nunca utilizan este alias.`,
       familyMismatch: (family: string, model: string, clients: string) => `El nombre se parece a un modelo ${family}, pero el modelo ascendente es ${model}: ${clients} enviará solicitudes para él en el formato ${family}, y la puerta de enlace las convierte para el ascendente.`,
