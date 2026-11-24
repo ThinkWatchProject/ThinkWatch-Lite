@@ -40,7 +40,7 @@ describe("别名草稿：名称是上游的真模型时自动列为第一个上�
     expect(d.models).toEqual(["claude-opus-5", "anthropic/claude-opus-5"]);
   });
 
-  it("列表里已经有模型（从上游模型弹窗起别名）、编辑时、名称不是真模型：不自动列", () => {
+  it("列表里已经有模型（从上游模型弹窗设置别名）、编辑时、名称不是真模型：不自动列", () => {
     expect(withName(draftOf("", ["deepseek-chat"]), "claude-opus-5", offered, true).models).toEqual(["deepseek-chat"]);
     expect(withName(draftOf("x", []), "claude-opus-5", offered, false).models).toEqual([]);
     expect(withName(draftOf("", []), "my-model", offered, true).models).toEqual([]);
