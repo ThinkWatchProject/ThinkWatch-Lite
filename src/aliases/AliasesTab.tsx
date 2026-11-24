@@ -27,7 +27,7 @@ type Providers = Pick<ProviderView, "name" | "base_url" | "protocol">[];
  * 上游页的「别名」标签：别名表、顶上的建议、尚无别名时直接列出建议。
  *
  * 新建与编辑的对话框不在这里，交给上游页（`onCreate` / `onEdit`）：上游模型弹窗里的
- * 「起别名…」打开的是同一个。同一模型不同名称的对话框和删除对话框在这里。
+ * 「设置别名…」打开的是同一个。同一模型不同名称的对话框和删除对话框在这里。
  */
 export function AliasesTab({
   providers,

@@ -1,14 +1,18 @@
+import { useMemo, useRef } from "react";
 import { PlusIcon } from "lucide-react";
 import { Button } from "@/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from "@/ui/input-group";
+import { Combobox, ComboboxContent, ComboboxEmpty, ComboboxInput, ComboboxItem, ComboboxList, ComboboxTrigger } from "@/ui/combobox";
 import { SelectField, SelectOption } from "@/ui/select-field";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { useResource } from "@/lib/resource";
-import type { KnownModel, ProviderView } from "@/types";
+import type { AliasView, KnownModel, ProviderView } from "@/types";
 import { compact } from "@/format";
 import { modelsKey } from "@/upstreams/data";
 import { api } from "./api";
-import { ModelInput } from "./fields";
+import { api as aliasApi } from "@/aliases/api";
+import { pinnedChoices } from "./pinnedChoices";
 import { blankPinned, type PinnedDraft } from "./model";
 import { pinnedModelsText } from "./PinnedModels.i18n";
 
@@ -17,7 +21,7 @@ import { pinnedModelsText } from "./PinnedModels.i18n";
  *
  * **模型从这个上游自己的清单里选**（`/providers/{name}/models`，和上游页的模型弹窗是同一份），
  * 右边是它的上下文窗口；清单里没有的照样能写（中转刚上的新模型）。模型名原样发出，不经过
- * 别名表，所以候选里**不列别名**。
+ * 别名表。搜索可按别名找到这家上游对应的 ID，选择后仍只保存 ID。
  */
 export function PinnedModels({
   value,
@@ -31,6 +35,9 @@ export function PinnedModels({
   known: readonly KnownModel[];
 }) {
   const t = useText(pinnedModelsText);
+  const aliases = useResource("aliases", aliasApi.aliases, {
+    events: ["config_reloaded", "models_changed"],
+  }).data?.aliases;
   const patch = (i: number, p: Partial<PinnedDraft>) =>
     onChange(value.map((x, j) => (j === i ? { ...x, ...p } : x)));
   return (
@@ -43,6 +50,7 @@ export function PinnedModels({
             p={p}
             providers={providers}
             known={known}
+            aliases={aliases}
             onProvider={(provider) =>
               // 换了上游：新上游也有这个模型就留着，否则清空重选
               patch(i, {
@@ -76,6 +84,7 @@ function PinnedRow({
   p,
   providers,
   known,
+  aliases,
   onProvider,
   onModel,
   onRemove,
@@ -84,6 +93,7 @@ function PinnedRow({
   p: PinnedDraft;
   providers: readonly ProviderView[];
   known: readonly KnownModel[];
+  aliases: readonly AliasView[] | undefined;
   onProvider: (provider: string) => void;
   onModel: (model: string) => void;
   onRemove: () => void;
@@ -92,16 +102,18 @@ function PinnedRow({
   const ct = useText(commonText);
   const pv = providers.find((x) => x.name === p.provider);
   // 和上游页的模型弹窗共用一份缓存；那边刷新了清单，这里跟着换
-  const rows = useResource(
+  const inventory = useResource(
     pv ? modelsKey(pv.name) : null,
     () => api.providerModels(p.provider),
-    { deps: [pv?.model_checked_at_ms, pv?.model_fetching, pv?.model_count] },
-  ).data?.models;
-  // 清单还没取到时先用网关的模型目录里这家的那些
-  const ids = rows
-    ? rows.filter((r) => r.enabled).map((r) => r.id)
-    : known.filter((m) => !m.alias && m.providers.includes(p.provider)).map((m) => m.id);
-  const ctx = rows?.find((r) => r.id === p.model.trim())?.context_window;
+    {
+      deps: [pv?.model_checked_at_ms, pv?.model_fetching, pv?.model_count],
+      events: ["config_reloaded", "models_changed"],
+    },
+  ).data;
+  const choices = useMemo(() => pinnedChoices(p.provider, inventory, known, aliases ?? []), [p.provider, inventory, known, aliases]);
+  const anchor = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  const ctx = inventory?.models.find((r) => r.id === p.model.trim())?.context_window;
   return (
     <div className="flex items-center gap-2">
       <span className="w-3.5 shrink-0 text-right tw-num text-muted-foreground">{n}</span>
@@ -120,13 +132,55 @@ function PinnedRow({
           </SelectOption>
         ))}
       </SelectField>
-      <ModelInput
-        className="min-w-0 flex-1"
-        value={p.model}
-        onChange={onModel}
-        models={ids}
-        placeholder={t.model}
-      />
+      <Combobox<string>
+        key={p.provider}
+        items={Array.from(choices.keys())}
+        value={p.model || null}
+        onValueChange={(id) => {
+          if (id !== null) onModel(id);
+        }}
+        filter={(id, query) => {
+          const needle = query.trim().toLowerCase();
+          return id.toLowerCase().includes(needle) || !!choices.get(id)?.some((name) => name.toLowerCase().includes(needle));
+        }}
+      >
+        <InputGroup ref={anchor} className="min-w-0 flex-1">
+          <InputGroupInput
+            aria-label={t.model}
+            placeholder={t.model}
+            className="font-mono"
+            value={p.model}
+            onChange={(e) => onModel(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "ArrowDown") {
+                e.preventDefault();
+                trigger.current?.click();
+              }
+            }}
+          />
+          <InputGroupAddon align="inline-end">
+            <ComboboxTrigger ref={trigger} aria-label={t.search} title={t.search}
+              render={<InputGroupButton type="button" size="icon-xs" variant="ghost" />} />
+          </InputGroupAddon>
+        </InputGroup>
+        <ComboboxContent anchor={anchor} finalFocus={trigger} className="min-w-64">
+          <ComboboxInput showTrigger={false} aria-label={t.search} placeholder={t.search} />
+          <ComboboxEmpty>{t.noMatch}</ComboboxEmpty>
+          <ComboboxList>
+            {(id: string) => {
+              const names = choices.get(id);
+              return (
+                <ComboboxItem key={id} value={id} className="flex-col items-start gap-0.5">
+                  <span className="max-w-full break-all font-mono">{id}</span>
+                  {names && names.length > 0 && (
+                    <span className="max-w-full break-words tw-label text-muted-foreground">{t.aliases(names)}</span>
+                  )}
+                </ComboboxItem>
+              );
+            }}
+          </ComboboxList>
+        </ComboboxContent>
+      </Combobox>
       <span className="w-10 shrink-0 text-right tw-label tw-num text-muted-foreground">
         {ctx ? compact(ctx) : ""}
       </span>
