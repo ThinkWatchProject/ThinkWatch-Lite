@@ -272,7 +272,7 @@ export function UpstreamDialog({
     | { kind: "draft-sheet"; add?: string[] }
     /** 「模型」一节里那一行的规格 */
     | { kind: "spec"; row: ModelRow }
-    /** 「模型」一节里给这个模型起别名 */
+    /** 「模型」一节里给这个模型设置别名 */
     | { kind: "alias"; model: string }
   >(null);
 

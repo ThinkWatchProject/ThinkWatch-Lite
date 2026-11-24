@@ -49,14 +49,14 @@ async function open(page: Page, scene: "upstreams" | "routing") {
 async function startAlias(page: Page) {
   await page.getByRole("button", { name: "deepseek 的模型", exact: true }).click();
   await page.getByRole("button", { name: "deepseek-chat 的操作", exact: true }).click();
-  await page.getByRole("menuitem", { name: "起别名…" }).click();
+  await page.getByRole("menuitem", { name: "设置别名…" }).click();
 }
 
 test("an upstream model joins an existing alias only after preview and save", async ({ page }) => {
   await open(page, "upstreams");
   for (const action of ["取消", "保存"]) {
     await startAlias(page);
-    await page.getByRole("combobox", { name: "加入已有别名…" }).click();
+    await page.getByRole("combobox", { name: "添加到现有别名…" }).click();
     await page.getByRole("option", { name: "coding", exact: true }).click();
     const editor = page.getByRole("dialog", { name: "编辑别名 coding" });
     await expect(editor.getByRole("checkbox", { name: "客户端仅展示别名" })).toBeChecked();
@@ -79,9 +79,9 @@ test("the upstream editor can create another alias for an already included ID", 
   const upstream = page.getByRole("dialog", { name: "编辑上游" });
   await upstream.getByRole("button", { name: "模型", exact: true }).click();
   await upstream.getByRole("button", { name: "claude-opus-5 的操作", exact: true }).click();
-  await page.getByRole("menuitem", { name: "起别名…" }).click();
+  await page.getByRole("menuitem", { name: "设置别名…" }).click();
   const dialog = page.getByRole("dialog", { name: "新建别名" });
-  await dialog.getByRole("combobox", { name: "加入已有别名…" }).click();
+  await dialog.getByRole("combobox", { name: "添加到现有别名…" }).click();
   await expect(page.getByRole("option", { name: "coding（已包含）" })).toBeDisabled();
   await page.keyboard.press("Escape");
   await dialog.getByLabel("名称", { exact: true }).fill("new-name");

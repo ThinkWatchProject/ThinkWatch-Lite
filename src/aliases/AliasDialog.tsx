@@ -59,7 +59,7 @@ type AliasFormProps = {
  *
  * 红字是 core 说的问题，不能保存；黄字是要留意的，可以保存。
  *
- * 挂载方：别名标签（新建、编辑），上游模型弹窗和编辑上游对话框的「模型」一节（「起别名…」，
+ * 挂载方：别名标签（新建、编辑），上游模型弹窗和编辑上游对话框的「模型」一节（「设置别名…」，
  * `sourceModel` 是当前选中的上游模型 ID）。
  */
 export function AliasDialog(props: Omit<AliasFormProps, "onClose"> & {

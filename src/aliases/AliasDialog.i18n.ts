@@ -10,7 +10,7 @@ export const aliasDialogText = messages(
 
     name: "名称",
     nameHint: "客户端用这个名称请求。",
-    joinExisting: "加入已有别名…",
+    joinExisting: "添加到现有别名…",
     alreadyIncludes: (name: string) => `${name}（已包含）`,
     editExistingAliasHint: "要添加更多上游模型，请在「上游 → 别名」里编辑已有别名。",
     namePlaceholder: "例如 claude-sonnet-5",
@@ -153,7 +153,7 @@ export const aliasDialogText = messages(
       notFound: (name: string) => `別名 ${name} 已不在配置裡。`,
       name: "名稱",
       nameHint: "用戶端用這個名稱請求。",
-      joinExisting: "加入現有別名…",
+      joinExisting: "新增至現有別名…",
       alreadyIncludes: (name: string) => `${name}（已包含）`,
       editExistingAliasHint: "若要新增更多上游模型，請在「上游 → 別名」中編輯現有別名。",
       prefilled: (providers: string, name: string) => `${providers} 也有名為 ${name} 的模型，已列為第一個上游模型。`,
