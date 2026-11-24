@@ -571,7 +571,7 @@ function ModelsCell({
       <AliasDialog
         open={aliasFor !== null}
         onOpenChange={(o) => !o && setAliasFor(null)}
-        initial={{ models: aliasFor !== null ? [aliasFor] : [] }}
+        sourceModel={aliasFor ?? undefined}
       />
     </TableCell>
   );

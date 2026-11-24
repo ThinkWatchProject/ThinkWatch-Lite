@@ -1068,7 +1068,7 @@ export function UpstreamDialog({
           <AliasDialog
             open
             onOpenChange={(o) => !o && setNested(null)}
-            initial={{ models: [nested.model] }}
+            sourceModel={nested.model}
             onSaved={(version) => {
               setBase(version);
               reloadCatalog();

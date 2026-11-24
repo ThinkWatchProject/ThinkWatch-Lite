@@ -10,6 +10,8 @@ export const aliasDialogText = messages(
 
     name: "名称",
     nameHint: "客户端用这个名称请求。",
+    joinExisting: "加入已有别名…",
+    alreadyIncludes: (name: string) => `${name}（已包含）`,
     editExistingAliasHint: "要添加更多上游模型，请在「上游 → 别名」里编辑已有别名。",
     namePlaceholder: "例如 claude-sonnet-5",
     /** 名称恰好是某个上游的模型名，自动列成了第一个上游模型 */
@@ -79,6 +81,8 @@ export const aliasDialogText = messages(
 
     name: "Name",
     nameHint: "Clients request this name.",
+    joinExisting: "Add to existing alias…",
+    alreadyIncludes: (name: string) => `${name} (already included)`,
     editExistingAliasHint: "To add more upstream models, edit the existing alias under Upstreams → Aliases.",
     namePlaceholder: "e.g. claude-sonnet-5",
     prefilled: (providers: string, name: string) =>
@@ -149,6 +153,8 @@ export const aliasDialogText = messages(
       notFound: (name: string) => `別名 ${name} 已不在配置裡。`,
       name: "名稱",
       nameHint: "用戶端用這個名稱請求。",
+      joinExisting: "加入現有別名…",
+      alreadyIncludes: (name: string) => `${name}（已包含）`,
       editExistingAliasHint: "若要新增更多上游模型，請在「上游 → 別名」中編輯現有別名。",
       prefilled: (providers: string, name: string) => `${providers} 也有名為 ${name} 的模型，已列為第一個上游模型。`,
       shadows: (providers: string, name: string, models: string, creating: boolean) => `${providers} 有名為 ${name} 的模型。${creating ? "建這個別名後" : "儲存後"}，所有用戶端用 ${name} 請求都會改發給 ${models}，不再發給 ${providers}。只想讓某個用戶端這樣用，請在路由裡給它的金鑰寫一條規則，轉發至選「指定上游模型」。`,
@@ -190,8 +196,14 @@ export const aliasDialogText = messages(
       renamed: (old: string, name: string) => `已將別名 ${old} 改名為 ${name}`,
       renamedIn: (refs: string) => `${refs}裡的名稱已一起更新。`,
     },
+    ja: {
+      joinExisting: "既存のエイリアスに追加…",
+      alreadyIncludes: (name: string) => `${name}（追加済み）`,
+    },
     ko: {
       name: "이름",
+      joinExisting: "기존 별칭에 추가…",
+      alreadyIncludes: (name: string) => `${name} (이미 포함됨)`,
       editExistingAliasHint: "업스트림 모델을 더 추가하려면 업스트림 → Aliases에서 기존 별칭을 편집하세요.",
       removeShort: "제거",
       needName: "이름을 입력하세요.",
@@ -204,6 +216,8 @@ export const aliasDialogText = messages(
       notFound: (name: string) => `Alias ${name} ya no está en la configuración.`,
       name: "Nombre",
       nameHint: "Los clientes solicitan este nombre.",
+      joinExisting: "Añadir a un alias existente…",
+      alreadyIncludes: (name: string) => `${name} (ya incluido)`,
       editExistingAliasHint: "Para añadir más modelos de proveedores, edita el alias actual en Proveedores → Alias.",
       namePlaceholder: "Por ejemplo, claude-sonnet-5",
       prefilled: (providers: string, name: string) => `${providers} también tiene un modelo denominado ${name}; está listado como el primer modelo de del proveedor.`,

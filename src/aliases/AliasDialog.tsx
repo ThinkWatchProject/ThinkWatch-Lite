@@ -7,6 +7,7 @@ import { latestOnly } from "@/lib/latestOnly";
 import { cn } from "@/lib/utils";
 import { useNav } from "@/nav";
 import { Button } from "@/ui/button";
+import { SelectField, SelectOption } from "@/ui/select-field";
 import { Checkbox } from "@/ui/checkbox";
 import { Autocomplete, ComboboxBareInput, ComboboxContent, ComboboxItem, ComboboxList } from "@/ui/combobox";
 import {
@@ -24,7 +25,7 @@ import { Skeleton } from "@/ui/skeleton";
 import { useText } from "@/i18n";
 import { commonText } from "@/i18n/common.i18n";
 import { coreText, errorText } from "@/i18n/core.i18n";
-import type { AliasHint, AliasInput, AliasPreview, AliasSave, AliasUsage, KnownModel, PinnedModel } from "@/types";
+import type { AliasesView, AliasHint, AliasInput, AliasPreview, AliasSave, AliasUsage, KnownModel, PinnedModel } from "@/types";
 import { Boxed, DialogError, FormItem } from "@/upstreams/parts";
 import { aliasDialogText } from "./AliasDialog.i18n";
 import { api } from "./api";
@@ -36,6 +37,14 @@ const PREVIEW_DELAY_MS = 250;
 
 /** 建议列表最多列几条 */
 const MAX_SUGGESTIONS = 50;
+
+type AliasFormProps = {
+  editing?: string;
+  initial?: Partial<AliasInput>;
+  sourceModel?: string;
+  onSaved?(version: string): void;
+  onClose(): void;
+};
 
 /**
  * 新建、编辑一个模型别名。
@@ -51,17 +60,11 @@ const MAX_SUGGESTIONS = 50;
  * 红字是 core 说的问题，不能保存；黄字是要留意的，可以保存。
  *
  * 挂载方：别名标签（新建、编辑），上游模型弹窗和编辑上游对话框的「模型」一节（「起别名…」，
- * `initial.models` 是那个模型）。
+ * `sourceModel` 是当前选中的上游模型 ID）。
  */
-export function AliasDialog(props: {
+export function AliasDialog(props: Omit<AliasFormProps, "onClose"> & {
   open: boolean;
   onOpenChange(open: boolean): void;
-  /** 编辑哪个别名（原名）。不给就是新建 */
-  editing?: string;
-  /** 新建时预填。编辑时不用给：模型按原名从 core 读 */
-  initial?: Partial<AliasInput>;
-  /** 写完了。`version`：写完之后的配置版本（编辑上游对话框里打开的，那边接着用它） */
-  onSaved?(version: string): void;
 }) {
   const { open, onOpenChange, editing } = props;
   return (
@@ -78,23 +81,30 @@ export function AliasDialog(props: {
         }}
       >
         {/* 内容只在开着时挂上：每次打开都从头填 */}
-        <Body {...props} onClose={() => onOpenChange(false)} />
+        <AliasForm key={editing ?? props.sourceModel} {...props} onClose={() => onOpenChange(false)} />
       </DialogContent>
     </Dialog>
   );
 }
 
+type JoinAlias = { name: string; models: string[] };
+
+function AliasForm(props: AliasFormProps) {
+  const [join, setJoin] = useState<JoinAlias>();
+  return (
+    <Body
+      key={join?.name}
+      {...props}
+      editing={join?.name ?? props.editing}
+      modelsToAdd={join?.models}
+      onJoin={setJoin}
+    />
+  );
+}
+
 function Body({
-  editing,
-  initial,
-  onSaved,
-  onClose,
-}: {
-  editing?: string;
-  initial?: Partial<AliasInput>;
-  onSaved?(version: string): void;
-  onClose: () => void;
-}) {
+  editing, initial, sourceModel, modelsToAdd, onSaved, onClose, onJoin,
+}: AliasFormProps & { modelsToAdd?: string[]; onJoin(join: JoinAlias): void }) {
   const t = useText(aliasDialogText);
   const c = useText(commonText);
   const nav = useNav();
@@ -112,10 +122,11 @@ function Body({
   }, [catalog]);
 
   const [draft, setDraft] = useState<Draft>(() =>
-    draftOf(initial?.name ?? editing ?? "", initial?.models ?? [], initial?.hide_originals ?? false),
+    draftOf(initial?.name ?? editing ?? "", initial?.models ?? (sourceModel ? [sourceModel] : []), initial?.hide_originals ?? false),
   );
   const { name, models, auto, hideOriginals } = draft;
-  const [discoverySupport, setDiscoverySupport] = useState<boolean | null>(null);
+  const [aliasView, setAliasView] = useState<AliasesView | null>(null);
+  const discoverySupport = aliasView && aliasView.hide_originals_supported === true;
   const input = aliasInput(draft, discoverySupport === true);
   /** 编辑时从 core 读到的模型和各自的上游。读到之前是 `null` */
   const [loaded, setLoaded] = useState<Map<string, string[]> | null>(() =>
@@ -132,38 +143,35 @@ function Body({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
-    api
-      .configVersion()
-      .then(setBase)
-      .catch(() => {});
-  }, []);
-
-  // 编辑：按原名读出列着的模型
-  useEffect(() => {
     let live = true;
-    api
-      .aliases()
-      .then((v) => {
-        if (!live) return;
-        setDiscoverySupport(v.hide_originals_supported === true);
-        if (editing == null) return;
-        const a = v.aliases.find((x) => x.name === editing);
-        if (!a) {
-          setLoadError(t.notFound(editing));
-          return;
-        }
-        setDraft((d) => ({
-          ...d,
-          models: initial?.models ?? a.models.map((m) => m.model),
-          hideOriginals: a.hide_originals ?? false,
-        }));
-        setLoaded(new Map(a.models.map((m) => [m.model, m.providers])));
-      })
-      .catch((e) => live && setLoadError(errorText(e)));
+    async function load() {
+      // Read the version before the alias definition so a concurrent edit cannot be overwritten.
+      const version = await api.configVersion().catch((e) => {
+        if (modelsToAdd) throw e;
+        return undefined;
+      });
+      const v = await api.aliases();
+      if (!live) return;
+      setBase(version);
+      setAliasView(v);
+      if (editing == null) return;
+      const a = v.aliases.find((x) => x.name === editing);
+      if (!a) {
+        setLoadError(t.notFound(editing));
+        return;
+      }
+      const existingModels = a.models.map((m) => m.model);
+      setDraft((d) => {
+        const existing = { ...d, models: initial?.models ?? existingModels, hideOriginals: a.hide_originals ?? false };
+        return modelsToAdd ? modelsToAdd.reduce(withModel, existing) : existing;
+      });
+      setLoaded(new Map(a.models.map((m) => [m.model, m.providers])));
+    }
+    void load().catch((e) => live && setLoadError(errorText(e)));
     return () => {
       live = false;
     };
-  }, [editing, initial?.models]);
+  }, [editing, initial?.models, modelsToAdd]);
 
   const trimmed = name.trim();
   const renaming = editing != null && trimmed !== "" && trimmed !== editing;
@@ -226,8 +234,8 @@ function Body({
   const add = (m: string) => setDraft((d) => withModel(d, m));
   const remove = (m: string) => setDraft((d) => withoutModel(d, m));
 
-  const p = preview?.p ?? null;
   const fresh = preview?.key === draftKey;
+  const p = modelsToAdd && !fresh ? null : preview?.p ?? null;
   const problems = shownProblems(p?.problems ?? [], draft);
   const onlyItself = onlyAuto(draft) && fresh && (p?.problems ?? []).some((m) => m.code === ONLY_ITSELF);
   const shadows = trimmed && p ? p.shadows : [];
@@ -248,7 +256,9 @@ function Body({
           : onlyItself
             ? t.needOtherName
             : null;
-  const blocked = missing !== null || loadError !== null || (hideOriginals && discoverySupport !== true) || (fresh && problems.length > 0);
+  const blocked =
+    missing !== null || loadError !== null || (hideOriginals && discoverySupport !== true) ||
+    (fresh && problems.length > 0) || (modelsToAdd !== undefined && (!base || !fresh));
 
   /** 建这个别名之后，名称改发给哪些模型（各上游实际收到的，没有就是列出的） */
   const sentModels = unique((p?.served_by ?? []).map((s) => s.model));
@@ -290,24 +300,39 @@ function Body({
 
       <div className="-mx-4 flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-4 pb-1">
         <FormItem label={t.name} hint={t.nameHint} htmlFor="alias-name">
-          <Input
-            id="alias-name"
-            className="font-mono"
-            value={name}
-            placeholder={t.namePlaceholder}
-            autoComplete="off"
-            autoCorrect="off"
-            autoCapitalize="off"
-            spellCheck={false}
-            aria-invalid={problems.length > 0 || undefined}
-            onChange={(e) => changeName(e.target.value)}
-          />
+          <div className="flex items-center gap-2">
+            <Input
+              id="alias-name"
+              className="font-mono"
+              value={name}
+              placeholder={t.namePlaceholder}
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              aria-invalid={problems.length > 0 || undefined}
+              onChange={(e) => changeName(e.target.value)}
+            />
+            {sourceModel && creating && !!aliasView?.aliases.length && (
+              <SelectField value="" aria-label={t.joinExisting} disabled={models.length === 0} onValueChange={(name) => onJoin({ name, models })} className="shrink-0">
+                <SelectOption value="" disabled>{t.joinExisting}</SelectOption>
+                {aliasView.aliases.map((a) => {
+                  const included = models.every((id) => a.models.some((m) => m.model === id));
+                  return (
+                    <SelectOption key={a.name} value={a.name} disabled={included}>
+                      {included ? t.alreadyIncludes(a.name) : a.name}
+                    </SelectOption>
+                  );
+                })}
+              </SelectField>
+            )}
+          </div>
           {(problems.length > 0 || shadows.length > 0 || hints.length > 0 || auto || renameRefs) && (
             <div className="flex flex-col gap-1">
               {problems.map((m) => (
                 <Line key={m.code + m.text} tone="error">
                   {coreText(m)}
-                  {creating && fresh && m.code === "config.alias_duplicate" && ` ${t.editExistingAliasHint}`}
+                  {creating && !sourceModel && fresh && m.code === "config.alias_duplicate" && ` ${t.editExistingAliasHint}`}
                 </Line>
               ))}
               {auto && models.includes(auto) && (
