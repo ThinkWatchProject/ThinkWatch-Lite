@@ -100,6 +100,8 @@ before the client runs them.
 
 ## Install
 
+On Windows, run `winget install thinkwatch-lite` in a terminal. [Windows installation guide](https://thinkwat.ch/docs/lite/install#winget)
+
 | Platform | Architecture | Install |
 |---|---|---|
 | macOS 12 or later | ARM64 (Apple silicon) | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`, or [`ThinkWatch-Lite-<version>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |

@@ -59,6 +59,8 @@ Claude Code、Codex 等 AI 客户端的本地网关，支持 macOS、Windows 与
 
 ## 安装
 
+在 Windows 终端运行 `winget install thinkwatch-lite` 即可安装。[Windows 安装指南](https://thinkwat.ch/zh-CN/docs/lite/install#winget)
+
 | 平台 | 架构 | 安装 |
 |---|---|---|
 | macOS 12 及以上 | ARM64（Apple 芯片） | `brew install --cask thinkwatchproject/tap/thinkwatch-lite`，或 [`ThinkWatch-Lite-<版本>-darwin-arm64.dmg`](https://github.com/ThinkWatchProject/ThinkWatch-Lite/releases/latest) |
