@@ -36,6 +36,10 @@ before the client runs them.
 
 <table>
   <tr>
+    <td width="30%"><a href="https://mozhenzhen.com/go/thinkwatch"><img src="docs/sponsors/mozhenzhen-plate.png" alt="Mozhenzhen" width="100%"></a></td>
+    <td><b>Before you pay for AI, check Mozhenzhen</b><br>Is a monthly subscription worth it, or would you spend less paying by the token? Look up your model on Mozhenzhen to compare official subscriptions, API rates, and bundles. It’s free to use, with over 350,000 listings across more than 2,000 models. If an API relay is new to you, you can read user reviews and model verification reports before you try it. You can also check prices and support terms for accounts, top-ups, and team seats, or browse the daily list of free credits and deals. <a href="https://mozhenzhen.com/go/thinkwatch">mozhenzhen.com ↗</a></td>
+  </tr>
+  <tr>
     <td width="30%"><a href="https://www.voyageage.com"><img src="docs/sponsors/voyageage-plate.png" alt="VoyageAge" width="100%"></a></td>
     <td><b>One API. More models. Lower costs.</b><br>VoyageAge brings leading AI models together through one OpenAI-compatible API. Built for developers, teams, and AI startups, it offers competitive pricing and pay-as-you-go billing, making it easier to integrate AI into your projects. Sign up for free trial credits and start building. <a href="https://www.voyageage.com">voyageage.com ↗</a></td>
   </tr>
